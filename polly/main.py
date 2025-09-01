@@ -777,7 +777,7 @@ async def upload_image_htmx(request: Request, current_user: DiscordUser = Depend
     """Handle FilePond image upload via HTMX"""
     try:
         form_data = await request.form()
-        image_file = form_data.get("filepond")
+        image_file = form_data.get("image")
 
         if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
             return {"error": "No image file provided"}, 400

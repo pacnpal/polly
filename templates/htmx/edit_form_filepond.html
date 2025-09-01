@@ -162,7 +162,8 @@
 <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+// Initialize FilePond immediately when template loads (HTMX compatible)
+(function() {
     // Register FilePond plugins
     FilePond.registerPlugin(
         FilePondPluginFileValidateType,
@@ -173,7 +174,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize FilePond
     const inputElement = document.querySelector('.filepond');
-    const pond = FilePond.create(inputElement, {
+    if (inputElement) {
+        const pond = FilePond.create(inputElement, {
         acceptedFileTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
         maxFileSize: '8MB',
         maxFiles: 1,
@@ -327,17 +329,20 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Validate on input change
-    openTimeInput.addEventListener('change', validateTimes);
-    closeTimeInput.addEventListener('change', validateTimes);
+    if (openTimeInput) openTimeInput.addEventListener('change', validateTimes);
+    if (closeTimeInput) closeTimeInput.addEventListener('change', validateTimes);
 
     // Validate on form submission
-    form.addEventListener('submit', function(e) {
-        if (!validateTimes()) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-    });
-});
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            if (!validateTimes()) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+    }
+    }
+})();
 </script>
 
 <style>
