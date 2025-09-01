@@ -62,10 +62,12 @@
                             <div class="col-md-6">
                                 <label for="open_time" class="form-label">Open Time *</label>
                                 <input type="datetime-local" class="form-control" id="open_time" name="open_time" value="{{ open_time }}" required>
+                                <div class="invalid-feedback" id="open-time-error"></div>
                             </div>
                             <div class="col-md-6">
                                 <label for="close_time" class="form-label">Close Time *</label>
                                 <input type="datetime-local" class="form-control" id="close_time" name="close_time" value="{{ close_time }}" required>
+                                <div class="invalid-feedback" id="close-time-error"></div>
                             </div>
                         </div>
 
@@ -133,3 +135,60 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const openTimeInput = document.getElementById('open_time');
+    const closeTimeInput = document.getElementById('close_time');
+    const openTimeError = document.getElementById('open-time-error');
+    const closeTimeError = document.getElementById('close-time-error');
+    const form = openTimeInput.closest('form');
+
+    function validateTimes() {
+        const now = new Date();
+        const minTime = new Date(now.getTime() + 60000); // 1 minute from now
+        let isValid = true;
+
+        // Clear previous errors
+        openTimeInput.classList.remove('is-invalid');
+        closeTimeInput.classList.remove('is-invalid');
+        openTimeError.textContent = '';
+        closeTimeError.textContent = '';
+
+        if (openTimeInput.value) {
+            const openTime = new Date(openTimeInput.value);
+            
+            if (openTime < minTime) {
+                openTimeInput.classList.add('is-invalid');
+                openTimeError.textContent = 'Poll open time must be at least 1 minute in the future';
+                isValid = false;
+            }
+        }
+
+        if (openTimeInput.value && closeTimeInput.value) {
+            const openTime = new Date(openTimeInput.value);
+            const closeTime = new Date(closeTimeInput.value);
+            
+            if (closeTime <= openTime) {
+                closeTimeInput.classList.add('is-invalid');
+                closeTimeError.textContent = 'Close time must be after open time';
+                isValid = false;
+            }
+        }
+
+        return isValid;
+    }
+
+    // Validate on input change
+    openTimeInput.addEventListener('change', validateTimes);
+    closeTimeInput.addEventListener('change', validateTimes);
+
+    // Validate on form submission
+    form.addEventListener('submit', function(e) {
+        if (!validateTimes()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    });
+});
+</script>

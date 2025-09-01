@@ -904,8 +904,18 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
         # Validate times
         now = datetime.now(pytz.UTC)
-        if open_dt < now:
-            open_dt = now
+
+        # Don't allow scheduling polls in the past (with 1 minute buffer)
+        min_open_time = now + timedelta(minutes=1)
+        if open_dt < min_open_time:
+            logger.warning(
+                f"Attempt to schedule poll in the past: {open_dt} < {min_open_time}")
+            return """
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>Poll open time must be at least 1 minute in the future
+            </div>
+            """
+
         if close_dt <= open_dt:
             logger.warning(
                 f"Invalid time range: open={open_dt}, close={close_dt}")
@@ -1204,7 +1214,19 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         timezone_str = validate_and_normalize_timezone(timezone_str)
 
         # Validate times
-        datetime.now(pytz.UTC)
+        now = datetime.now(pytz.UTC)
+
+        # Don't allow scheduling polls in the past (with 1 minute buffer)
+        min_open_time = now + timedelta(minutes=1)
+        if open_dt < min_open_time:
+            logger.warning(
+                f"Attempt to schedule poll in the past: {open_dt} < {min_open_time}")
+            return """
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>Poll open time must be at least 1 minute in the future
+            </div>
+            """
+
         if close_dt <= open_dt:
             logger.warning(
                 f"Invalid time range for poll {poll_id}: open={open_dt}, close={close_dt}")
