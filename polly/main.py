@@ -484,12 +484,17 @@ async def dashboard(request: Request, current_user: DiscordUser = Depends(requir
 
 # HTMX endpoints for dynamic content without JavaScript
 @app.get("/htmx/polls", response_class=HTMLResponse)
-async def get_polls_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
-    """Get user's polls as HTML for HTMX"""
+async def get_polls_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
+    """Get user's polls as HTML for HTMX with optional filtering"""
     db = get_db_session()
     try:
-        polls = db.query(Poll).filter(Poll.creator_id == current_user.id).order_by(
-            Poll.created_at.desc()).all()
+        query = db.query(Poll).filter(Poll.creator_id == current_user.id)
+        
+        # Apply filter if specified
+        if filter and filter in ['active', 'scheduled', 'closed']:
+            query = query.filter(Poll.status == filter)
+        
+        polls = query.order_by(Poll.created_at.desc()).all()
 
         # Add status_class to each poll for template
         for poll in polls:

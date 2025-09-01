@@ -11,25 +11,29 @@
         <!-- Filter Tabs -->
         <ul class="nav nav-pills mb-3" id="poll-filter-tabs">
             <li class="nav-item">
-                <button class="nav-link active" data-filter="all">
+                <button class="nav-link {% if not request.args.get('filter') or request.args.get('filter') == 'all' %}active{% endif %}" 
+                        hx-get="/htmx/polls" hx-target="#main-content">
                     <i class="fas fa-list me-1"></i>All Polls
                     <span class="badge bg-secondary ms-1">{{ polls|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" data-filter="active">
+                <button class="nav-link {% if request.args.get('filter') == 'active' %}active{% endif %}" 
+                        hx-get="/htmx/polls?filter=active" hx-target="#main-content">
                     <i class="fas fa-play-circle me-1"></i>Active
                     <span class="badge bg-success ms-1">{{ polls|selectattr("status", "equalto", "active")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" data-filter="scheduled">
+                <button class="nav-link {% if request.args.get('filter') == 'scheduled' %}active{% endif %}" 
+                        hx-get="/htmx/polls?filter=scheduled" hx-target="#main-content">
                     <i class="fas fa-clock me-1"></i>Scheduled
                     <span class="badge bg-warning ms-1">{{ polls|selectattr("status", "equalto", "scheduled")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" data-filter="closed">
+                <button class="nav-link {% if request.args.get('filter') == 'closed' %}active{% endif %}" 
+                        hx-get="/htmx/polls?filter=closed" hx-target="#main-content">
                     <i class="fas fa-stop-circle me-1"></i>Closed
                     <span class="badge bg-danger ms-1">{{ polls|selectattr("status", "equalto", "closed")|list|length }}</span>
                 </button>
@@ -216,35 +220,3 @@
 {% endif %}
 
 {% endif %}
-
-<!-- JavaScript for filtering (minimal, using HTMX attributes) -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const filterButtons = document.querySelectorAll('[data-filter]');
-    const pollSections = document.querySelectorAll('.poll-section');
-    const pollCards = document.querySelectorAll('.poll-card-container');
-    
-    filterButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const filter = this.dataset.filter;
-            
-            // Update active button
-            filterButtons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Show/hide polls based on filter
-            if (filter === 'all') {
-                pollSections.forEach(section => section.style.display = 'flex');
-                pollCards.forEach(card => card.style.display = 'block');
-            } else {
-                pollSections.forEach(section => {
-                    section.style.display = section.dataset.status === filter ? 'flex' : 'none';
-                });
-                pollCards.forEach(card => {
-                    card.style.display = card.dataset.status === filter ? 'block' : 'none';
-                });
-            }
-        });
-    });
-});
-</script>
