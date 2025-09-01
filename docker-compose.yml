@@ -26,7 +26,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "8080:8000"
+      - "8088:8000"
       - "4443:4443"
     volumes:
       - ./nginx/sites-available:/etc/nginx/sites-available
