@@ -112,6 +112,10 @@
                                 hx-get="/htmx/servers" hx-target="#main-content" hx-indicator="#loading">
                             <i class="fas fa-server me-2"></i>Servers
                         </button>
+                        <button class="list-group-item list-group-item-action" 
+                                hx-get="/htmx/settings" hx-target="#main-content" hx-indicator="#loading">
+                            <i class="fas fa-cog me-2"></i>Settings
+                        </button>
                     </div>
                 </div>
 
@@ -174,6 +178,83 @@
             </div>
         </div>
     </div>
+
+    <!-- First Login Timezone Prompt Modal -->
+    {% if show_timezone_prompt %}
+    <div class="modal fade" id="timezonePromptModal" tabindex="-1" aria-labelledby="timezonePromptModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="timezonePromptModalLabel">
+                        <i class="fas fa-clock me-2"></i>Welcome to Polly!
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3">
+                        <i class="fas fa-globe-americas fa-3x text-primary mb-3"></i>
+                        <h6>Set Your Timezone</h6>
+                        <p class="text-muted">To display poll times correctly, please select your timezone. You can change this later in Settings.</p>
+                    </div>
+                    
+                    <form hx-post="/htmx/settings" hx-target="#timezone-prompt-result" hx-indicator="#timezone-saving">
+                        <div class="mb-3">
+                            <label for="timezone" class="form-label">Your Timezone</label>
+                            <select class="form-select" id="timezone" name="timezone" required>
+                                <option value="">Select your timezone...</option>
+                                <option value="US/Eastern">US/Eastern (UTC-05:00/-04:00)</option>
+                                <option value="US/Central">US/Central (UTC-06:00/-05:00)</option>
+                                <option value="US/Mountain">US/Mountain (UTC-07:00/-06:00)</option>
+                                <option value="US/Pacific">US/Pacific (UTC-08:00/-07:00)</option>
+                                <option value="UTC">UTC (UTC+00:00)</option>
+                                <option value="Europe/London">Europe/London (UTC+00:00/+01:00)</option>
+                                <option value="Europe/Paris">Europe/Paris (UTC+01:00/+02:00)</option>
+                                <option value="Europe/Berlin">Europe/Berlin (UTC+01:00/+02:00)</option>
+                                <option value="Asia/Tokyo">Asia/Tokyo (UTC+09:00)</option>
+                                <option value="Asia/Shanghai">Asia/Shanghai (UTC+08:00)</option>
+                                <option value="Australia/Sydney">Australia/Sydney (UTC+10:00/+11:00)</option>
+                            </select>
+                        </div>
+                        
+                        <div id="timezone-prompt-result"></div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <span id="timezone-saving" class="htmx-indicator spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <i class="fas fa-check me-2"></i>Save Timezone
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        This helps us show poll times in your local timezone
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Show timezone prompt modal on page load for first-time users
+        document.addEventListener('DOMContentLoaded', function() {
+            var timezoneModal = new bootstrap.Modal(document.getElementById('timezonePromptModal'));
+            timezoneModal.show();
+        });
+        
+        // Handle successful timezone save
+        document.body.addEventListener('htmx:afterRequest', function(event) {
+            if (event.detail.xhr.responseText.includes('Settings saved successfully')) {
+                setTimeout(function() {
+                    var timezoneModal = bootstrap.Modal.getInstance(document.getElementById('timezonePromptModal'));
+                    if (timezoneModal) {
+                        timezoneModal.hide();
+                    }
+                }, 1500);
+            }
+        });
+    </script>
+    {% endif %}
 
     <!-- Bootstrap JavaScript Bundle (required for dropdowns) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

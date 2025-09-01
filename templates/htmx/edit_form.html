@@ -34,8 +34,8 @@
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label for="server_id" class="form-label">Server *</label>
-                                <select class="form-select" id="server_id" name="server_id" 
-                                        hx-get="/htmx/channels" hx-target="#channel_select" hx-trigger="change" required>
+                                <select class="form-select" id="server_id" name="server_id" required
+                                        hx-get="/htmx/channels" hx-target="#channel_id" hx-include="[name='server_id']">
                                     <option value="">Select a server...</option>
                                     {% for guild in guilds %}
                                     <option value="{{ guild.id }}" {% if guild.id == poll.server_id %}selected{% endif %}>{{ guild.name }}</option>
@@ -45,7 +45,7 @@
                             <div class="col-md-6">
                                 <label for="channel_id" class="form-label">Channel *</label>
                                 <select class="form-select" id="channel_id" name="channel_id" required>
-                                    <option value="">Select a channel...</option>
+                                    <option value="">Select a server first...</option>
                                     {% for guild in guilds %}
                                         {% if guild.id == poll.server_id %}
                                             {% for channel in guild.channels %}
@@ -75,9 +75,9 @@
                             <div id="options-container">
                                 {% for i in range(poll.options|length) %}
                                 <div class="input-group mb-2">
-                                    <span class="input-group-text">{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else "🇦" }}</span>
+                                    <span class="input-group-text">{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"][i] }}</span>
                                     <input type="text" class="form-control" name="option{{ i + 1 }}" 
-                                           placeholder="Option {{ i + 1 }}" value="{{ poll.options[i] }}" required>
+                                           placeholder="Option {{ i + 1 }}" value="{{ poll.options[i] }}" {% if i < 2 %}required{% endif %}>
                                     {% if i >= 2 %}
                                     <button type="button" class="btn btn-outline-danger"
                                             hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
@@ -86,20 +86,6 @@
                                     {% endif %}
                                 </div>
                                 {% endfor %}
-                                
-                                <!-- Add empty options if less than 10 -->
-                                {% if poll.options|length < 10 %}
-                                {% for i in range(poll.options|length, 10) %}
-                                <div class="input-group mb-2">
-                                    <span class="input-group-text">{{ ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"][i] }}</span>
-                                    <input type="text" class="form-control" name="option{{ i + 1 }}" placeholder="Option {{ i + 1 }}">
-                                    <button type="button" class="btn btn-outline-danger"
-                                            hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                                {% endfor %}
-                                {% endif %}
                             </div>
                             <button type="button" class="btn btn-outline-primary btn-sm"
                                     hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">

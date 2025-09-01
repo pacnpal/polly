@@ -251,6 +251,58 @@ def get_user_preferences(user_id: str) -> dict:
         db.close()
 
 
+def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
+    """Format datetime in user's timezone for display"""
+    try:
+        if dt.tzinfo is None:
+            # Assume UTC if no timezone info
+            dt = pytz.UTC.localize(dt)
+
+        # Convert to user's timezone
+        user_tz = pytz.timezone(validate_and_normalize_timezone(user_timezone))
+        local_dt = dt.astimezone(user_tz)
+
+        return local_dt.strftime('%b %d, %I:%M %p')
+    except Exception as e:
+        logger.error(
+            f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
+        # Fallback to UTC
+        return dt.strftime('%b %d, %I:%M %p UTC')
+
+
+def get_common_timezones() -> list:
+    """Get list of common timezones with display names"""
+    common_timezones = [
+        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "UTC",
+        "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo",
+        "Asia/Shanghai", "Australia/Sydney", "America/New_York",
+        "America/Chicago", "America/Denver", "America/Los_Angeles"
+    ]
+
+    timezones = []
+    for tz_name in common_timezones:
+        try:
+            tz_obj = pytz.timezone(tz_name)
+            offset = datetime.now(tz_obj).strftime('%z')
+            # Format offset nicely
+            if offset:
+                offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
+            else:
+                offset_formatted = "UTC"
+            timezones.append({
+                "name": tz_name,
+                "display": f"{tz_name} ({offset_formatted})"
+            })
+        except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+            logger.warning(f"Error formatting timezone {tz_name}: {e}")
+            timezones.append({
+                "name": tz_name,
+                "display": tz_name
+            })
+
+    return timezones
+
+
 def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None):
     """Save user preferences for poll creation"""
     db = get_db_session()
@@ -544,13 +596,17 @@ async def auth_callback(code: str):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, current_user: DiscordUser = Depends(require_auth)):
     """User dashboard with HTMX"""
+    # Check if user has timezone preference set
+    user_prefs = get_user_preferences(current_user.id)
+
     # Get user's guilds with channels
     user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
 
     return templates.TemplateResponse("dashboard_htmx.html", {
         "request": request,
         "user": current_user,
-        "guilds": user_guilds
+        "guilds": user_guilds,
+        "show_timezone_prompt": user_prefs.get("last_server_id") is None
     })
 
 
@@ -576,10 +632,16 @@ async def get_polls_htmx(request: Request, filter: str = None, current_user: Dis
                 'closed': 'bg-danger'
             }.get(poll.status, 'bg-secondary')
 
+        # Get user's timezone preference
+        user_prefs = get_user_preferences(current_user.id)
+        user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+
         return templates.TemplateResponse("htmx/polls.html", {
             "request": request,
             "polls": polls,
-            "current_filter": filter
+            "current_filter": filter,
+            "user_timezone": user_timezone,
+            "format_datetime_for_user": format_datetime_for_user
         })
     finally:
         db.close()
@@ -710,6 +772,54 @@ async def get_servers_htmx(request: Request, current_user: DiscordUser = Depends
         "request": request,
         "guilds": user_guilds
     })
+
+
+@app.get("/htmx/settings", response_class=HTMLResponse)
+async def get_settings_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Get user settings form as HTML for HTMX"""
+    # Get user preferences
+    user_prefs = get_user_preferences(current_user.id)
+
+    # Get common timezones
+    timezones = get_common_timezones()
+
+    return templates.TemplateResponse("htmx/settings.html", {
+        "request": request,
+        "user_prefs": user_prefs,
+        "timezones": timezones
+    })
+
+
+@app.post("/htmx/settings", response_class=HTMLResponse)
+async def save_settings_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Save user settings via HTMX"""
+    try:
+        form_data = await request.form()
+        timezone = safe_get_form_data(form_data, "timezone", "US/Eastern")
+
+        # Validate and normalize timezone
+        normalized_timezone = validate_and_normalize_timezone(timezone)
+
+        # Save user preferences
+        save_user_preferences(current_user.id, timezone=normalized_timezone)
+
+        logger.info(
+            f"Updated timezone preference for user {current_user.id} to {normalized_timezone}")
+
+        return """
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>Settings saved successfully! Your timezone preference has been updated.
+        </div>
+        <div hx-get="/htmx/settings" hx-target="#main-content" hx-trigger="load delay:2s"></div>
+        """
+
+    except Exception as e:
+        logger.error(f"Error saving settings for user {current_user.id}: {e}")
+        return f"""
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>Error saving settings: {str(e)}
+        </div>
+        """
 
 
 @app.post("/htmx/create-poll", response_class=HTMLResponse)
