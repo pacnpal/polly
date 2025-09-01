@@ -1,0 +1,474 @@
+"""
+Polly Error Handling and Recovery System
+Comprehensive error handling, logging, and recovery mechanisms for bulletproof operation.
+"""
+
+import logging
+import asyncio
+from datetime import datetime
+from typing import Optional, Dict, Any, List, Callable
+from functools import wraps
+import pytz
+import discord
+from discord.ext import commands
+
+from .database import get_db_session, Poll, Vote
+from .validators import ValidationError
+
+logger = logging.getLogger(__name__)
+
+
+class PollError(Exception):
+    """Base exception for poll-related errors"""
+
+    def __init__(self, message: str, poll_id: Optional[int] = None, recoverable: bool = True):
+        self.message = message
+        self.poll_id = poll_id
+        self.recoverable = recoverable
+        super().__init__(message)
+
+
+class DiscordError(PollError):
+    """Discord-specific errors"""
+    pass
+
+
+class DatabaseError(PollError):
+    """Database-specific errors"""
+    pass
+
+
+class SchedulerError(PollError):
+    """Scheduler-specific errors"""
+    pass
+
+
+class ErrorRecovery:
+    """Error recovery and retry mechanisms"""
+
+    MAX_RETRIES = 3
+    RETRY_DELAYS = [1, 5, 15]  # seconds
+
+    @staticmethod
+    async def retry_with_backoff(func: Callable, *args, max_retries: Optional[int] = None, **kwargs) -> Any:
+        """Retry function with exponential backoff"""
+        max_retries = max_retries or ErrorRecovery.MAX_RETRIES
+
+        for attempt in range(max_retries):
+            try:
+                if asyncio.iscoroutinefunction(func):
+                    return await func(*args, **kwargs)
+                else:
+                    return func(*args, **kwargs)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Final retry failed for {func.__name__}: {e}")
+                    raise
+
+                delay = ErrorRecovery.RETRY_DELAYS[min(
+                    attempt, len(ErrorRecovery.RETRY_DELAYS) - 1)]
+                logger.warning(
+                    f"Retry {attempt + 1}/{max_retries} for {func.__name__} failed: {e}. Retrying in {delay}s...")
+                await asyncio.sleep(delay)
+
+        raise Exception(f"All retries exhausted for {func.__name__}")
+
+    @staticmethod
+    def safe_database_operation(operation_name: str):
+        """Decorator for safe database operations with automatic rollback"""
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                db = get_db_session()
+                try:
+                    result = func(db, *args, **kwargs)
+                    db.commit()
+                    logger.debug(
+                        f"Database operation '{operation_name}' completed successfully")
+                    return result
+                except Exception as e:
+                    db.rollback()
+                    logger.error(
+                        f"Database operation '{operation_name}' failed: {e}")
+                    logger.exception(f"Full traceback for {operation_name}:")
+                    raise DatabaseError(f"Database operation failed: {str(e)}")
+                finally:
+                    db.close()
+            return wrapper
+        return decorator
+
+    @staticmethod
+    def safe_async_database_operation(operation_name: str):
+        """Decorator for safe async database operations with automatic rollback"""
+        def decorator(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                db = get_db_session()
+                try:
+                    result = await func(db, *args, **kwargs)
+                    db.commit()
+                    logger.debug(
+                        f"Async database operation '{operation_name}' completed successfully")
+                    return result
+                except Exception as e:
+                    db.rollback()
+                    logger.error(
+                        f"Async database operation '{operation_name}' failed: {e}")
+                    logger.exception(f"Full traceback for {operation_name}:")
+                    raise DatabaseError(f"Database operation failed: {str(e)}")
+                finally:
+                    db.close()
+            return wrapper
+        return decorator
+
+
+class PollErrorHandler:
+    """Centralized error handling for poll operations"""
+
+    @staticmethod
+    def handle_poll_creation_error(e: Exception, poll_data: Dict[str, Any]) -> str:
+        """Handle poll creation errors with user-friendly messages"""
+        poll_name = poll_data.get('name', 'Unknown')
+
+        if isinstance(e, ValidationError):
+            logger.warning(
+                f"Validation error creating poll '{poll_name}': {e.message}")
+            return f"❌ {e.message}"
+
+        if isinstance(e, discord.Forbidden):
+            logger.error(
+                f"Discord permission error creating poll '{poll_name}': {e}")
+            return "❌ Bot lacks permissions in the selected channel. Please check bot permissions."
+
+        if isinstance(e, discord.HTTPException):
+            logger.error(f"Discord API error creating poll '{poll_name}': {e}")
+            return "❌ Discord API error. Please try again in a moment."
+
+        if isinstance(e, DatabaseError):
+            logger.error(f"Database error creating poll '{poll_name}': {e}")
+            return "❌ Database error. Please try again."
+
+        logger.error(f"Unexpected error creating poll '{poll_name}': {e}")
+        logger.exception("Full traceback for poll creation error:")
+        return "❌ An unexpected error occurred. Please try again."
+
+    @staticmethod
+    def handle_vote_error(e: Exception, poll_id: int, user_id: str) -> str:
+        """Handle voting errors with user-friendly messages"""
+        if isinstance(e, ValidationError):
+            logger.warning(
+                f"Validation error voting on poll {poll_id} by user {user_id}: {e.message}")
+            return f"❌ {e.message}"
+
+        if isinstance(e, DatabaseError):
+            logger.error(
+                f"Database error voting on poll {poll_id} by user {user_id}: {e}")
+            return "❌ Database error processing vote. Please try again."
+
+        logger.error(
+            f"Unexpected error voting on poll {poll_id} by user {user_id}: {e}")
+        logger.exception("Full traceback for voting error:")
+        return "❌ An unexpected error occurred while voting. Please try again."
+
+    @staticmethod
+    def handle_scheduler_error(e: Exception, poll_id: int, operation: str) -> bool:
+        """Handle scheduler errors and attempt recovery"""
+        logger.error(
+            f"Scheduler error for poll {poll_id} during {operation}: {e}")
+        logger.exception("Full traceback for scheduler error:")
+
+        # Attempt to recover by rescheduling
+        try:
+            from .main import scheduler
+            if scheduler and scheduler.running:
+                # Remove any existing jobs for this poll
+                for job_type in ['open', 'close']:
+                    job_id = f"{job_type}_poll_{poll_id}"
+                    try:
+                        scheduler.remove_job(job_id)
+                        logger.info(
+                            f"Removed existing job {job_id} during error recovery")
+                    except Exception:
+                        pass  # Job might not exist
+
+                # Try to reschedule based on poll status
+                db = get_db_session()
+                try:
+                    poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                    if poll:
+                        now = datetime.now(pytz.UTC)
+
+                        # Reschedule opening if needed
+                        if poll.status == "scheduled" and poll.open_time is not None and poll.open_time > now:
+                            from .discord_utils import post_poll_to_channel
+                            from .main import bot
+                            from apscheduler.triggers.date import DateTrigger
+
+                            scheduler.add_job(
+                                post_poll_to_channel,
+                                DateTrigger(run_date=poll.open_time),
+                                args=[bot, poll],
+                                id=f"open_poll_{poll.id}",
+                                replace_existing=True
+                            )
+                            logger.info(
+                                f"Rescheduled opening for poll {poll_id}")
+
+                        # Reschedule closing if needed
+                        if poll.status in ["scheduled", "active"] and poll.close_time is not None and poll.close_time > now:
+                            from .main import close_poll
+                            from apscheduler.triggers.date import DateTrigger
+
+                            scheduler.add_job(
+                                close_poll,
+                                DateTrigger(run_date=poll.close_time),
+                                args=[poll.id],
+                                id=f"close_poll_{poll.id}",
+                                replace_existing=True
+                            )
+                            logger.info(
+                                f"Rescheduled closing for poll {poll_id}")
+
+                        return True
+                finally:
+                    db.close()
+        except Exception as recovery_error:
+            logger.error(
+                f"Failed to recover from scheduler error for poll {poll_id}: {recovery_error}")
+
+        return False
+
+
+class DiscordErrorHandler:
+    """Specialized error handling for Discord operations"""
+
+    @staticmethod
+    async def safe_send_message(channel, content=None, embed=None, max_retries: int = 3) -> Optional[discord.Message]:
+        """Safely send a Discord message with retries"""
+        for attempt in range(max_retries):
+            try:
+                if embed:
+                    return await channel.send(content=content, embed=embed)
+                else:
+                    return await channel.send(content=content)
+            except discord.Forbidden:
+                logger.error(
+                    f"No permission to send message in channel {channel.id}")
+                return None
+            except discord.HTTPException as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Failed to send message after {max_retries} attempts: {e}")
+                    return None
+
+                delay = 2 ** attempt  # Exponential backoff
+                logger.warning(
+                    f"HTTP error sending message (attempt {attempt + 1}): {e}. Retrying in {delay}s...")
+                await asyncio.sleep(delay)
+            except Exception as e:
+                logger.error(f"Unexpected error sending message: {e}")
+                return None
+
+        return None
+
+    @staticmethod
+    async def safe_add_reactions(message: discord.Message, emojis: List[str]) -> List[str]:
+        """Safely add reactions to a message, returning list of successfully added emojis"""
+        successful_reactions = []
+
+        for emoji in emojis:
+            try:
+                await message.add_reaction(emoji)
+                successful_reactions.append(emoji)
+                logger.debug(f"Successfully added reaction {emoji}")
+            except discord.Forbidden:
+                logger.error(f"No permission to add reaction {emoji}")
+                break  # If we can't add one, we likely can't add any
+            except discord.HTTPException as e:
+                logger.warning(f"Failed to add reaction {emoji}: {e}")
+                # Continue trying other reactions
+            except Exception as e:
+                logger.error(f"Unexpected error adding reaction {emoji}: {e}")
+
+        return successful_reactions
+
+    @staticmethod
+    async def safe_edit_message(message: discord.Message, content=None, embed=None, max_retries: int = 3) -> bool:
+        """Safely edit a Discord message with retries"""
+        for attempt in range(max_retries):
+            try:
+                if embed:
+                    await message.edit(content=content, embed=embed)
+                else:
+                    await message.edit(content=content)
+                return True
+            except discord.NotFound:
+                logger.warning(f"Message {message.id} not found for editing")
+                return False
+            except discord.Forbidden:
+                logger.error(f"No permission to edit message {message.id}")
+                return False
+            except discord.HTTPException as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Failed to edit message after {max_retries} attempts: {e}")
+                    return False
+
+                delay = 2 ** attempt
+                logger.warning(
+                    f"HTTP error editing message (attempt {attempt + 1}): {e}. Retrying in {delay}s...")
+                await asyncio.sleep(delay)
+            except Exception as e:
+                logger.error(f"Unexpected error editing message: {e}")
+                return False
+
+        return False
+
+
+class DatabaseHealthChecker:
+    """Database health monitoring and recovery"""
+
+    @staticmethod
+    def check_database_health() -> bool:
+        """Check if database is accessible and healthy"""
+        try:
+            db = get_db_session()
+            # Simple query to test connectivity
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+            db.close()
+            return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+
+    @staticmethod
+    @ErrorRecovery.safe_database_operation("poll_integrity_check")
+    def check_poll_integrity(db, poll_id: int) -> Dict[str, Any]:
+        """Check poll data integrity and return status"""
+        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if not poll:
+            return {"valid": False, "error": "Poll not found"}
+
+        issues = []
+
+        # Check required fields
+        if not poll.name or not poll.question:
+            issues.append("Missing name or question")
+
+        if not poll.options or len(poll.options) < 2:
+            issues.append("Invalid options")
+
+        if not poll.server_id or not poll.channel_id:
+            issues.append("Missing server or channel ID")
+
+        if not poll.open_time or not poll.close_time:
+            issues.append("Missing timing information")
+
+        if poll.close_time <= poll.open_time:
+            issues.append("Invalid time range")
+
+        # Check vote integrity
+        vote_count = db.query(Vote).filter(Vote.poll_id == poll_id).count()
+
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "vote_count": vote_count,
+            "status": poll.status
+        }
+
+
+class SystemHealthMonitor:
+    """Overall system health monitoring"""
+
+    @staticmethod
+    async def check_bot_health(bot: commands.Bot) -> Dict[str, Any]:
+        """Check Discord bot health"""
+        health_status = {
+            "bot_ready": bot.is_ready() if bot else False,
+            "guild_count": len(bot.guilds) if bot and bot.guilds else 0,
+            "latency": round(bot.latency * 1000, 2) if bot else None,
+            "user": str(bot.user) if bot and bot.user else None
+        }
+
+        return health_status
+
+    @staticmethod
+    def check_scheduler_health(scheduler) -> Dict[str, Any]:
+        """Check scheduler health"""
+        if not scheduler:
+            return {"running": False, "job_count": 0}
+
+        return {
+            "running": scheduler.running,
+            "job_count": len(scheduler.get_jobs()),
+            "state": str(scheduler.state)
+        }
+
+    @staticmethod
+    async def full_system_health_check(bot: commands.Bot, scheduler) -> Dict[str, Any]:
+        """Comprehensive system health check"""
+        return {
+            "timestamp": datetime.now(pytz.UTC).isoformat(),
+            "database": DatabaseHealthChecker.check_database_health(),
+            "bot": await SystemHealthMonitor.check_bot_health(bot),
+            "scheduler": SystemHealthMonitor.check_scheduler_health(scheduler)
+        }
+
+
+def log_error_with_context(error: Exception, context: Dict[str, Any], operation: str):
+    """Log error with comprehensive context information"""
+    logger.error(f"Error in {operation}: {str(error)}")
+    logger.error(f"Context: {context}")
+    logger.exception(f"Full traceback for {operation}:")
+
+    # Log additional system state if available
+    try:
+        logger.error(f"System time: {datetime.now(pytz.UTC)}")
+        logger.error(f"Error type: {type(error).__name__}")
+    except Exception:
+        pass  # Don't let logging errors crash the system
+
+
+def handle_critical_error(error: Exception, operation: str, poll_id: int = None):
+    """Handle critical errors that could crash the system"""
+    context = {
+        "operation": operation,
+        "poll_id": poll_id,
+        "timestamp": datetime.now(pytz.UTC).isoformat()
+    }
+
+    log_error_with_context(error, context, operation)
+
+    # Could add additional critical error handling here:
+    # - Send alerts
+    # - Create error reports
+    # - Trigger recovery procedures
+
+    return False  # Indicate operation failed
+
+
+# Decorator for critical operations
+def critical_operation(operation_name: str):
+    """Decorator for critical operations that must not crash the system"""
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                handle_critical_error(e, operation_name)
+                return None
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                handle_critical_error(e, operation_name)
+                return None
+
+        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+    return decorator
