@@ -913,17 +913,39 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
         # Validate times
         now = datetime.now(pytz.UTC)
+        
+        # Debug: Show system time vs Python time
+        import time
+        system_timestamp = time.time()
+        system_utc = datetime.fromtimestamp(system_timestamp, tz=pytz.UTC)
+        logger.debug(f"System time comparison:")
+        logger.debug(f"  Python datetime.now(UTC): {now}")
+        logger.debug(f"  System time.time() UTC: {system_utc}")
+        logger.debug(f"  Difference: {(now - system_utc).total_seconds()} seconds")
 
         # Don't allow scheduling polls in the past (with 1 minute buffer)
         min_open_time = now + timedelta(minutes=1)
         if open_dt < min_open_time:
-            # Convert min_open_time to user's timezone for display
+            # Convert times to user's timezone for display and debugging
             user_tz = pytz.timezone(timezone_str)
+            now_local = now.astimezone(user_tz)
             min_time_local = min_open_time.astimezone(user_tz)
+            requested_time_local = open_dt.astimezone(user_tz)
             suggested_time = min_time_local.strftime('%I:%M %p')
-            
+
             logger.warning(
                 f"Attempt to schedule poll in the past: {open_dt} < {min_open_time}")
+            logger.debug(f"Time validation details:")
+            logger.debug(f"  Current time UTC: {now}")
+            logger.debug(f"  Current time local ({user_tz}): {now_local}")
+            logger.debug(f"  Requested time UTC: {open_dt}")
+            logger.debug(
+                f"  Requested time local ({user_tz}): {requested_time_local}")
+            logger.debug(f"  Minimum required UTC: {min_open_time}")
+            logger.debug(
+                f"  Minimum required local ({user_tz}): {min_time_local}")
+            logger.debug(f"  Suggested time: {suggested_time}")
+
             return f"""
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll open time must be at least 1 minute in the future. Try {suggested_time} or later.
@@ -1093,7 +1115,7 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         tz = pytz.timezone(poll.timezone or "UTC")
         open_time_local = poll.open_time.astimezone(tz)
         close_time_local = poll.close_time.astimezone(tz)
-        
+
         # Debug logging for edit form time conversion
         logger.debug(f"Edit form for poll {poll_id}:")
         logger.debug(f"  Stored timezone: {poll.timezone}")
@@ -1101,10 +1123,10 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         logger.debug(f"  Close time UTC: {poll.close_time}")
         logger.debug(f"  Open time local ({tz}): {open_time_local}")
         logger.debug(f"  Close time local ({tz}): {close_time_local}")
-        
+
         open_time = open_time_local.strftime('%Y-%m-%dT%H:%M')
         close_time = close_time_local.strftime('%Y-%m-%dT%H:%M')
-        
+
         logger.debug(f"  Form open time: {open_time}")
         logger.debug(f"  Form close time: {close_time}")
 
@@ -1251,7 +1273,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             user_tz = pytz.timezone(timezone_str)
             min_time_local = min_open_time.astimezone(user_tz)
             suggested_time = min_time_local.strftime('%I:%M %p')
-            
+
             logger.warning(
                 f"Attempt to schedule poll in the past: {open_dt} < {min_open_time}")
             return f"""
