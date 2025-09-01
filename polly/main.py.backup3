@@ -1,0 +1,492 @@
+"""
+Polly Main Application
+Discord bot + FastAPI web server with admin-only poll creation.
+"""
+# Load environment variables FIRST before importing other modules
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import List, Optional
+import uuid
+from contextlib import asynccontextmanager
+import pytz
+
+import discord
+from discord.ext import commands
+from fastapi import FastAPI, Request, Depends, HTTPException, Form, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
+import uvicorn
+
+from .database import init_database, get_db_session, Poll, Vote, POLL_EMOJIS
+from .auth import (
+    is_admin, save_user_to_db, get_discord_oauth_url, exchange_code_for_token,
+    get_discord_user, create_access_token, require_auth, DiscordUser
+)
+from .discord_utils import (
+    get_user_guilds_with_channels, create_poll_embed, post_poll_to_channel,
+    update_poll_message, post_poll_results, user_has_admin_permissions
+)
+
+# Configuration
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+if not DISCORD_TOKEN:
+    raise ValueError("DISCORD_TOKEN environment variable is required")
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize database
+init_database()
+
+# Create directories
+os.makedirs("static/uploads", exist_ok=True)
+os.makedirs("templates", exist_ok=True)
+
+# Discord bot setup
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guilds = True
+intents.reactions = True
+
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Scheduler for poll timing
+scheduler = AsyncIOScheduler()
+
+
+@bot.event
+async def on_ready():
+    """Bot ready event"""
+    logger.info(f'{bot.user} has connected to Discord!')
+
+    # Sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+
+
+@bot.tree.command(name="quickpoll", description="Create a quick poll in the current channel")
+async def create_quick_poll_command(
+    interaction: discord.Interaction,
+    question: str,
+    option1: str,
+    option2: str,
+    option3: str = None,
+    option4: str = None,
+    option5: str = None,
+    anonymous: bool = False
+):
+    """Create a quick poll via Discord slash command"""
+    # Check if user has admin permissions
+    if not user_has_admin_permissions(interaction.user):
+        await interaction.response.send_message(
+            "❌ You need Administrator or Manage Server permissions to create polls.",
+            ephemeral=True
+        )
+        return
+
+    # Collect options
+    options = [option1, option2]
+    for opt in [option3, option4, option5]:
+        if opt:
+            options.append(opt)
+
+    if len(options) > 10:
+        await interaction.response.send_message(
+            "❌ Maximum 10 poll options allowed.",
+            ephemeral=True
+        )
+        return
+
+    # Create poll in database
+    db = get_db_session()
+    try:
+        poll = Poll(
+            name=f"Quick Poll - {question[:50]}",
+            question=question,
+            options=options,
+            server_id=str(interaction.guild_id),
+            server_name=interaction.guild.name,
+            channel_id=str(interaction.channel_id),
+            channel_name=interaction.channel.name,
+            creator_id=str(interaction.user.id),
+            open_time=datetime.utcnow(),
+            close_time=datetime.utcnow() + timedelta(hours=24),
+            anonymous=anonymous,
+            status="active"
+        )
+        db.add(poll)
+        db.commit()
+        db.refresh(poll)
+
+        # Create embed
+        embed = await create_poll_embed(poll, show_results=poll.should_show_results())
+
+        await interaction.response.send_message(embed=embed)
+
+        # Get the message and add reactions
+        message = await interaction.original_response()
+        poll.message_id = str(message.id)
+        db.commit()
+
+        # Add reaction emojis
+        for i in range(len(options)):
+            await message.add_reaction(POLL_EMOJIS[i])
+
+        # Schedule poll closure
+        scheduler.add_job(
+            close_poll,
+            DateTrigger(run_date=poll.close_time),
+            args=[poll.id],
+            id=f"close_poll_{poll.id}"
+        )
+
+    except Exception as e:
+        logger.error(f"Error creating poll: {e}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message("❌ Error creating poll. Please try again.", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Error creating poll. Please try again.", ephemeral=True)
+    finally:
+        db.close()
+
+
+@bot.event
+async def on_reaction_add(reaction, user):
+    """Handle poll voting via reactions"""
+    if user.bot:
+        return
+
+    # Check if this is a poll message
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.message_id ==
+                                     str(reaction.message.id)).first()
+        if not poll or poll.status != "active":
+            return
+
+        # Check if emoji is valid poll option
+        if str(reaction.emoji) not in POLL_EMOJIS:
+            return
+
+        option_index = POLL_EMOJIS.index(str(reaction.emoji))
+        if option_index >= len(poll.options):
+            return
+
+        # Check if user already voted
+        existing_vote = db.query(Vote).filter(
+            Vote.poll_id == poll.id,
+            Vote.user_id == str(user.id)
+        ).first()
+
+        if existing_vote:
+            # Update existing vote
+            existing_vote.option_index = option_index
+            existing_vote.voted_at = datetime.utcnow()
+        else:
+            # Create new vote
+            vote = Vote(
+                poll_id=poll.id,
+                user_id=str(user.id),
+                option_index=option_index
+            )
+            db.add(vote)
+
+        db.commit()
+
+        # Update poll embed if results should be shown
+        if poll.should_show_results():
+            await update_poll_message(bot, poll)
+
+    except Exception as e:
+        logger.error(f"Error handling vote: {e}")
+    finally:
+        db.close()
+
+
+async def close_poll(poll_id: int):
+    """Close a poll and update the message"""
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if poll:
+            poll.status = "closed"
+            db.commit()
+            
+            # Post final results
+            await post_poll_results(bot, poll)
+            
+            # Update original message
+            await update_poll_message(bot, poll)
+            
+            logger.info(f"Closed poll {poll_id}")
+    except Exception as e:
+        logger.error(f"Error closing poll {poll_id}: {e}")
+    finally:
+        db.close()
+
+
+async def start_bot():
+    """Start the Discord bot"""
+    await bot.start(DISCORD_TOKEN)
+
+
+async def start_scheduler():
+    """Start the job scheduler"""
+    scheduler.start()
+    logger.info("Scheduler started")
+
+
+# Lifespan manager for background tasks
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    asyncio.create_task(start_scheduler())
+    asyncio.create_task(start_bot())
+    yield
+    # Shutdown
+    scheduler.shutdown()
+    await bot.close()
+
+
+# FastAPI setup with lifespan
+app = FastAPI(
+    title="Polly - Discord Poll Bot", 
+    version="0.2.0",
+    lifespan=lifespan
+)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+
+# Web routes
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    """Home page"""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/login")
+async def login():
+    """Redirect to Discord OAuth"""
+    oauth_url = get_discord_oauth_url()
+    return RedirectResponse(url=oauth_url)
+
+
+@app.get("/auth/callback")
+async def auth_callback(code: str):
+    """Handle Discord OAuth callback"""
+    try:
+        # Exchange code for token
+        token_data = await exchange_code_for_token(code)
+        access_token = token_data["access_token"]
+
+        # Get user info
+        discord_user = await get_discord_user(access_token)
+
+        # Save user to database
+        save_user_to_db(discord_user)
+
+        # Create JWT token
+        jwt_token = create_access_token(discord_user)
+
+        # Redirect to dashboard with token
+        response = RedirectResponse(url="/dashboard")
+        response.set_cookie(key="access_token", value=jwt_token, httponly=True, secure=True, samesite="lax")
+        return response
+
+    except Exception as e:
+        logger.error(f"Auth callback error: {e}")
+        return HTMLResponse("Authentication failed", status_code=400)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """User dashboard"""
+    # Get user's guilds with channels
+    user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": current_user,
+        "guilds": user_guilds
+    })
+
+
+@app.get("/api/polls")
+async def get_polls(current_user: DiscordUser = Depends(require_auth)):
+    """Get user's polls"""
+    db = get_db_session()
+    try:
+        polls = db.query(Poll).filter(Poll.creator_id == current_user.id).order_by(Poll.created_at.desc()).all()
+        return [
+            {
+                "id": poll.id,
+                "name": poll.name,
+                "question": poll.question,
+                "status": poll.status,
+                "server_name": poll.server_name or f"Server {poll.server_id}",
+                "channel_name": poll.channel_name or f"Channel {poll.channel_id}",
+                "total_votes": poll.get_total_votes(),
+                "anonymous": poll.anonymous,
+                "open_time": poll.open_time.isoformat(),
+                "close_time": poll.close_time.isoformat(),
+                "created_at": poll.created_at.isoformat()
+            }
+            for poll in polls
+        ]
+    finally:
+        db.close()
+
+
+@app.post("/api/polls")
+async def create_poll(
+    request: Request,
+    current_user: DiscordUser = Depends(require_auth)
+):
+    """Create a new poll"""
+    form_data = await request.form()
+    
+    try:
+        # Extract form data
+        name = form_data.get("name")
+        question = form_data.get("question")
+        server_id = form_data.get("server_id")
+        channel_id = form_data.get("channel_id")
+        open_time = form_data.get("open_time")
+        close_time = form_data.get("close_time")
+        timezone_str = form_data.get("timezone", "UTC")
+        anonymous = form_data.get("anonymous") == "true"
+        
+        # Get options
+        options = []
+        for i in range(1, 11):  # Support up to 10 options
+            option = form_data.get(f"option{i}")
+            if option:
+                options.append(option.strip())
+        
+        if len(options) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 options required")
+        
+        # Parse times with timezone
+        tz = pytz.timezone(timezone_str)
+        open_dt = tz.localize(datetime.fromisoformat(open_time)).astimezone(pytz.UTC)
+        close_dt = tz.localize(datetime.fromisoformat(close_time)).astimezone(pytz.UTC)
+        
+        # Validate times
+        now = datetime.utcnow()
+        if open_dt < now:
+            open_dt = now
+        if close_dt <= open_dt:
+            raise HTTPException(status_code=400, detail="Close time must be after open time")
+        
+        # Get server and channel names
+        guild = bot.get_guild(int(server_id))
+        channel = bot.get_channel(int(channel_id))
+        
+        if not guild or not channel:
+            raise HTTPException(status_code=400, detail="Invalid server or channel")
+        
+        # Check user permissions
+        member = guild.get_member(int(current_user.id))
+        if not member or not user_has_admin_permissions(member):
+            raise HTTPException(status_code=403, detail="No permission to create polls in this server")
+        
+        # Create poll in database
+        db = get_db_session()
+        try:
+            poll = Poll(
+                name=name,
+                question=question,
+                options=options,
+                server_id=server_id,
+                server_name=guild.name,
+                channel_id=channel_id,
+                channel_name=channel.name,
+                creator_id=current_user.id,
+                open_time=open_dt,
+                close_time=close_dt,
+                timezone=timezone_str,
+                anonymous=anonymous,
+                status="scheduled"
+            )
+            db.add(poll)
+            db.commit()
+            db.refresh(poll)
+
+            # Schedule poll to open
+            if open_dt <= datetime.utcnow():
+                # Open immediately
+                await post_poll_to_channel(bot, poll)
+            else:
+                # Schedule opening
+                scheduler.add_job(
+                    post_poll_to_channel,
+                    DateTrigger(run_date=open_dt),
+                    args=[bot, poll],
+                    id=f"open_poll_{poll.id}"
+                )
+
+            # Schedule poll to close
+            scheduler.add_job(
+                close_poll,
+                DateTrigger(run_date=close_dt),
+                args=[poll.id],
+                id=f"close_poll_{poll.id}"
+            )
+
+            return {"success": True, "poll_id": poll.id}
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error creating poll: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/timezones")
+async def get_timezones():
+    """Get list of common timezones"""
+    common_timezones = [
+        "UTC",
+        "US/Eastern",
+        "US/Central", 
+        "US/Mountain",
+        "US/Pacific",
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Australia/Sydney"
+    ]
+    
+    return [
+        {
+            "value": tz,
+            "label": f"{tz} (UTC{datetime.now(pytz.timezone(tz)).strftime('%z')})"
+        }
+        for tz in common_timezones
+    ]
+
+
+def run_app():
+    """Run the application"""
+    # Run FastAPI server - background tasks will be started via lifespan
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    run_app()

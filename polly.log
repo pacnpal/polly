@@ -1,0 +1,67 @@
+nohup: ignoring input
+WARNING:discord.client:PyNaCl is not installed, voice will NOT be supported
+INFO:     Started server process [2291110]
+INFO:     Waiting for application startup.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:__main__:Scheduler started
+INFO:discord.client:logging in using static token
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:discord.gateway:Shard ID None has connected to Gateway (Session ID: 87248db8773f09743ebb9b6330bf0429).
+INFO:__main__:𝕊𝕙𝕠𝕔𝕜𝕎𝕒𝕧𝕖#8731 has connected to Discord!
+INFO:__main__:Synced 1 command(s)
+INFO:polly.discord_utils:Updated guild cache for The Roller Coasters Discord (267319586641281026)
+INFO:polly.discord_utils:Updated channel cache for The Roller Coasters Discord (73 channels)
+INFO:polly.discord_utils:Updated guild cache for PacNPals (1067616268385009736)
+INFO:polly.discord_utils:Updated channel cache for PacNPals (18 channels)
+Database initialized successfully!
+INFO:     2a01:4f9:c012:e1b0::1:0 - "GET /api/debug/user-guilds/141517468408610816 HTTP/1.1" 200 OK
+INFO:polly.discord_utils:Updated guild cache for The Roller Coasters Discord (267319586641281026)
+INFO:polly.discord_utils:Updated channel cache for The Roller Coasters Discord (73 channels)
+INFO:polly.discord_utils:Updated guild cache for PacNPals (1067616268385009736)
+INFO:polly.discord_utils:Updated channel cache for PacNPals (18 channels)
+INFO:     68.58.147.115:0 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/timezones HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /installHook.js.map HTTP/1.1" 404 Not Found
+INFO:polly.discord_utils:Updated guild cache for The Roller Coasters Discord (267319586641281026)
+INFO:polly.discord_utils:Updated channel cache for The Roller Coasters Discord (73 channels)
+INFO:polly.discord_utils:Updated guild cache for PacNPals (1067616268385009736)
+INFO:polly.discord_utils:Updated channel cache for PacNPals (18 channels)
+INFO:     68.58.147.115:0 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/timezones HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/polls HTTP/1.1" 200 OK
+INFO:polly.discord_utils:Updated guild cache for The Roller Coasters Discord (267319586641281026)
+INFO:polly.discord_utils:Updated channel cache for The Roller Coasters Discord (73 channels)
+INFO:polly.discord_utils:Updated guild cache for PacNPals (1067616268385009736)
+INFO:polly.discord_utils:Updated channel cache for PacNPals (18 channels)
+INFO:     68.58.147.115:0 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/polls HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/timezones HTTP/1.1" 200 OK
+/home/xyn0th/polly/polly/main.py:388: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow()
+ERROR:__main__:Error creating poll: can't compare offset-naive and offset-aware datetimes
+INFO:     68.58.147.115:0 - "POST /api/polls HTTP/1.1" 500 Internal Server Error
+ERROR:__main__:Error creating poll: can't compare offset-naive and offset-aware datetimes
+INFO:     68.58.147.115:0 - "POST /api/polls HTTP/1.1" 500 Internal Server Error
+ERROR:__main__:Error creating poll: can't compare offset-naive and offset-aware datetimes
+INFO:     68.58.147.115:0 - "POST /api/polls HTTP/1.1" 500 Internal Server Error
+INFO:polly.discord_utils:Updated guild cache for The Roller Coasters Discord (267319586641281026)
+INFO:polly.discord_utils:Updated channel cache for The Roller Coasters Discord (73 channels)
+INFO:polly.discord_utils:Updated guild cache for PacNPals (1067616268385009736)
+INFO:polly.discord_utils:Updated channel cache for PacNPals (18 channels)
+INFO:     68.58.147.115:0 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/polls HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/timezones HTTP/1.1" 200 OK
+INFO:polly.discord_utils:Updated guild cache for The Roller Coasters Discord (267319586641281026)
+INFO:polly.discord_utils:Updated channel cache for The Roller Coasters Discord (73 channels)
+INFO:polly.discord_utils:Updated guild cache for PacNPals (1067616268385009736)
+INFO:polly.discord_utils:Updated channel cache for PacNPals (18 channels)
+INFO:     68.58.147.115:0 - "GET /dashboard HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/timezones HTTP/1.1" 200 OK
+INFO:     68.58.147.115:0 - "GET /api/polls HTTP/1.1" 200 OK
+INFO:     167.94.138.186:0 - "GET / HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:apscheduler.scheduler:Scheduler has been shut down
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2291110]

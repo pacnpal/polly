@@ -1,0 +1,196 @@
+"""
+Discord Authentication
+Discord OAuth for web interface and bot permission checking.
+"""
+
+import os
+import httpx
+import discord
+from fastapi import HTTPException, Depends, Request
+from fastapi.security import HTTPBearer
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+from .database import get_db_session, User
+
+# Debug: Print all environment variables
+print("DEBUG: Environment variables:")
+print(f"DISCORD_CLIENT_ID from env: '{os.getenv('DISCORD_CLIENT_ID')}'")
+print(f"DISCORD_CLIENT_SECRET from env: '{os.getenv('DISCORD_CLIENT_SECRET')}'")
+print(f"DISCORD_REDIRECT_URI from env: '{os.getenv('DISCORD_REDIRECT_URI')}'")
+print(f"SECRET_KEY from env: '{os.getenv('SECRET_KEY')}'")
+
+# Discord OAuth settings
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+DISCORD_REDIRECT_URI = os.getenv(
+    "DISCORD_REDIRECT_URI", "http://localhost:8000/auth/callback")
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this")
+
+# Debug: Print variables after loading
+print("DEBUG: Variables after loading:")
+print(f"DISCORD_CLIENT_ID: '{DISCORD_CLIENT_ID}'")
+print(f"DISCORD_CLIENT_SECRET: '{DISCORD_CLIENT_SECRET}'")
+print(f"DISCORD_REDIRECT_URI: '{DISCORD_REDIRECT_URI}'")
+print(f"SECRET_KEY: '{SECRET_KEY}'")
+
+# Discord API endpoints
+DISCORD_API_BASE = "https://discord.com/api/v10"
+DISCORD_OAUTH_URL = f"{DISCORD_API_BASE}/oauth2/authorize"
+DISCORD_TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
+DISCORD_USER_URL = f"{DISCORD_API_BASE}/users/@me"
+DISCORD_GUILDS_URL = f"{DISCORD_API_BASE}/users/@me/guilds"
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_discord_oauth_url() -> str:
+    """Generate Discord OAuth URL for user login."""
+    print(f"DEBUG in get_discord_oauth_url: DISCORD_CLIENT_ID = '{DISCORD_CLIENT_ID}'")
+    
+    params = {
+        "client_id": DISCORD_CLIENT_ID,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify guilds",
+    }
+    
+    # Convert params to URL query string
+    query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+    oauth_url = f"{DISCORD_OAUTH_URL}?{query_string}"
+    print(f"DEBUG: Generated OAuth URL: {oauth_url}")
+    
+    return oauth_url
+
+
+async def exchange_code_for_token(code: str) -> Dict[str, Any]:
+    """Exchange authorization code for access token."""
+    data = {
+        "client_id": DISCORD_CLIENT_ID,
+        "client_secret": DISCORD_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": DISCORD_REDIRECT_URI,
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(DISCORD_TOKEN_URL, data=data)
+        
+    if response.status_code != 200:
+        print(f"DEBUG: Token exchange failed: {response.status_code} - {response.text}")
+        raise HTTPException(
+            status_code=400, detail="Failed to exchange code for token")
+        
+    return response.json()
+
+
+async def get_discord_user(access_token: str) -> Dict[str, Any]:
+    """Get Discord user data."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(DISCORD_USER_URL, headers=headers)
+        
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=400, detail="Failed to get Discord user data")
+        
+    return response.json()
+
+
+async def get_user_guilds(access_token: str) -> List[Dict[str, Any]]:
+    """Get user's Discord guilds."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(DISCORD_GUILDS_URL, headers=headers)
+        
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=400, detail="Failed to get user guilds")
+        
+    return response.json()
+
+
+def create_access_token(user_data: Dict[str, Any]) -> str:
+    """Create JWT token for authenticated user."""
+    expire = datetime.utcnow() + timedelta(hours=24)
+    
+    to_encode = {
+        "sub": str(user_data["id"]),
+        "exp": expire,
+        "username": user_data["username"],
+        "avatar": user_data.get("avatar"),
+    }
+    
+    return jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
+
+
+def save_user_to_db(user_data: Dict[str, Any]) -> None:
+    """Save or update user in database."""
+    db = get_db_session()
+    try:
+        user = db.query(User).filter(User.id == user_data["id"]).first()
+        
+        if user:
+            # Update existing user
+            user.username = user_data["username"]
+            user.avatar = user_data.get("avatar")
+            user.updated_at = datetime.utcnow()
+        else:
+            # Create new user
+            user = User(
+                id=user_data["id"],
+                username=user_data["username"],
+                avatar=user_data.get("avatar"),
+            )
+            db.add(user)
+            
+        db.commit()
+    finally:
+        db.close()
+
+
+async def decode_token(token: str) -> Dict[str, Any]:
+    """Decode and validate JWT token."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=401, detail="Invalid authentication credentials")
+
+
+async def get_current_user(request: Request) -> Dict[str, Any]:
+    """Get current user from JWT token in cookie."""
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        raise HTTPException(
+            status_code=401, detail="Not authenticated")
+        
+    return await decode_token(token)
+
+
+async def require_auth(request: Request) -> Dict[str, Any]:
+    """Dependency for routes that require authentication."""
+    return await get_current_user(request)
+
+
+class DiscordUser(dict):
+    """Discord user object (for type hints)."""
+    id: str
+    username: str
+    avatar: Optional[str]
+
+
+def is_admin(user_id: str, guild_id: str) -> bool:
+    """Check if user is an admin in the specified server."""
+    # This would ideally query the Discord API, but for simplicity,
+    # we'll just check if the user exists in our database
+    db = get_db_session()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        return bool(user)
+    finally:
+        db.close()

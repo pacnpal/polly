@@ -20,6 +20,66 @@
             font-size: 0.875rem;
             color: #6c757d;
         }
+        .emoji-picker {
+            position: relative;
+            display: inline-block;
+        }
+        .emoji-picker-btn {
+            width: 42px;
+            height: 38px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border: 1px solid #ced4da;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.375rem;
+        }
+        .emoji-picker-btn:hover {
+            background: #e9ecef;
+        }
+        .emoji-picker-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            z-index: 1050;
+            background: white;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            padding: 0.5rem;
+            display: none;
+            width: 280px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .emoji-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 0.25rem;
+        }
+        .emoji-option {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 0.25rem;
+            font-size: 1.1rem;
+        }
+        .emoji-option:hover {
+            background: #e9ecef;
+        }
+        .emoji-search {
+            width: 100%;
+            margin-bottom: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -164,12 +224,26 @@
                                     <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                                     <div id="options-container">
                                         <div class="input-group mb-2">
-                                            <span class="input-group-text">🇦</span>
+                                            <div class="emoji-picker">
+                                                <div class="emoji-picker-btn" onclick="toggleEmojiPicker(this)" data-emoji="🇦">🇦</div>
+                                                <div class="emoji-picker-dropdown">
+                                                    <input type="text" class="emoji-search" placeholder="Search emojis..." onkeyup="filterEmojis(this)">
+                                                    <div class="emoji-grid"></div>
+                                                </div>
+                                            </div>
                                             <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
+                                            <input type="hidden" name="emoji1" value="🇦">
                                         </div>
                                         <div class="input-group mb-2">
-                                            <span class="input-group-text">🇧</span>
+                                            <div class="emoji-picker">
+                                                <div class="emoji-picker-btn" onclick="toggleEmojiPicker(this)" data-emoji="🇧">🇧</div>
+                                                <div class="emoji-picker-dropdown">
+                                                    <input type="text" class="emoji-search" placeholder="Search emojis..." onkeyup="filterEmojis(this)">
+                                                    <div class="emoji-grid"></div>
+                                                </div>
+                                            </div>
                                             <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
+                                            <input type="hidden" name="emoji2" value="🇧">
                                         </div>
                                     </div>
                                     <button type="button" class="btn btn-outline-primary btn-sm" onclick="addOption()">
@@ -268,6 +342,21 @@
         const maxOptions = 10;
         const pollEmojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'];
 
+        // Comprehensive emoji list organized by categories
+        const emojiCategories = {
+            'Faces & People': ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '🫠', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '🥲', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🫢', '🫣', '🤫', '🤔', '🫡', '🤐', '🤨', '😐', '😑', '😶', '🫥', '😏', '😒', '🙄', '😬', '🤥', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '🥸', '😎', '🤓', '🧐'],
+            'Animals & Nature': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐻‍❄️', '🐨', '🐯', '🦁', '🐮', '🐷', '🐽', '🐸', '🐵', '🙈', '🙉', '🙊', '🐒', '🐔', '🐧', '🐦', '🐤', '🐣', '🐥', '🦆', '🦅', '🦉', '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🪱', '🐛', '🦋', '🐌', '🐞', '🐜', '🪰', '🪲', '🪳', '🦟', '🦗', '🕷️', '🕸️', '🦂', '🐢', '🐍', '🦎', '🦖', '🦕', '🐙', '🦑', '🦐', '🦞', '🦀', '🐡', '🐠', '🐟', '🐬', '🐳', '🐋', '🦈', '🐊', '🐅', '🐆', '🦓', '🦍', '🦧', '🦣', '🐘', '🦛', '🦏', '🐪', '🐫', '🦒', '🦘', '🦬', '🐃', '🐂', '🐄', '🐎', '🐖', '🐏', '🐑', '🦙', '🐐', '🦌', '🐕', '🐩', '🦮', '🐕‍🦺', '🐈', '🐈‍⬛', '🪶', '🐓', '🦃', '🦤', '🦚', '🦜', '🦢', '🦩', '🕊️', '🐇', '🦝', '🦨', '🦡', '🦫', '🦦', '🦥', '🐁', '🐀', '🐿️', '🦔'],
+            'Food & Drink': ['🍏', '🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬', '🥒', '🌶️', '🫑', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔', '🍠', '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', '🧈', '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🦴', '🌭', '🍔', '🍟', '🍕', '🫓', '🥪', '🥙', '🧆', '🌮', '🌯', '🫔', '🥗', '🥘', '🫕', '🥫', '🍝', '🍜', '🍲', '🍛', '🍣', '🍱', '🥟', '🦪', '🍤', '🍙', '🍚', '🍘', '🍥', '🥠', '🥮', '🍢', '🍡', '🍧', '🍨', '🍦', '🥧', '🧁', '🍰', '🎂', '🍮', '🍭', '🍬', '🍫', '🍿', '🍩', '🍪', '🌰', '🥜', '🍯', '🥛', '🍼', '🫖', '☕', '🍵', '🧃', '🥤', '🧋', '🍶', '🍺', '🍻', '🥂', '🍷', '🥃', '🍸', '🍹', '🧉', '🍾'],
+            'Activities & Sports': ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸️', '🥌', '🎿', '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '⛹️', '🤺', '🤾', '🏌️', '🏇', '🧘', '🏄', '🏊', '🤽', '🚣', '🧗', '🚵', '🚴', '🏆', '🥇', '🥈', '🥉', '🏅', '🎖️', '🏵️', '🎗️'],
+            'Travel & Places': ['🚗', '🚕', '🚙', '🚌', '🚎', '🏎️', '🚓', '🚑', '🚒', '🚐', '🛻', '🚚', '🚛', '🚜', '🏍️', '🛵', '🚲', '🛴', '🛹', '🛼', '🚁', '🛸', '✈️', '🛩️', '🛫', '🛬', '🪂', '💺', '🚀', '🛰️', '🚢', '⛵', '🚤', '🛥️', '🛳️', '⛴️', '🚂', '🚃', '🚄', '🚅', '🚆', '🚇', '🚈', '🚉', '🚊', '🚝', '🚞', '🚋', '🚌', '🚍', '🚎', '🚐', '🚑', '🚒', '🚓', '🚔', '🚕', '🚖', '🚗', '🚘', '🚙', '🛻', '🚚', '🚛', '🚜', '🏎️', '🏍️', '🛵', '🦽', '🦼', '🛺', '🚲', '🛴', '🛹', '🛼', '⚓', '⛽', '🚨', '🚥', '🚦', '🛑', '🚧', '⛵', '🛶', '🚤', '🛥️', '🛳️', '⛴️', '🚢'],
+            'Objects & Symbols': ['⌚', '📱', '📲', '💻', '⌨️', '🖥️', '🖨️', '🖱️', '🖲️', '🕹️', '🗜️', '💽', '💾', '💿', '📀', '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📞', '☎️', '📟', '📠', '📺', '📻', '🎙️', '🎚️', '🎛️', '🧭', '⏱️', '⏲️', '⏰', '🕰️', '⌛', '⏳', '📡', '🔋', '🔌', '💡', '🔦', '🕯️', '🪔', '🧯', '🛢️', '💸', '💵', '💴', '💶', '💷', '🪙', '💰', '💳', '💎', '⚖️', '🪜', '🧰', '🔧', '🔨', '⚒️', '🛠️', '⛏️', '🪓', '🪚', '🔩', '⚙️', '🪤', '🧱', '⛓️', '🧲', '🔫', '💣', '🧨', '🪓', '🔪', '🗡️', '⚔️', '🛡️', '🚬', '⚰️', '🪦', '⚱️', '🏺', '🔮', '📿', '🧿', '💈', '⚗️', '🔭', '🔬', '🕳️', '🩹', '🩺', '💊', '💉', '🩸', '🧬', '🦠', '🧫', '🧪', '🌡️', '🧹', '🪠', '🧺', '🧻', '🚽', '🚰', '🚿', '🛁', '🛀', '🧴', '🧷', '🧸', '🧵', '🪡', '🧶', '🪢'],
+            'Nature & Weather': ['☀️', '🌤️', '⛅', '🌥️', '☁️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☃️', '⛄', '🌬️', '💨', '🌪️', '🌫️', '🌈', '☂️', '☔', '⚡', '❄️', '☃️', '⛄', '☄️', '🔥', '💧', '🌊', '🌍', '🌎', '🌏', '🌕', '🌖', '🌗', '🌘', '🌑', '🌒', '🌓', '🌔', '🌙', '🌛', '🌜', '🌚', '🌝', '🌞', '⭐', '🌟', '💫', '✨', '☀️', '🌤️', '⛅', '🌥️', '☁️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️'],
+            'Flags & Regional': ['🏁', '🚩', '🎌', '🏴', '🏳️', '🏳️‍🌈', '🏳️‍⚧️', '🏴‍☠️', '🇦🇨', '🇦🇩', '🇦🇪', '🇦🇫', '🇦🇬', '🇦🇮', '🇦🇱', '🇦🇲', '🇦🇴', '🇦🇶', '🇦🇷', '🇦🇸', '🇦🇹', '🇦🇺', '🇦🇼', '🇦🇽', '🇦🇿', '🇧🇦', '🇧🇧', '🇧🇩', '🇧🇪', '🇧🇫', '🇧🇬', '🇧🇭', '🇧🇮', '🇧🇯', '🇧🇱', '🇧🇲', '🇧🇳', '🇧🇴', '🇧🇶', '🇧🇷', '🇧🇸', '🇧🇹', '🇧🇻', '🇧🇼', '🇧🇾', '🇧🇿', '🇨🇦', '🇨🇨', '🇨🇩', '🇨🇫', '🇨🇬', '🇨🇭', '🇨🇮', '🇨🇰', '🇨🇱', '🇨🇲', '🇨🇳', '🇨🇴', '🇨🇵', '🇨🇷', '🇨🇺', '🇨🇻', '🇨🇼', '🇨🇽', '🇨🇾', '🇨🇿', '🇩🇪', '🇩🇬', '🇩🇯', '🇩🇰', '🇩🇲', '🇩🇴', '🇩🇿', '🇪🇦', '🇪🇨', '🇪🇪', '🇪🇬', '🇪🇭', '🇪🇷', '🇪🇸', '🇪🇹', '🇪🇺', '🇫🇮', '🇫🇯', '🇫🇰', '🇫🇲', '🇫🇴', '🇫🇷', '🇬🇦', '🇬🇧', '🇬🇩', '🇬🇪', '🇬🇫', '🇬🇬', '🇬🇭', '🇬🇮', '🇬🇱', '🇬🇲', '🇬🇳', '🇬🇵', '🇬🇶', '🇬🇷', '🇬🇸', '🇬🇹', '🇬🇺', '🇬🇼', '🇬🇾', '🇭🇰', '🇭🇲', '🇭🇳', '🇭🇷', '🇭🇹', '🇭🇺', '🇮🇨', '🇮🇩', '🇮🇪', '🇮🇱', '🇮🇲', '🇮🇳', '🇮🇴', '🇮🇶', '🇮🇷', '🇮🇸', '🇮🇹', '🇯🇪', '🇯🇲', '🇯🇴', '🇯🇵', '🇰🇪', '🇰🇬', '🇰🇭', '🇰🇮', '🇰🇲', '🇰🇳', '🇰🇵', '🇰🇷', '🇰🇼', '🇰🇾', '🇰🇿', '🇱🇦', '🇱🇧', '🇱🇨', '🇱🇮', '🇱🇰', '🇱🇷', '🇱🇸', '🇱🇹', '🇱🇺', '🇱🇻', '🇱🇾', '🇲🇦', '🇲🇨', '🇲🇩', '🇲🇪', '🇲🇫', '🇲🇬', '🇲🇭', '🇲🇰', '🇲🇱', '🇲🇲', '🇲🇳', '🇲🇴', '🇲🇵', '🇲🇶', '🇲🇷', '🇲🇸', '🇲🇹', '🇲🇺', '🇲🇻', '🇲🇼', '🇲🇽', '🇲🇾', '🇲🇿', '🇳🇦', '🇳🇨', '🇳🇪', '🇳🇫', '🇳🇬', '🇳🇮', '🇳🇱', '🇳🇴', '🇳🇵', '🇳🇷', '🇳🇺', '🇳🇿', '🇴🇲', '🇵🇦', '🇵🇪', '🇵🇫', '🇵🇬', '🇵🇭', '🇵🇰', '🇵🇱', '🇵🇲', '🇵🇳', '🇵🇷', '🇵🇸', '🇵🇹', '🇵🇼', '🇵🇾', '🇶🇦', '🇷🇪', '🇷🇴', '🇷🇸', '🇷🇺', '🇷🇼', '🇸🇦', '🇸🇧', '🇸🇨', '🇸🇩', '🇸🇪', '🇸🇬', '🇸🇭', '🇸🇮', '🇸🇯', '🇸🇰', '🇸🇱', '🇸🇲', '🇸🇳', '🇸🇴', '🇸🇷', '🇸🇸', '🇸🇹', '🇸🇻', '🇸🇽', '🇸🇾', '🇸🇿', '🇹🇦', '🇹🇨', '🇹🇩', '🇹🇫', '🇹🇬', '🇹🇭', '🇹🇯', '🇹🇰', '🇹🇱', '🇹🇲', '🇹🇳', '🇹🇴', '🇹🇷', '🇹🇹', '🇹🇻', '🇹🇼', '🇹🇿', '🇺🇦', '🇺🇬', '🇺🇲', '🇺🇳', '🇺🇸', '🇺🇾', '🇺🇿', '🇻🇦', '🇻🇨', '🇻🇪', '🇻🇬', '🇻🇮', '🇻🇳', '🇻🇺', '🇼🇫', '🇼🇸', '🇽🇰', '🇾🇪', '🇾🇹', '🇿🇦', '🇿🇲', '🇿🇼']
+        };
+
+        // Flatten all emojis for search
+        const allEmojis = Object.values(emojiCategories).flat();
+
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
             loadPolls();
@@ -276,7 +365,83 @@
             setDefaultTimes();
             updateCurrentTimeDisplay();
             setInterval(updateCurrentTimeDisplay, 1000);
+            initializeEmojiPickers();
         });
+
+        // Initialize emoji pickers
+        function initializeEmojiPickers() {
+            document.querySelectorAll('.emoji-picker-dropdown .emoji-grid').forEach(initializeEmojiGrid);
+        }
+
+        // Initialize emoji grid for a dropdown
+        function initializeEmojiGrid(grid) {
+            // Add popular emojis first
+            const popularEmojis = ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', '😍', '🥰', '😘', '😗', '😙', '😚', '🤔', '🤗', '🤭', '🤫', '🤔', '😎', '🤓', '🥳', '🤩', '😇', '😈', '👍', '👎', '👌', '🤞', '✌️', '🤟', '🤘', '👊', '✊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💪', '🦵', '🦶', '👂', '🦻', '👃', '👀', '👁️', '🧠', '🦷', '🦴', '👅', '👄', '💋', '🩸', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟'];
+            
+            // Add all emojis
+            const emojisToShow = [...new Set([...popularEmojis, ...allEmojis])];
+            
+            grid.innerHTML = emojisToShow.slice(0, 200).map(emoji => 
+                `<div class="emoji-option" onclick="selectEmoji(this, '${emoji}')">${emoji}</div>`
+            ).join('');
+        }
+
+        // Toggle emoji picker
+        function toggleEmojiPicker(button) {
+            const dropdown = button.nextElementSibling;
+            const isOpen = dropdown.style.display === 'block';
+            
+            // Close all other dropdowns
+            document.querySelectorAll('.emoji-picker-dropdown').forEach(d => d.style.display = 'none');
+            
+            if (!isOpen) {
+                dropdown.style.display = 'block';
+                const grid = dropdown.querySelector('.emoji-grid');
+                if (grid.children.length === 0) {
+                    initializeEmojiGrid(grid);
+                }
+            }
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function closeDropdown(e) {
+                if (!button.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                    document.removeEventListener('click', closeDropdown);
+                }
+            });
+        }
+
+        // Select emoji
+        function selectEmoji(element, emoji) {
+            const dropdown = element.closest('.emoji-picker-dropdown');
+            const button = dropdown.previousElementSibling;
+            const inputGroup = button.closest('.input-group');
+            const hiddenInput = inputGroup.querySelector('input[type="hidden"]');
+            
+            // Update button display and hidden input
+            button.textContent = emoji;
+            button.setAttribute('data-emoji', emoji);
+            if (hiddenInput) {
+                hiddenInput.value = emoji;
+            }
+            
+            // Close dropdown
+            dropdown.style.display = 'none';
+        }
+
+        // Filter emojis based on search
+        function filterEmojis(input) {
+            const searchTerm = input.value.toLowerCase();
+            const grid = input.nextElementSibling;
+            const emojis = grid.querySelectorAll('.emoji-option');
+            
+            emojis.forEach(emoji => {
+                const emojiChar = emoji.textContent;
+                const shouldShow = searchTerm === '' || emojiCategories['Faces & People'].includes(emojiChar) ||
+                                 allEmojis.includes(emojiChar);
+                emoji.style.display = shouldShow ? 'flex' : 'none';
+            });
+        }
 
         // Show different sections
         function showSection(sectionName) {
@@ -438,8 +603,15 @@
             const optionDiv = document.createElement('div');
             optionDiv.className = 'input-group mb-2';
             optionDiv.innerHTML = `
-                <span class="input-group-text">${pollEmojis[optionCount - 1]}</span>
+                <div class="emoji-picker">
+                    <div class="emoji-picker-btn" onclick="toggleEmojiPicker(this)" data-emoji="${pollEmojis[optionCount - 1]}">${pollEmojis[optionCount - 1]}</div>
+                    <div class="emoji-picker-dropdown">
+                        <input type="text" class="emoji-search" placeholder="Search emojis..." onkeyup="filterEmojis(this)">
+                        <div class="emoji-grid"></div>
+                    </div>
+                </div>
                 <input type="text" class="form-control" name="option${optionCount}" placeholder="Option ${optionCount}">
+                <input type="hidden" name="emoji${optionCount}" value="${pollEmojis[optionCount - 1]}">
                 <button type="button" class="btn btn-outline-danger" onclick="removeOption(this)">
                     <i class="fas fa-times"></i>
                 </button>

@@ -3,7 +3,7 @@ Polly Database Models
 SQLite database with SQLAlchemy ORM for polls, votes, and users.
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -26,18 +26,14 @@ class Poll(Base):
     name = Column(String(255), nullable=False)
     question = Column(Text, nullable=False)
     options_json = Column(Text, nullable=False)  # JSON array of poll options
-    emojis_json = Column(Text, nullable=True)  # JSON array of poll emojis
     image_path = Column(String(500), nullable=True)  # Path to uploaded image
     server_id = Column(String(50), nullable=False)  # Discord server ID
-    server_name = Column(String(255), nullable=True)  # Discord server name
     channel_id = Column(String(50), nullable=False)  # Discord channel ID
-    channel_name = Column(String(255), nullable=True)  # Discord channel name
     creator_id = Column(String(50), nullable=False)  # Discord user ID
-    message_id = Column(String(50), nullable=True)  # Discord message ID when posted
+    # Discord message ID when posted
+    message_id = Column(String(50), nullable=True)
     open_time = Column(DateTime, nullable=False)  # When poll opens
     close_time = Column(DateTime, nullable=False)  # When poll closes
-    timezone = Column(String(50), default="UTC")  # Timezone for scheduling
-    anonymous = Column(Boolean, default=False)  # Hide results until poll ends
     created_at = Column(DateTime, default=func.now())
     status = Column(String(20), default="scheduled")  # scheduled/active/closed
 
@@ -58,19 +54,6 @@ class Poll(Base):
         """Set poll options from Python list"""
         self.options_json = json.dumps(value)
 
-    @property
-    def emojis(self) -> List[str]:
-        """Get poll emojis as Python list"""
-        emojis_str = getattr(self, "emojis_json", None)
-        if emojis_str:
-            return json.loads(emojis_str)
-        return []
-
-    @emojis.setter
-    def emojis(self, value: List[str]) -> None:
-        """Set poll emojis from Python list"""
-        self.emojis_json = json.dumps(value)
-
     def get_results(self):
         """Get vote counts for each option"""
         results = {i: 0 for i in range(len(self.options))}
@@ -82,22 +65,6 @@ class Poll(Base):
     def get_total_votes(self):
         """Get total number of votes"""
         return len(self.votes)
-
-    def get_winner(self):
-        """Get winning option(s)"""
-        results = self.get_results()
-        if not results:
-            return None
-        
-        max_votes = max(results.values())
-        winners = [i for i, votes in results.items() if votes == max_votes]
-        return winners
-
-    def should_show_results(self):
-        """Determine if results should be shown based on anonymous setting and status"""
-        if not self.anonymous:
-            return True
-        return self.status == "closed"
 
 
 class Vote(Base):
@@ -118,40 +85,14 @@ class User(Base):
     """User model for web authentication"""
     __tablename__ = "users"
 
-    id = Column(String(50), primary_key=True)  # Discord user ID as primary key
+    id = Column(Integer, primary_key=True, index=True)
+    discord_id = Column(String(50), unique=True, nullable=False)
     username = Column(String(100), nullable=False)
-    avatar = Column(String(500), nullable=True)  # Avatar hash
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-
-class Guild(Base):
-    """Cache Discord guild information"""
-    __tablename__ = "guilds"
-
-    id = Column(String(50), primary_key=True)  # Discord guild ID
-    name = Column(String(255), nullable=False)
-    icon = Column(String(500), nullable=True)
-    owner_id = Column(String(50), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-
-class Channel(Base):
-    """Cache Discord channel information"""
-    __tablename__ = "channels"
-
-    id = Column(String(50), primary_key=True)  # Discord channel ID
-    guild_id = Column(String(50), ForeignKey("guilds.id"), nullable=False)
-    name = Column(String(255), nullable=False)
-    type = Column(String(50), nullable=False)  # text, voice, etc.
-    position = Column(Integer, default=0)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    # Relationship to guild
-    guild = relationship("Guild")
-
+    avatar_url = Column(String(500), nullable=True)
+    last_login = Column(DateTime, default=func.now())
 
 # Database utility functions
+
 
 def get_db():
     """Get database session"""

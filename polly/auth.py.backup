@@ -179,20 +179,20 @@ def save_user_to_db(user: DiscordUser):
     """Save or update user in database"""
     db = get_db_session()
     try:
-        db_user = db.query(User).filter(User.id == user.id).first()
+        db_user = db.query(User).filter(User.discord_id == user.id).first()
 
         if db_user:
             # Update existing user
             db_user.username = user.username
-            db_user.avatar = user.avatar
-            db_user.updated_at = datetime.utcnow()
+            db_user.avatar_url = user.avatar_url
+            db_user.last_login = datetime.utcnow()
         else:
             # Create new user
             db_user = User(
-                id=user.id,
+                discord_id=user.id,
                 username=user.username,
-                avatar=user.avatar
-                
+                avatar_url=user.avatar_url,
+                last_login=datetime.utcnow()
             )
             db.add(db_user)
 

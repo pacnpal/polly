@@ -1,119 +1,126 @@
 #!/bin/bash
 
-# Polly Discord Bot - Hetzner Deployment Script
-# Run this on your Hetzner Ubuntu server
+# Polly Deployment Script
+# This script sets up Nginx configuration and systemd service for Polly
 
 set -e
 
-echo "🚀 Deploying Polly Discord Bot to Hetzner..."
+echo "🚀 Deploying Polly Discord Poll Bot..."
 
-# Update system
-echo "📦 Updating system packages..."
-sudo apt update && sudo apt upgrade -y
+# Configuration
+DOMAIN="polly.pacnp.al"
+APP_DIR="/home/xyn0th/polly"
+NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
+NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
+SYSTEMD_DIR="/etc/systemd/system"
 
-# Install Docker and Docker Compose
-echo "🐳 Installing Docker..."
-sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-# Add user to docker group
-sudo usermod -aG docker $USER
-
-# Install Git
-echo "📥 Installing Git..."
-sudo apt install -y git
-
-# Clone repository
-echo "📂 Cloning Polly repository..."
-if [ -d "polly" ]; then
-    cd polly
-    git pull
+# Check if running as root for system operations
+if [[ $EUID -eq 0 ]]; then
+    echo "⚠️  Running as root. This script will set up system services."
+    SUDO=""
 else
-    git clone https://github.com/pacnpal/polly.git
-    cd polly
+    echo "ℹ️  Running as regular user. Will use sudo for system operations."
+    SUDO="sudo"
 fi
 
-# Create environment file
-echo "⚙️ Setting up environment..."
-if [ ! -f ".env" ]; then
-    cp .env.example .env
-    echo ""
-    echo "🔧 Please edit .env file with your Discord bot credentials:"
-    echo "   nano .env"
-    echo ""
-    echo "Required variables:"
-    echo "   DISCORD_TOKEN=your_bot_token"
-    echo "   DISCORD_CLIENT_ID=your_client_id"
-    echo "   DISCORD_CLIENT_SECRET=your_client_secret"
-    echo "   DISCORD_REDIRECT_URI=https://your-domain.com/auth/callback"
-    echo "   SECRET_KEY=your_random_secret_key"
-    echo ""
-    read -p "Press Enter after editing .env file..."
-fi
+# Create static directory if it doesn't exist
+echo "📁 Creating static directory..."
+mkdir -p "$APP_DIR/static"
+mkdir -p "$APP_DIR/templates"
 
-# Create data directories
-echo "📁 Creating data directories..."
-mkdir -p data static/uploads
-
-# Install Certbot for SSL
-echo "🔒 Installing Certbot for SSL..."
-sudo apt install -y certbot
-
-# Get domain name
+# Ask user which configuration to use
 echo ""
-read -p "Enter your domain name (e.g., polly.yourdomain.com): " DOMAIN_NAME
+echo "Which configuration would you like to deploy?"
+echo "1) Development (HTTP only)"
+echo "2) Production (HTTPS with SSL)"
+read -p "Enter choice [1-2]: " config_choice
 
-# Update nginx config with domain
-echo "🌐 Updating nginx configuration..."
-sed -i "s/your-domain.com/$DOMAIN_NAME/g" nginx.conf
+case $config_choice in
+    1)
+        CONFIG_FILE="nginx-dev.conf"
+        echo "📝 Using development configuration (HTTP only)"
+        ;;
+    2)
+        CONFIG_FILE="nginx.conf"
+        echo "📝 Using production configuration (HTTPS)"
+        ;;
+    *)
+        echo "❌ Invalid choice. Exiting."
+        exit 1
+        ;;
+esac
 
-# Get SSL certificate
-echo "🔐 Getting SSL certificate..."
-sudo certbot certonly --standalone -d $DOMAIN_NAME
+# Copy Nginx configuration
+echo "📋 Copying Nginx configuration..."
+$SUDO cp "$APP_DIR/$CONFIG_FILE" "$NGINX_SITES_AVAILABLE/$DOMAIN"
 
-# Build and start services
-echo "🏗️ Building and starting services..."
-docker compose build
-docker compose up -d
+# Enable the site
+echo "🔗 Enabling Nginx site..."
+$SUDO ln -sf "$NGINX_SITES_AVAILABLE/$DOMAIN" "$NGINX_SITES_ENABLED/$DOMAIN"
 
-# Setup auto-renewal for SSL
-echo "🔄 Setting up SSL auto-renewal..."
-echo "0 12 * * * /usr/bin/certbot renew --quiet && docker compose restart nginx" | sudo crontab -
+# Test Nginx configuration
+echo "✅ Testing Nginx configuration..."
+$SUDO nginx -t
 
-# Setup log rotation
-echo "📝 Setting up log rotation..."
-sudo tee /etc/logrotate.d/polly > /dev/null <<EOF
-/var/lib/docker/containers/*/*-json.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 644 root root
-}
-EOF
+# Set up systemd service
+echo "⚙️  Setting up systemd service..."
+$SUDO cp "$APP_DIR/polly.service" "$SYSTEMD_DIR/polly.service"
 
-# Show status
+echo ""
+echo "⚠️  IMPORTANT: Edit the systemd service file to add your actual Discord token:"
+echo "   $SUDO nano $SYSTEMD_DIR/polly.service"
+echo ""
+read -p "Have you updated the Discord token in the service file? [y/N]: " token_updated
+
+if [[ ! $token_updated =~ ^[Yy]$ ]]; then
+    echo "⏸️  Please update the Discord token in the service file and run this script again."
+    echo "   $SUDO nano $SYSTEMD_DIR/polly.service"
+    exit 1
+fi
+
+# Reload systemd and start services
+echo "🔄 Reloading systemd daemon..."
+$SUDO systemctl daemon-reload
+
+echo "🚀 Starting Polly service..."
+$SUDO systemctl enable polly
+$SUDO systemctl start polly
+
+echo "🔄 Restarting Nginx..."
+$SUDO systemctl restart nginx
+
+# Set up SSL certificates if production
+if [[ $config_choice -eq 2 ]]; then
+    echo ""
+    echo "🔒 SSL Certificate Setup"
+    echo "To complete the HTTPS setup, run:"
+    echo "   $SUDO apt install certbot python3-certbot-nginx"
+    echo "   $SUDO certbot --nginx -d $DOMAIN"
+    echo ""
+fi
+
+# Check service status
+echo "🏥 Checking service status..."
+echo ""
+echo "Polly service status:"
+$SUDO systemctl status polly --no-pager -l
+
+echo ""
+echo "Nginx status:"
+$SUDO systemctl status nginx --no-pager -l
+
 echo ""
 echo "✅ Deployment complete!"
 echo ""
-echo "🌐 Your Polly bot is now running at: https://$DOMAIN_NAME"
+echo "🌐 Your Polly bot should now be accessible at:"
+if [[ $config_choice -eq 1 ]]; then
+    echo "   http://$DOMAIN"
+else
+    echo "   https://$DOMAIN (after SSL setup)"
+fi
 echo ""
-echo "📊 Check status:"
-echo "   docker compose ps"
-echo "   docker compose logs -f polly"
-echo ""
-echo "🔧 Manage services:"
-echo "   docker compose restart"
-echo "   docker compose stop"
-echo "   docker compose up -d"
-echo ""
-echo "📱 Don't forget to:"
-echo "   1. Update Discord OAuth redirect URI to: https://$DOMAIN_NAME/auth/callback"
-echo "   2. Invite your bot to Discord servers"
-echo "   3. Test the web interface and Discord commands"
-echo ""
+echo "📊 Useful commands:"
+echo "   Check logs: $SUDO journalctl -u polly -f"
+echo "   Restart app: $SUDO systemctl restart polly"
+echo "   Restart nginx: $SUDO systemctl restart nginx"
+echo "   Check nginx config: $SUDO nginx -t"
