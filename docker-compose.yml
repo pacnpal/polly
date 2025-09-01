@@ -23,19 +23,5 @@ services:
       timeout: 10s
       retries: 3
 
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8088:8000"
-      - "4443:4443"
-    volumes:
-      - ./nginx/sites-available:/etc/nginx/sites-available
-      - ./nginx/sites-enabled:/etc/nginx/sites-enabled
-      - ./static:/var/www/static
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    depends_on:
-      - polly
-    restart: unless-stopped
-
 volumes:
   polly_db:
