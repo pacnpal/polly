@@ -282,39 +282,131 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
 
 async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
-    """Post a poll to its designated Discord channel"""
+    """Post a poll to its designated Discord channel with comprehensive debugging"""
+    logger.info(f"🚀 POSTING POLL {poll.id} - Starting post_poll_to_channel")
+    logger.debug(
+        f"Poll details: name='{poll.name}', server_id={poll.server_id}, channel_id={poll.channel_id}")
+
     try:
-        channel = bot.get_channel(int(poll.channel_id))
-        if not channel:
-            logger.error(
-                f"Channel {poll.channel_id} not found for poll {poll.id}")
+        # Debug bot status
+        if not bot:
+            logger.error(f"❌ POSTING POLL {poll.id} - Bot instance is None")
             return False
 
-        # Create embed
-        embed = await create_poll_embed(poll, show_results=poll.should_show_results())
+        if not bot.is_ready():
+            logger.error(f"❌ POSTING POLL {poll.id} - Bot is not ready")
+            return False
 
-        # Post message
+        logger.debug(
+            f"✅ POSTING POLL {poll.id} - Bot is ready, user: {bot.user}")
+
+        # Debug channel retrieval
+        logger.debug(
+            f"🔍 POSTING POLL {poll.id} - Looking for channel {poll.channel_id}")
+        channel = bot.get_channel(int(str(poll.channel_id)))
+
+        if not channel:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Channel {poll.channel_id} not found")
+            logger.debug(
+                f"Available channels: {[c.id for c in bot.get_all_channels()]}")
+            return False
+
+        # Ensure we have a text channel
+        if not isinstance(channel, discord.TextChannel):
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Channel {poll.channel_id} is not a text channel")
+            return False
+
+        logger.info(
+            f"✅ POSTING POLL {poll.id} - Found channel: {channel.name} ({channel.id})")
+
+        # Debug bot permissions in channel
+        bot_member = channel.guild.get_member(bot.user.id)
+        if not bot_member:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Bot not found as member in guild {channel.guild.name}")
+            return False
+
+        permissions = channel.permissions_for(bot_member)
+        logger.debug(
+            f"🔐 POSTING POLL {poll.id} - Bot permissions: send_messages={permissions.send_messages}, embed_links={permissions.embed_links}, add_reactions={permissions.add_reactions}")
+
+        if not permissions.send_messages:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Bot lacks send_messages permission in {channel.name}")
+            return False
+
+        if not permissions.embed_links:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Bot lacks embed_links permission in {channel.name}")
+            return False
+
+        if not permissions.add_reactions:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Bot lacks add_reactions permission in {channel.name}")
+            return False
+
+        # Create embed with debugging
+        logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
+        embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
+        logger.debug(f"✅ POSTING POLL {poll.id} - Embed created successfully")
+
+        # Post message with debugging
+        logger.info(
+            f"📤 POSTING POLL {poll.id} - Sending message to {channel.name}")
         message = await channel.send(embed=embed)
+        logger.info(
+            f"✅ POSTING POLL {poll.id} - Message sent successfully, ID: {message.id}")
 
-        # Add reactions for voting
+        # Add reactions for voting with debugging
+        logger.debug(
+            f"😀 POSTING POLL {poll.id} - Adding {len(poll.options)} reactions")
         for i in range(len(poll.options)):
-            if i < len(poll.emojis or POLL_EMOJIS):
-                await message.add_reaction(poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i])
+            emoji = poll.emojis[i] if i < len(
+                poll.emojis or []) else POLL_EMOJIS[i]
+            try:
+                await message.add_reaction(emoji)
+                logger.debug(
+                    f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}")
+            except Exception as reaction_error:
+                logger.error(
+                    f"❌ POSTING POLL {poll.id} - Failed to add reaction {emoji}: {reaction_error}")
 
         # Update poll with message ID
+        logger.debug(
+            f"💾 POSTING POLL {poll.id} - Updating database with message ID")
         db = get_db_session()
         try:
-            poll.message_id = str(message.id)
-            poll.status = "active"
-            db.merge(poll)
+            # Update poll in database
+            db.query(Poll).filter(Poll.id == poll.id).update({
+                Poll.message_id: str(message.id),
+                Poll.status: "active"
+            })
             db.commit()
-            logger.info(f"Posted poll {poll.id} to channel {channel.name}")
+            logger.info(
+                f"✅ POSTING POLL {poll.id} - Database updated, poll is now ACTIVE")
+            logger.info(
+                f"🎉 POSTING POLL {poll.id} - Successfully posted to channel {channel.name}")
             return True
+        except Exception as db_error:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Database update failed: {db_error}")
+            db.rollback()
+            return False
         finally:
             db.close()
 
+    except discord.Forbidden as e:
+        logger.error(
+            f"❌ POSTING POLL {poll.id} - Discord Forbidden error: {e}")
+        return False
+    except discord.HTTPException as e:
+        logger.error(f"❌ POSTING POLL {poll.id} - Discord HTTP error: {e}")
+        return False
     except Exception as e:
-        logger.error(f"Error posting poll {poll.id}: {e}")
+        logger.error(f"❌ POSTING POLL {poll.id} - Unexpected error: {e}")
+        logger.exception(f"Full traceback for poll {poll.id} posting error:")
         return False
 
 

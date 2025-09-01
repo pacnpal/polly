@@ -11,6 +11,7 @@ from fastapi.security import HTTPBearer
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
+import pytz
 from .database import get_db_session, User
 
 # Discord OAuth settings
@@ -124,7 +125,7 @@ async def get_discord_user(access_token: str) -> DiscordUser:
 
 def create_access_token(user: DiscordUser) -> str:
     """Create JWT access token"""
-    expire = datetime.utcnow() + timedelta(hours=24)
+    expire = datetime.now(pytz.UTC) + timedelta(hours=24)
     to_encode = {
         "sub": user.id,
         "username": user.username,
@@ -185,14 +186,14 @@ def save_user_to_db(user: DiscordUser):
             # Update existing user
             db_user.username = user.username
             db_user.avatar = user.avatar
-            db_user.updated_at = datetime.utcnow()
+            db_user.updated_at = datetime.now(pytz.UTC)
         else:
             # Create new user
             db_user = User(
                 id=user.id,
                 username=user.username,
                 avatar=user.avatar
-                
+
             )
             db.add(db_user)
 

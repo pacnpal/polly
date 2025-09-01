@@ -6,7 +6,6 @@ Updates the database schema to match the current models.
 
 import sqlite3
 import os
-from datetime import datetime
 
 
 DB_PATH = os.environ.get("POLLY_DB_PATH", "polly.db")
