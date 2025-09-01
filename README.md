@@ -14,6 +14,8 @@ A comprehensive Discord poll bot with advanced scheduling, admin-only access, an
 - Full-size image uploads (not tiny thumbnails)
 - Rich Discord embeds with real-time vote counts
 - Emoji-based voting system (🇦 🇧 🇨 🇩 🇪 🇫 🇬 🇭 🇮 🇯)
+- User preferences system - remembers last used server, channel, and timezone
+- Anonymous polls option to hide results until poll ends
 
 ### ⏰ Smart Scheduling
 - Calendar and time picker for precise scheduling
@@ -22,13 +24,21 @@ A comprehensive Discord poll bot with advanced scheduling, admin-only access, an
 - Background job processing with APScheduler
 
 ### 🌐 Web Dashboard
-- Beautiful Bootstrap-based interface
+- Beautiful Bootstrap-based interface with HTMX (NO JavaScript)
 - Create and manage polls from the web
+- Live updates without page refreshes
 - View poll history and results
 - Responsive design for mobile and desktop
 
+### 🕐 Timezone Support
+- US/Eastern timezone as default
+- Poll messages display times in selected timezone
+- Timezone-aware scheduling system
+- Support for major world timezones
+
 ### ⚡ Lightning Fast
 - Built with modern Python stack (FastAPI + discord.py)
+- HTMX for dynamic UI without JavaScript
 - SQLite database for zero-configuration setup
 - Single application deployment
 - Managed with `uv` for blazing fast package management
@@ -118,26 +128,35 @@ BASE_URL=http://localhost:8000
 ### Web Interface
 
 1. **Login** - Authenticate with Discord OAuth
-2. **Dashboard** - View and manage your polls
+2. **Dashboard** - View and manage your polls with live statistics
 3. **Create Poll** - Use the web form for advanced options:
-   - Named polls
-   - Custom scheduling
-   - Image uploads
-   - Server selection
+   - Named polls with custom scheduling
+   - Image uploads (up to 8MB)
+   - Server and channel selection
+   - Anonymous poll option
+   - Timezone selection
+4. **Poll Management** - Full CRUD operations:
+   - Edit scheduled polls before they start
+   - View detailed poll results and analytics
+   - Manually close active polls
+   - Delete polls (with automatic image cleanup)
 
 ### Poll Features
 
-- **Voting** - Users vote by clicking emoji reactions
-- **Real-time Results** - Poll embeds update with vote counts
-- **Auto-close** - Polls automatically close at scheduled time
-- **Admin Only** - Only server admins can create polls
+- **Live Vote Updates** - Poll embeds update in real-time as users vote
+- **Smart User Preferences** - Remembers your last used server, channel, and timezone
+- **Automatic Messaging** - Sends completion message to the same channel when polls end
+- **Comprehensive Logging** - Full audit trail of all poll operations
+- **Image Management** - Automatic cleanup of uploaded images when polls are deleted
+- **Status-Based Actions** - Different management options based on poll status (scheduled/active/closed)
+- **Admin Only** - Only server administrators can create and manage polls
 
 ## Architecture
 
 ### Technology Stack
 - **Backend**: Python 3.11+, FastAPI, discord.py
 - **Database**: SQLite with SQLAlchemy ORM
-- **Frontend**: Bootstrap 5, Vanilla JavaScript
+- **Frontend**: Bootstrap 5, HTMX (NO JavaScript)
 - **Scheduling**: APScheduler
 - **Authentication**: Discord OAuth2 + JWT
 - **Package Management**: uv
@@ -149,10 +168,17 @@ polly/
 │   ├── __init__.py
 │   ├── main.py            # Application entry point
 │   ├── database.py        # Database models
-│   └── auth.py            # Authentication logic
+│   ├── auth.py            # Authentication logic
+│   └── discord_utils.py   # Discord bot utilities
 ├── templates/             # HTML templates
 │   ├── index.html         # Landing page
-│   └── dashboard.html     # Admin dashboard
+│   ├── dashboard.html     # Admin dashboard (legacy)
+│   ├── dashboard_htmx.html # HTMX-powered dashboard
+│   └── htmx/              # HTMX partial templates
+│       ├── polls.html     # Poll listing
+│       ├── stats.html     # Dashboard stats
+│       ├── create_form.html # Poll creation form
+│       └── servers.html   # Server selection
 ├── static/uploads/        # Image storage
 ├── cline_docs/           # Project documentation
 ├── pyproject.toml        # Dependencies and config
@@ -162,6 +188,39 @@ polly/
 
 ## Development
 
+### Package Management with uv
+
+This project uses [uv](https://docs.astral.sh/uv/) for blazing fast Python package management. Here are the essential commands:
+
+```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install all dependencies (creates virtual environment automatically)
+uv sync
+
+# Add a new dependency
+uv add package-name
+
+# Add a development dependency
+uv add --dev package-name
+
+# Remove a dependency
+uv remove package-name
+
+# Update all dependencies
+uv sync --upgrade
+
+# Run commands in the virtual environment
+uv run python -m polly.main
+uv run uvicorn polly.main:app --reload
+
+# Activate the virtual environment manually (optional)
+source .venv/bin/activate  # Linux/Mac
+# or
+.venv\Scripts\activate     # Windows
+```
+
 ### Running in Development
 ```bash
 # Install dependencies
@@ -169,6 +228,9 @@ uv sync
 
 # Run with auto-reload
 uv run uvicorn polly.main:app --reload --host 0.0.0.0 --port 8000
+
+# Or run the main module directly
+uv run python -m polly.main
 ```
 
 ### Database Management
@@ -180,7 +242,49 @@ The SQLite database is automatically created and initialized on first run. No mi
 3. Update web interface in `templates/`
 4. Test with Discord bot commands
 
+### Development Workflow
+```bash
+# Start development server
+uv run uvicorn polly.main:app --reload
+
+# Run tests (when available)
+uv run pytest
+
+# Format code
+uv run black polly/
+uv run isort polly/
+
+# Type checking
+uv run mypy polly/
+```
+
 ## Deployment
+
+### Docker Deployment (Recommended)
+
+1. **Clone and Configure**
+   ```bash
+   git clone <repository-url>
+   cd polly
+   cp .env.example .env
+   # Edit .env with your Discord bot credentials
+   ```
+
+2. **Build and Run with Docker Compose**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Access the Application**
+   - Web interface: http://localhost:8000
+   - With nginx proxy: http://localhost (port 80)
+
+The Docker setup includes:
+- Polly application container
+- Nginx reverse proxy (optional)
+- Automatic restarts
+- Health checks
+- Volume mounts for data persistence
 
 ### Single Server Deployment
 1. **Setup Environment**

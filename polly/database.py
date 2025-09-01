@@ -6,10 +6,8 @@ SQLite database with SQLAlchemy ORM for polls, votes, and users.
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
-from datetime import datetime
-from typing import List, Dict, Any
+from typing import List
 import json
-import os
 
 # Database setup
 DATABASE_URL = "sqlite:///./polly.db"
@@ -123,6 +121,21 @@ class User(Base):
     avatar = Column(String(500), nullable=True)  # Avatar hash
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class UserPreference(Base):
+    """User preferences for poll creation"""
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(50), ForeignKey("users.id"), nullable=False)
+    last_server_id = Column(String(50), nullable=True)  # Last selected server
+    last_channel_id = Column(String(50), nullable=True)  # Last selected channel
+    default_timezone = Column(String(50), default="US/Eastern")  # Default timezone
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationship to user
+    user = relationship("User")
 
 
 class Guild(Base):

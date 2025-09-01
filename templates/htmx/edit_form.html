@@ -1,0 +1,149 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-edit me-2"></i>Edit Poll: {{ poll.name }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form hx-post="/htmx/poll/{{ poll.id }}/edit" hx-target="#main-content" hx-swap="innerHTML" enctype="multipart/form-data">
+                        <!-- Basic Information -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="name" class="form-label">Poll Name *</label>
+                                <input type="text" class="form-control" id="name" name="name" value="{{ poll.name }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="timezone" class="form-label">Timezone *</label>
+                                <select class="form-select" id="timezone" name="timezone" required>
+                                    {% for tz in timezones %}
+                                    <option value="{{ tz.name }}" {% if tz.name == poll.timezone %}selected{% endif %}>{{ tz.display }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="question" class="form-label">Question *</label>
+                            <textarea class="form-control" id="question" name="question" rows="3" required>{{ poll.question }}</textarea>
+                        </div>
+
+                        <!-- Server and Channel Selection -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="server_id" class="form-label">Server *</label>
+                                <select class="form-select" id="server_id" name="server_id" 
+                                        hx-get="/htmx/channels" hx-target="#channel_select" hx-trigger="change" required>
+                                    <option value="">Select a server...</option>
+                                    {% for guild in guilds %}
+                                    <option value="{{ guild.id }}" {% if guild.id == poll.server_id %}selected{% endif %}>{{ guild.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="channel_id" class="form-label">Channel *</label>
+                                <select class="form-select" id="channel_id" name="channel_id" required>
+                                    <option value="">Select a channel...</option>
+                                    {% for guild in guilds %}
+                                        {% if guild.id == poll.server_id %}
+                                            {% for channel in guild.channels %}
+                                            <option value="{{ channel.id }}" {% if channel.id == poll.channel_id %}selected{% endif %}>#{{ channel.name }}</option>
+                                            {% endfor %}
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Timing -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="open_time" class="form-label">Open Time *</label>
+                                <input type="datetime-local" class="form-control" id="open_time" name="open_time" value="{{ open_time }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="close_time" class="form-label">Close Time *</label>
+                                <input type="datetime-local" class="form-control" id="close_time" name="close_time" value="{{ close_time }}" required>
+                            </div>
+                        </div>
+
+                        <!-- Poll Options -->
+                        <div class="mb-3">
+                            <label class="form-label">Poll Options *</label>
+                            <div id="options-container">
+                                {% for i in range(poll.options|length) %}
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else "🇦" }}</span>
+                                    <input type="text" class="form-control" name="option{{ i + 1 }}" 
+                                           placeholder="Option {{ i + 1 }}" value="{{ poll.options[i] }}" required>
+                                    {% if i >= 2 %}
+                                    <button type="button" class="btn btn-outline-danger"
+                                            hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                                
+                                <!-- Add empty options if less than 10 -->
+                                {% if poll.options|length < 10 %}
+                                {% for i in range(poll.options|length, 10) %}
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">{{ ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"][i] }}</span>
+                                    <input type="text" class="form-control" name="option{{ i + 1 }}" placeholder="Option {{ i + 1 }}">
+                                    <button type="button" class="btn btn-outline-danger"
+                                            hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                    hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
+                                <i class="fas fa-plus me-1"></i>Add Option
+                            </button>
+                        </div>
+
+                        <!-- Image Upload -->
+                        <div class="mb-3">
+                            <label for="image" class="form-label">Poll Image (Optional)</label>
+                            {% if poll.image_path %}
+                            <div class="mb-2">
+                                <small class="text-muted">Current image:</small><br>
+                                <img src="/{{ poll.image_path }}" alt="Current poll image" class="img-thumbnail" style="max-height: 100px;">
+                            </div>
+                            {% endif %}
+                            <input type="file" class="form-control" id="image" name="image" accept="image/*">
+                            <div class="form-text">Upload a new image to replace the current one. Max size: 8MB. Formats: JPEG, PNG, GIF, WebP</div>
+                        </div>
+
+                        <!-- Anonymous Option -->
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="anonymous" name="anonymous" value="true" 
+                                       {% if poll.anonymous %}checked{% endif %}>
+                                <label class="form-check-label" for="anonymous">
+                                    Anonymous Poll (hide voter names)
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i>Update Poll
+                            </button>
+                            <button type="button" class="btn btn-secondary" 
+                                    hx-get="/htmx/polls" hx-target="#main-content" hx-swap="innerHTML">
+                                <i class="fas fa-times me-1"></i>Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

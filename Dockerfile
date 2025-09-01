@@ -12,6 +12,9 @@ COPY polly/ ./polly/
 COPY templates/ ./templates/
 COPY static/ ./static/
 
+# Ensure all template directories exist
+RUN mkdir -p templates/htmx
+
 # Install dependencies
 RUN uv sync --frozen
 

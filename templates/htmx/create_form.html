@@ -1,0 +1,116 @@
+<h2><i class="fas fa-plus me-2"></i>Create New Poll</h2>
+
+<form hx-post="/htmx/create-poll" hx-target="#main-content">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Poll Details</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="poll-name" class="form-label">Poll Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="poll-name" name="name" required>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="timezone" class="form-label">Timezone</label>
+                        <select class="form-select" id="timezone" name="timezone">
+                            {% for tz in timezones %}
+                            <option value="{{ tz.name }}" {% if tz.name == (user_preferences.default_timezone if user_preferences else "US/Eastern") %}selected{% endif %}>{{ tz.display }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="poll-question" class="form-label">Question <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="poll-question" name="question" rows="3" required></textarea>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
+                        <select class="form-select" id="server-select" name="server_id" required
+                                hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
+                                {% if user_preferences and user_preferences.last_server_id %}hx-trigger="load"{% endif %}>
+                            <option value="">Select a server...</option>
+                            {% for guild in guilds %}
+                            <option value="{{ guild.id }}" {% if user_preferences and guild.id|string == user_preferences.last_server_id|string %}selected{% endif %}>{{ guild.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="channel-select" class="form-label">Channel <span class="text-danger">*</span></label>
+                        <select class="form-select" id="channel-select" name="channel_id" required>
+                            <option value="">Select a server first...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Poll Options <span class="text-danger">*</span></label>
+                <div id="options-container">
+                    <div class="input-group mb-2">
+                        <span class="input-group-text">🇦</span>
+                        <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
+                    </div>
+                    <div class="input-group mb-2">
+                        <span class="input-group-text">🇧</span>
+                        <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm"
+                        hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
+                    <i class="fas fa-plus me-1"></i>Add Option
+                </button>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="open-time" class="form-label">Open Time <span class="text-danger">*</span></label>
+                        <input type="datetime-local" class="form-control" id="open-time" name="open_time" value="{{ open_time }}" required>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="close-time" class="form-label">Close Time <span class="text-danger">*</span></label>
+                        <input type="datetime-local" class="form-control" id="close-time" name="close_time" value="{{ close_time }}" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="poll-image" class="form-label">Poll Image (Optional)</label>
+                <input type="file" class="form-control" id="poll-image" name="image" accept="image/*">
+                <small class="text-muted">Upload an image to display with your poll (max 8MB)</small>
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true">
+                    <label class="form-check-label" for="anonymous-poll">
+                        <i class="fas fa-eye-slash me-1"></i>Anonymous Poll
+                        <small class="text-muted d-block">Hide results until poll ends</small>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-rocket me-1"></i>Create Poll
+            </button>
+            <button type="button" class="btn btn-outline-secondary ms-2"
+                    hx-get="/htmx/polls" hx-target="#main-content">
+                <i class="fas fa-arrow-left me-1"></i>Back to Polls
+            </button>
+        </div>
+    </div>
+</form>

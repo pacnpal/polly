@@ -17,6 +17,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "python-dotenv>=1.0.1",
     "pytz>=2025.2",
+    "aiofiles>=24.1.0",
 ]
 
 [build-system]
@@ -24,4 +25,6 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = [
+    "ruff>=0.12.11",
+]
