@@ -8,15 +8,12 @@ User=xyn0th
 Group=xyn0th
 WorkingDirectory=/home/xyn0th/polly
 Environment=PATH=/home/xyn0th/polly/.venv/bin
+EnvironmentFile=/home/xyn0th/polly/.env
 ExecStart=/usr/bin/uv run python -m polly.main
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-
-# Environment variables (add your actual values)
-Environment=DISCORD_TOKEN=your_discord_token_here
-Environment=DATABASE_URL=sqlite:///polly.db
 
 [Install]
 WantedBy=multi-user.target

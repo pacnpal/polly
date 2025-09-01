@@ -39,11 +39,12 @@ if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN environment variable is required")
 
 # Setup comprehensive logging
+os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('polly.log'),
+        logging.FileHandler('logs/polly.log'),
         logging.StreamHandler()
     ]
 )
@@ -153,7 +154,8 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
         # Parse the datetime string
         dt = datetime.fromisoformat(datetime_str)
 
-        # If datetime is naive, localize it to the specified timezone
+        # HTML datetime-local inputs are always naive and represent local time
+        # in the user's selected timezone, so we always localize to the specified timezone
         if dt.tzinfo is None:
             localized_dt = tz.localize(dt)
         else:
@@ -161,7 +163,13 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
             localized_dt = dt.astimezone(tz)
 
         # Convert to UTC for storage
-        return localized_dt.astimezone(pytz.UTC)
+        utc_dt = localized_dt.astimezone(pytz.UTC)
+
+        # Debug logging to help troubleshoot timezone issues
+        logger.debug(
+            f"Timezone parsing: '{datetime_str}' in '{timezone_str}' -> {localized_dt} -> {utc_dt}")
+
+        return utc_dt
 
     except Exception as e:
         logger.error(
