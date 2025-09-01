@@ -12,6 +12,7 @@ from .auth import (
     get_discord_user, create_access_token, require_auth, DiscordUser
 )
 from .database import init_database, get_db_session, Poll, Vote, POLL_EMOJIS, UserPreference
+from .bulletproof_operations import BulletproofPollOperations
 import uvicorn
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -87,8 +88,8 @@ async def cleanup_poll_images(poll_id: int) -> None:
     db = get_db_session()
     try:
         poll = db.query(Poll).filter(Poll.id == poll_id).first()
-        if poll and poll.image_path:
-            await cleanup_image(poll.image_path)
+        if poll and poll.image_path is not None:
+            await cleanup_image(str(poll.image_path))
     except Exception as e:
         logger.error(f"Error cleaning up poll {poll_id} images: {e}")
     finally:
@@ -279,12 +280,37 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
 
 
 def get_common_timezones() -> list:
-    """Get list of common timezones with display names"""
+    """Get comprehensive list of timezones with display names"""
     common_timezones = [
-        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "UTC",
-        "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo",
-        "Asia/Shanghai", "Australia/Sydney", "America/New_York",
-        "America/Chicago", "America/Denver", "America/Los_Angeles"
+        # North America
+        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
+        "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+        "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
+        "America/Mexico_City", "America/Sao_Paulo", "America/Argentina/Buenos_Aires",
+
+        # Europe
+        "UTC", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome",
+        "Europe/Madrid", "Europe/Amsterdam", "Europe/Brussels", "Europe/Vienna",
+        "Europe/Prague", "Europe/Warsaw", "Europe/Stockholm", "Europe/Helsinki",
+        "Europe/Oslo", "Europe/Copenhagen", "Europe/Zurich", "Europe/Athens",
+        "Europe/Istanbul", "Europe/Moscow",
+
+        # Asia Pacific
+        "Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Singapore",
+        "Asia/Bangkok", "Asia/Jakarta", "Asia/Manila", "Asia/Kuala_Lumpur",
+        "Asia/Mumbai", "Asia/Kolkata", "Asia/Dubai", "Asia/Tehran", "Asia/Jerusalem",
+        "Australia/Sydney", "Australia/Melbourne", "Australia/Perth", "Australia/Brisbane",
+        "Pacific/Auckland", "Pacific/Fiji", "Pacific/Honolulu",
+
+        # Africa
+        "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
+        "Africa/Casablanca", "Africa/Tunis", "Africa/Algiers",
+
+        # South America
+        "America/Lima", "America/Bogota", "America/Santiago", "America/Caracas",
+
+        # Other
+        "GMT", "EST", "CST", "MST", "PST"
     ]
 
     timezones = []
@@ -297,9 +323,12 @@ def get_common_timezones() -> list:
                 offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
             else:
                 offset_formatted = "UTC"
+
+            # Create a more readable display name
+            display_name = tz_name.replace('_', ' ').replace('/', ' / ')
             timezones.append({
                 "name": tz_name,
-                "display": f"{tz_name} ({offset_formatted})"
+                "display": f"{display_name} ({offset_formatted})"
             })
         except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
             logger.warning(f"Error formatting timezone {tz_name}: {e}")
@@ -308,6 +337,8 @@ def get_common_timezones() -> list:
                 "display": tz_name
             })
 
+    # Sort by offset for better UX
+    timezones.sort(key=lambda x: x['display'])
     return timezones
 
 
@@ -1065,9 +1096,9 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
 
 @app.post("/htmx/create-poll", response_class=HTMLResponse)
 async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
-    """Create a new poll via HTMX"""
+    """Create a new poll via HTMX using bulletproof operations"""
     logger.info(f"User {current_user.id} creating new poll")
-    image_path = None
+
     try:
         form_data = await request.form()
 
@@ -1080,53 +1111,15 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         close_time = safe_get_form_data(form_data, "close_time")
         timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
         anonymous = form_data.get("anonymous") == "true"
-
-        logger.debug(
-            f"Poll creation data: name={name}, question={question}, server_id={server_id}")
-
-        # Validate required fields
-        if not all([name, question, server_id, channel_id, open_time, close_time]):
-            logger.warning(
-                f"Missing required fields for poll creation by user {current_user.id}")
-            return """
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>All required fields must be filled
-            </div>
-            """
-
-        # Handle image upload with improved error handling
-        image_file = form_data.get("image")
-        is_valid, error_msg, content = await validate_image_file(image_file)
-
-        if not is_valid:
-            logger.warning(f"Image validation failed: {error_msg}")
-            return f"""
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>{error_msg}
-            </div>
-            """
-
-        if content and hasattr(image_file, 'filename') and image_file.filename:
-            image_path = await save_image_file(content, str(image_file.filename))
-            if not image_path:
-                logger.error("Failed to save image file")
-                return """
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>Failed to save image file
-                </div>
-                """
+        image_message_text = safe_get_form_data(
+            form_data, "image_message_text", "")
 
         # Get options
         options = []
-        emojis = []
         for i in range(1, 11):
             option = form_data.get(f"option{i}")
             if option:
                 options.append(str(option).strip())
-                default_emojis = ["🇦", "🇧", "🇨", "🇩",
-                                  "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                emojis.append(default_emojis[len(emojis)] if len(
-                    emojis) < 10 else "⭐")
 
         if len(options) < 2:
             logger.warning(f"Insufficient options provided: {len(options)}")
@@ -1139,49 +1132,17 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         # Parse times with timezone using safe parsing
         open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
         close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-
-        # Normalize timezone for storage
         timezone_str = validate_and_normalize_timezone(timezone_str)
 
         # Validate times
         now = datetime.now(pytz.UTC)
-
-        # Debug: Show system time vs Python time
-        import time
-        system_timestamp = time.time()
-        system_utc = datetime.fromtimestamp(system_timestamp, tz=pytz.UTC)
-        logger.debug("System time comparison:")
-        logger.debug(f"  Python datetime.now(UTC): {now}")
-        logger.debug(f"  System time.time() UTC: {system_utc}")
-        logger.debug(
-            f"  Difference: {(now - system_utc).total_seconds()} seconds")
-
-        # Don't allow scheduling polls in the past - require next minute boundary
-        # Since polls are scheduled at 00:00:00, we need the next full minute
         next_minute = now.replace(
             second=0, microsecond=0) + timedelta(minutes=1)
 
         if open_dt < next_minute:
-            # Convert times to user's timezone for display and debugging
             user_tz = pytz.timezone(timezone_str)
-            now_local = now.astimezone(user_tz)
             next_minute_local = next_minute.astimezone(user_tz)
-            requested_time_local = open_dt.astimezone(user_tz)
             suggested_time = next_minute_local.strftime('%I:%M %p')
-
-            logger.warning(
-                f"Attempt to schedule poll in the past: {open_dt} < {next_minute}")
-            logger.debug("Time validation details:")
-            logger.debug(f"  Current time UTC: {now}")
-            logger.debug(f"  Current time local ({user_tz}): {now_local}")
-            logger.debug(f"  Requested time UTC: {open_dt}")
-            logger.debug(
-                f"  Requested time local ({user_tz}): {requested_time_local}")
-            logger.debug(f"  Next minute boundary UTC: {next_minute}")
-            logger.debug(
-                f"  Next minute boundary local ({user_tz}): {next_minute_local}")
-            logger.debug(f"  Suggested time: {suggested_time}")
-
             return f"""
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later.
@@ -1189,117 +1150,97 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             """
 
         if close_dt <= open_dt:
-            logger.warning(
-                f"Invalid time range: open={open_dt}, close={close_dt}")
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Close time must be after open time
             </div>
             """
 
-        # Get server and channel names
-        guild = bot.get_guild(int(server_id))
-        channel = bot.get_channel(int(channel_id))
+        # Prepare poll data for bulletproof operations
+        poll_data = {
+            "name": name,
+            "question": question,
+            "options": options,
+            "server_id": server_id,
+            "channel_id": channel_id,
+            "open_time": open_dt,
+            "close_time": close_dt,
+            "timezone": timezone_str,
+            "anonymous": anonymous
+        }
 
-        if not guild or not channel:
-            logger.error(
-                f"Invalid guild or channel: guild={guild}, channel={channel}")
-            return """
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>Invalid server or channel
-            </div>
-            """
+        # Handle image file
+        image_file_data = None
+        image_filename = None
+        image_file = form_data.get("image")
+        if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and image_file.filename:
+            try:
+                image_file_data = await image_file.read()
+                image_filename = str(image_file.filename)
+            except Exception as e:
+                logger.error(f"Error reading image file: {e}")
+                return """
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Error reading image file
+                </div>
+                """
 
-        # Check user permissions
-        try:
-            member = await guild.fetch_member(int(current_user.id))
-        except discord.NotFound:
+        # Use bulletproof poll operations for creation
+        bulletproof_ops = BulletproofPollOperations(bot)
+
+        result = await bulletproof_ops.create_bulletproof_poll(
+            poll_data=poll_data,
+            user_id=current_user.id,
+            image_file=image_file_data,
+            image_filename=image_filename,
+            image_message_text=image_message_text if image_file_data else None
+        )
+
+        if not result["success"]:
             logger.warning(
-                f"User {current_user.id} not found in guild {guild.id}")
-            return """
+                f"Bulletproof poll creation failed: {result['error']}")
+            return f"""
             <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>User not found in server
+                <i class="fas fa-exclamation-triangle me-2"></i>{result['error']}
             </div>
             """
 
-        if not member or not user_has_admin_permissions(member):
-            logger.warning(
-                f"User {current_user.id} lacks permissions in guild {guild.id}")
-            return """
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>No permission to create polls in this server
-            </div>
-            """
+        poll_id = result["poll_id"]
+        logger.info(f"Created poll {poll_id} for user {current_user.id}")
 
-        # Create poll in database
-        db = get_db_session()
-        try:
-            poll = Poll(
-                name=name,
-                question=question,
-                options=options,
-                emojis=emojis,
-                image_path=image_path,
-                server_id=server_id,
-                server_name=guild.name,
-                channel_id=channel_id,
-                channel_name=getattr(channel, 'name', 'Unknown'),
-                creator_id=current_user.id,
-                open_time=open_dt,
-                close_time=close_dt,
-                timezone=timezone_str,
-                anonymous=anonymous,
-                status="scheduled"
-            )
-            db.add(poll)
-            db.commit()
-            db.refresh(poll)
-
-            logger.info(f"Created poll {poll.id} for user {current_user.id}")
-
-            # Schedule poll to open
-            if open_dt <= datetime.now(pytz.UTC):
-                # Open immediately
-                try:
-                    await post_poll_to_channel(bot, poll)
-                    logger.info(
-                        f"Posted poll {poll.id} to Discord immediately")
-                except Exception as discord_error:
-                    logger.warning(
-                        f"Failed to post poll {poll.id} to Discord immediately: {discord_error}")
-            else:
-                # Schedule opening
-                scheduler.add_job(
-                    post_poll_to_channel,
-                    DateTrigger(run_date=open_dt),
-                    args=[bot, poll],
-                    id=f"open_poll_{poll.id}"
-                )
-                logger.info(f"Scheduled poll {poll.id} to open at {open_dt}")
-
-            # Schedule poll to close
+        # Schedule poll to open and close
+        if open_dt <= datetime.now(pytz.UTC):
+            logger.info(f"Poll {poll_id} should be active immediately")
+        else:
+            # Schedule opening
             scheduler.add_job(
-                close_poll,
-                DateTrigger(run_date=close_dt),
-                args=[poll.id],
-                id=f"close_poll_{poll.id}"
+                post_poll_to_channel,
+                DateTrigger(run_date=open_dt),
+                args=[bot, poll_id],
+                id=f"open_poll_{poll_id}"
             )
-            logger.info(f"Scheduled poll {poll.id} to close at {close_dt}")
+            logger.info(f"Scheduled poll {poll_id} to open at {open_dt}")
 
-            # Save user preferences for next time
-            save_user_preferences(
-                current_user.id, server_id, channel_id, timezone_str)
+        # Schedule poll to close
+        scheduler.add_job(
+            close_poll,
+            DateTrigger(run_date=close_dt),
+            args=[poll_id],
+            id=f"close_poll_{poll_id}"
+        )
+        logger.info(f"Scheduled poll {poll_id} to close at {close_dt}")
 
-            # Return success message and redirect to polls view
-            return """
-            <div class="alert alert-success">
-                <i class="fas fa-check-circle me-2"></i>Poll created successfully! Redirecting to polls...
-            </div>
-            <div hx-get="/htmx/polls" hx-target="#main-content" hx-trigger="load delay:2s"></div>
-            """
+        # Save user preferences for next time
+        save_user_preferences(current_user.id, server_id,
+                              channel_id, timezone_str)
 
-        finally:
-            db.close()
+        # Return success message and redirect to polls view
+        return """
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>Poll created successfully! Redirecting to polls...
+        </div>
+        <div hx-get="/htmx/polls" hx-target="#main-content" hx-trigger="load delay:2s"></div>
+        """
 
     except Exception as e:
         logger.error(f"Error creating poll for user {current_user.id}: {e}")
@@ -1348,19 +1289,22 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         ]
 
         # Convert times to local timezone for editing
-        poll_timezone = poll.timezone or "UTC"
+        poll_timezone = str(poll.timezone) if poll.timezone else "UTC"
         tz = pytz.timezone(poll_timezone)
 
         # Ensure the stored times have timezone info (they should be UTC)
-        if poll.open_time.tzinfo is None:
-            open_time_utc = pytz.UTC.localize(poll.open_time)
+        open_time_value = poll.open_time
+        close_time_value = poll.close_time
+        
+        if open_time_value.tzinfo is None:
+            open_time_utc = pytz.UTC.localize(open_time_value)
         else:
-            open_time_utc = poll.open_time.astimezone(pytz.UTC)
+            open_time_utc = open_time_value.astimezone(pytz.UTC)
 
-        if poll.close_time.tzinfo is None:
-            close_time_utc = pytz.UTC.localize(poll.close_time)
+        if close_time_value.tzinfo is None:
+            close_time_utc = pytz.UTC.localize(close_time_value)
         else:
-            close_time_utc = poll.close_time.astimezone(pytz.UTC)
+            close_time_utc = close_time_value.astimezone(pytz.UTC)
 
         # Convert from UTC to the poll's timezone
         open_time_local = open_time_utc.astimezone(tz)
@@ -1446,6 +1390,8 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         close_time = safe_get_form_data(form_data, "close_time")
         timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
         anonymous = form_data.get("anonymous") == "true"
+        image_message_text = safe_get_form_data(
+            form_data, "image_message_text", "")
 
         # Validate required fields
         if not all([name, question, server_id, channel_id, open_time, close_time]):
@@ -1573,6 +1519,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         poll.options = options
         poll.emojis = emojis
         poll.image_path = new_image_path
+        poll.image_message_text = image_message_text if new_image_path else None
         poll.server_id = server_id
         poll.server_name = guild.name
         poll.channel_id = channel_id
@@ -1731,8 +1678,8 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             """
 
         # Clean up image
-        if poll.image_path:
-            await cleanup_image(poll.image_path)
+        if poll.image_path is not None:
+            await cleanup_image(str(poll.image_path))
 
         # Remove scheduled jobs
         try:

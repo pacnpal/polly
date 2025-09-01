@@ -114,6 +114,13 @@
                             <div class="form-text">Upload a new image to replace the current one. Max size: 8MB. Formats: JPEG, PNG, GIF, WebP</div>
                         </div>
 
+                        <!-- Image Message Text -->
+                        <div class="mb-3">
+                            <label for="image_message_text" class="form-label">Image Message Text (Optional)</label>
+                            <textarea class="form-control" id="image_message_text" name="image_message_text" rows="2" placeholder="Optional text to accompany the image message...">{{ poll.image_message_text or '' }}</textarea>
+                            <div class="form-text">This text will be posted with the image before the poll (only used if an image is uploaded)</div>
+                        </div>
+
                         <!-- Anonymous Option -->
                         <div class="mb-3">
                             <div class="form-check">

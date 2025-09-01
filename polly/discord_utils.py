@@ -347,6 +347,34 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
                 f"❌ POSTING POLL {poll.id} - Bot lacks add_reactions permission in {channel.name}")
             return False
 
+        # Post image message first if poll has an image
+        if poll.image_path and hasattr(poll, 'image_message_text'):
+            try:
+                logger.debug(f"🖼️ POSTING POLL {poll.id} - Posting image message first")
+                
+                # Prepare image message content
+                image_content = poll.image_message_text or ""
+                
+                # Create file object for Discord
+                import os
+                if os.path.exists(poll.image_path):
+                    with open(poll.image_path, 'rb') as f:
+                        file = discord.File(f, filename=os.path.basename(poll.image_path))
+                        
+                        # Post image message
+                        if image_content.strip():
+                            await channel.send(content=image_content, file=file)
+                            logger.info(f"✅ POSTING POLL {poll.id} - Posted image with text: '{image_content[:50]}...'")
+                        else:
+                            await channel.send(file=file)
+                            logger.info(f"✅ POSTING POLL {poll.id} - Posted image without text")
+                else:
+                    logger.warning(f"⚠️ POSTING POLL {poll.id} - Image file not found: {poll.image_path}")
+                    
+            except Exception as image_error:
+                logger.error(f"❌ POSTING POLL {poll.id} - Failed to post image: {image_error}")
+                # Continue with poll posting even if image fails
+
         # Create embed with debugging
         logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
         embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))

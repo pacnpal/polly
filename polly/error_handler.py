@@ -5,6 +5,7 @@ Comprehensive error handling, logging, and recovery mechanisms for bulletproof o
 
 import logging
 import asyncio
+import os
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Callable
 from functools import wraps
@@ -16,6 +17,123 @@ from .database import get_db_session, Poll, Vote
 from .validators import ValidationError
 
 logger = logging.getLogger(__name__)
+
+# Get bot owner ID from environment
+BOT_OWNER_ID = os.getenv("BOT_OWNER_ID")
+
+
+class BotOwnerNotifier:
+    """Handle DM notifications to bot owner on critical errors"""
+
+    @staticmethod
+    async def send_error_dm(bot: commands.Bot, error: Exception, operation: str, context: Optional[Dict[str, Any]] = None):
+        """Send DM to bot owner about critical errors"""
+        if not BOT_OWNER_ID or not bot or not bot.is_ready():
+            logger.warning(
+                "Cannot send bot owner DM: BOT_OWNER_ID not set or bot not ready")
+            return False
+
+        try:
+            owner_id = int(BOT_OWNER_ID)
+            owner = await bot.fetch_user(owner_id)
+
+            if not owner:
+                logger.error(f"Could not fetch bot owner with ID: {owner_id}")
+                return False
+
+            # Create error embed
+            embed = discord.Embed(
+                title="🚨 Critical Error Alert",
+                description=f"**Operation:** {operation}\n**Error:** {str(error)[:1000]}",
+                color=0xFF0000,
+                timestamp=datetime.now(pytz.UTC)
+            )
+
+            embed.add_field(
+                name="Error Type",
+                value=type(error).__name__,
+                inline=True
+            )
+
+            if context:
+                context_str = "\n".join(
+                    [f"**{k}:** {v}" for k, v in context.items() if v is not None])
+                if context_str:
+                    embed.add_field(
+                        name="Context",
+                        value=context_str[:1024],
+                        inline=False
+                    )
+
+            embed.set_footer(text="Polly Bot Error System")
+
+            # Send DM with retry logic
+            for attempt in range(3):
+                try:
+                    await owner.send(embed=embed)
+                    logger.info(
+                        f"Successfully sent error DM to bot owner for operation: {operation}")
+                    return True
+                except discord.Forbidden:
+                    logger.error(
+                        "Bot owner has DMs disabled or blocked the bot")
+                    return False
+                except discord.HTTPException as e:
+                    if attempt == 2:
+                        logger.error(
+                            f"Failed to send DM after 3 attempts: {e}")
+                        return False
+                    await asyncio.sleep(2 ** attempt)
+
+        except ValueError:
+            logger.error(f"Invalid BOT_OWNER_ID format: {BOT_OWNER_ID}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending bot owner DM: {e}")
+            return False
+
+        return False
+
+    @staticmethod
+    async def send_system_status_dm(bot: commands.Bot, status: str, details: Optional[Dict[str, Any]] = None):
+        """Send system status updates to bot owner"""
+        if not BOT_OWNER_ID or not bot or not bot.is_ready():
+            return False
+
+        try:
+            owner_id = int(BOT_OWNER_ID)
+            owner = await bot.fetch_user(owner_id)
+
+            if not owner:
+                return False
+
+            color = 0x00FF00 if "healthy" in status.lower(
+            ) or "recovered" in status.lower() else 0xFFAA00
+
+            embed = discord.Embed(
+                title="📊 System Status Update",
+                description=status,
+                color=color,
+                timestamp=datetime.now(pytz.UTC)
+            )
+
+            if details:
+                for key, value in details.items():
+                    embed.add_field(
+                        name=key.replace("_", " ").title(),
+                        value=str(value)[:1024],
+                        inline=True
+                    )
+
+            embed.set_footer(text="Polly Bot Status System")
+
+            await owner.send(embed=embed)
+            logger.info(f"Sent system status DM to bot owner: {status}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error sending system status DM: {e}")
+            return False
 
 
 class PollError(Exception):
@@ -127,35 +245,56 @@ class PollErrorHandler:
     """Centralized error handling for poll operations"""
 
     @staticmethod
-    def handle_poll_creation_error(e: Exception, poll_data: Dict[str, Any]) -> str:
-        """Handle poll creation errors with user-friendly messages"""
+    async def handle_poll_creation_error(e: Exception, poll_data: Dict[str, Any], bot: Optional[commands.Bot] = None) -> str:
+        """Handle poll creation errors with user-friendly messages and bot owner notifications"""
         poll_name = poll_data.get('name', 'Unknown')
+        context = {
+            "poll_name": poll_name,
+            "server_id": poll_data.get('server_id'),
+            "channel_id": poll_data.get('channel_id'),
+            "user_id": poll_data.get('user_id')
+        }
 
         if isinstance(e, ValidationError):
             logger.warning(
                 f"Validation error creating poll '{poll_name}': {e.message}")
             return f"❌ {e.message}"
 
+        # Critical errors that need bot owner notification
         if isinstance(e, discord.Forbidden):
             logger.error(
                 f"Discord permission error creating poll '{poll_name}': {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Permission Error", context)
             return "❌ Bot lacks permissions in the selected channel. Please check bot permissions."
 
         if isinstance(e, discord.HTTPException):
             logger.error(f"Discord API error creating poll '{poll_name}': {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Discord API Error", context)
             return "❌ Discord API error. Please try again in a moment."
 
         if isinstance(e, DatabaseError):
             logger.error(f"Database error creating poll '{poll_name}': {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Database Error", context)
             return "❌ Database error. Please try again."
 
+        # Unexpected errors always notify bot owner
         logger.error(f"Unexpected error creating poll '{poll_name}': {e}")
         logger.exception("Full traceback for poll creation error:")
+        if bot:
+            await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Unexpected Error", context)
         return "❌ An unexpected error occurred. Please try again."
 
     @staticmethod
-    def handle_vote_error(e: Exception, poll_id: int, user_id: str) -> str:
-        """Handle voting errors with user-friendly messages"""
+    async def handle_vote_error(e: Exception, poll_id: int, user_id: str, bot: Optional[commands.Bot] = None) -> str:
+        """Handle voting errors with user-friendly messages and bot owner notifications"""
+        context = {
+            "poll_id": poll_id,
+            "user_id": user_id
+        }
+
         if isinstance(e, ValidationError):
             logger.warning(
                 f"Validation error voting on poll {poll_id} by user {user_id}: {e.message}")
@@ -164,19 +303,33 @@ class PollErrorHandler:
         if isinstance(e, DatabaseError):
             logger.error(
                 f"Database error voting on poll {poll_id} by user {user_id}: {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Voting - Database Error", context)
             return "❌ Database error processing vote. Please try again."
 
+        # Unexpected voting errors notify bot owner
         logger.error(
             f"Unexpected error voting on poll {poll_id} by user {user_id}: {e}")
         logger.exception("Full traceback for voting error:")
+        if bot:
+            await BotOwnerNotifier.send_error_dm(bot, e, f"Voting - Unexpected Error", context)
         return "❌ An unexpected error occurred while voting. Please try again."
 
     @staticmethod
-    def handle_scheduler_error(e: Exception, poll_id: int, operation: str) -> bool:
-        """Handle scheduler errors and attempt recovery"""
+    async def handle_scheduler_error(e: Exception, poll_id: int, operation: str, bot: Optional[commands.Bot] = None) -> bool:
+        """Handle scheduler errors and attempt recovery with bot owner notifications"""
+        context = {
+            "poll_id": poll_id,
+            "operation": operation
+        }
+
         logger.error(
             f"Scheduler error for poll {poll_id} during {operation}: {e}")
         logger.exception("Full traceback for scheduler error:")
+
+        # Always notify bot owner of scheduler errors as they're critical
+        if bot:
+            await BotOwnerNotifier.send_error_dm(bot, e, f"Scheduler Error - {operation}", context)
 
         # Attempt to recover by rescheduling
         try:
@@ -202,13 +355,13 @@ class PollErrorHandler:
                         # Reschedule opening if needed
                         if poll.status == "scheduled" and poll.open_time is not None and poll.open_time > now:
                             from .discord_utils import post_poll_to_channel
-                            from .main import bot
+                            from .main import bot as main_bot
                             from apscheduler.triggers.date import DateTrigger
 
                             scheduler.add_job(
                                 post_poll_to_channel,
                                 DateTrigger(run_date=poll.open_time),
-                                args=[bot, poll],
+                                args=[main_bot, poll],
                                 id=f"open_poll_{poll.id}",
                                 replace_existing=True
                             )
@@ -230,12 +383,27 @@ class PollErrorHandler:
                             logger.info(
                                 f"Rescheduled closing for poll {poll_id}")
 
+                        # Notify bot owner of successful recovery
+                        if bot:
+                            await BotOwnerNotifier.send_system_status_dm(
+                                bot,
+                                f"✅ Scheduler recovered for poll {poll_id}",
+                                {"operation": operation, "poll_status": poll.status}
+                            )
                         return True
                 finally:
                     db.close()
         except Exception as recovery_error:
             logger.error(
                 f"Failed to recover from scheduler error for poll {poll_id}: {recovery_error}")
+            # Notify bot owner of failed recovery
+            if bot:
+                await BotOwnerNotifier.send_error_dm(
+                    bot,
+                    recovery_error,
+                    f"Scheduler Recovery Failed - {operation}",
+                    {"poll_id": poll_id, "original_error": str(e)}
+                )
 
         return False
 
@@ -363,10 +531,9 @@ class DatabaseHealthChecker:
         if not poll.server_id or not poll.channel_id:
             issues.append("Missing server or channel ID")
 
-        if not poll.open_time or not poll.close_time:
+        if poll.open_time is None or poll.close_time is None:
             issues.append("Missing timing information")
-
-        if poll.close_time <= poll.open_time:
+        elif poll.close_time <= poll.open_time:
             issues.append("Invalid time range")
 
         # Check vote integrity
@@ -432,7 +599,7 @@ def log_error_with_context(error: Exception, context: Dict[str, Any], operation:
         pass  # Don't let logging errors crash the system
 
 
-def handle_critical_error(error: Exception, operation: str, poll_id: int = None):
+async def handle_critical_error(error: Exception, operation: str, poll_id: Optional[int] = None, bot: Optional[commands.Bot] = None):
     """Handle critical errors that could crash the system"""
     context = {
         "operation": operation,
@@ -442,8 +609,11 @@ def handle_critical_error(error: Exception, operation: str, poll_id: int = None)
 
     log_error_with_context(error, context, operation)
 
+    # Send bot owner notification for critical errors
+    if bot:
+        await BotOwnerNotifier.send_error_dm(bot, error, f"Critical System Error - {operation}", context)
+
     # Could add additional critical error handling here:
-    # - Send alerts
     # - Create error reports
     # - Trigger recovery procedures
 
@@ -459,7 +629,7 @@ def critical_operation(operation_name: str):
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
-                handle_critical_error(e, operation_name)
+                await handle_critical_error(e, operation_name)
                 return None
 
         @wraps(func)
@@ -467,7 +637,9 @@ def critical_operation(operation_name: str):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                handle_critical_error(e, operation_name)
+                # For sync functions, we can't await, so we'll use asyncio.create_task
+                # or just log the error without bot notification
+                log_error_with_context(e, {"operation": operation_name}, operation_name)
                 return None
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper

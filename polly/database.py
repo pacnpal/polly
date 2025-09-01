@@ -26,6 +26,7 @@ class Poll(Base):
     options_json = Column(Text, nullable=False)  # JSON array of poll options
     emojis_json = Column(Text, nullable=True)  # JSON array of poll emojis
     image_path = Column(String(500), nullable=True)  # Path to uploaded image
+    image_message_text = Column(Text, nullable=True)  # Optional text for image message
     server_id = Column(String(50), nullable=False)  # Discord server ID
     server_name = Column(String(255), nullable=True)  # Discord server name
     channel_id = Column(String(50), nullable=False)  # Discord channel ID
