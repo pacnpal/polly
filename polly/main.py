@@ -1363,15 +1363,26 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             else:
                 # Schedule opening with bulletproof error handling
                 try:
-                    scheduler.add_job(
-                        post_poll_to_channel,
-                        DateTrigger(run_date=open_dt),
-                        args=[bot, poll_id],
-                        id=f"open_poll_{poll_id}",
-                        replace_existing=True
-                    )
-                    logger.info(
-                        f"Scheduled poll {poll_id} to open at {open_dt}")
+                    # Get the poll object for scheduling
+                    db = get_db_session()
+                    try:
+                        poll_obj = db.query(Poll).filter(
+                            Poll.id == poll_id).first()
+                        if poll_obj:
+                            scheduler.add_job(
+                                post_poll_to_channel,
+                                DateTrigger(run_date=open_dt),
+                                args=[bot, poll_obj],
+                                id=f"open_poll_{poll_id}",
+                                replace_existing=True
+                            )
+                            logger.info(
+                                f"Scheduled poll {poll_id} to open at {open_dt}")
+                        else:
+                            logger.error(
+                                f"Poll {poll_id} not found for scheduling")
+                    finally:
+                        db.close()
                 except Exception as schedule_error:
                     logger.error(
                         f"Failed to schedule poll opening: {schedule_error}")
@@ -1420,9 +1431,9 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         logger.exception("Full traceback for poll creation error:")
 
         # Use error handler for comprehensive error handling
+        poll_name = locals().get('name', 'Unknown')
         error_msg = await PollErrorHandler.handle_poll_creation_error(
-            e, {"name": name if 'name' in locals() else "Unknown",
-                "user_id": current_user.id}, bot
+            e, {"name": poll_name, "user_id": current_user.id}, bot
         )
         return f"""
         <div class="alert alert-danger">
@@ -1609,7 +1620,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 """
             # Clean up old image
             if poll.image_path:
-                await cleanup_image(poll.image_path)
+                await cleanup_image(str(poll.image_path))
 
         # Get options
         options = []
@@ -1858,7 +1869,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             """
 
         # Clean up image
-        if poll.image_path is not None:
+        if poll.image_path:
             await cleanup_image(str(poll.image_path))
 
         # Remove scheduled jobs
