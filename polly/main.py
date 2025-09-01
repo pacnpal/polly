@@ -717,13 +717,13 @@ async def get_create_form_htmx(request: Request, current_user: DiscordUser = Dep
                 "display": tz
             })
 
-    return templates.TemplateResponse("htmx/create_form.html", {
+    return templates.TemplateResponse("htmx/create_form_filepond.html", {
         "request": request,
         "guilds": user_guilds,
         "timezones": timezones,
         "open_time": open_time,
         "close_time": close_time,
-        "user_prefs": user_prefs
+        "user_preferences": user_prefs
     })
 
 
@@ -770,6 +770,54 @@ async def add_option_htmx():
 async def remove_option_htmx():
     """Remove a poll option for HTMX"""
     return ""  # Empty response removes the element
+
+
+@app.post("/htmx/upload-image")
+async def upload_image_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Handle FilePond image upload via HTMX"""
+    try:
+        form_data = await request.form()
+        image_file = form_data.get("filepond")
+
+        if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
+            return {"error": "No image file provided"}, 400
+
+        # Validate image file
+        is_valid, error_msg, content = await validate_image_file(image_file)
+
+        if not is_valid:
+            return {"error": error_msg}, 400
+
+        if content and image_file.filename:
+            image_path = await save_image_file(content, str(image_file.filename))
+            if image_path:
+                # Return the file path for FilePond to track
+                return {"success": True, "path": image_path}
+            else:
+                return {"error": "Failed to save image file"}, 500
+
+        return {"error": "No valid image content"}, 400
+
+    except Exception as e:
+        logger.error(f"Error in FilePond image upload: {e}")
+        return {"error": "Server error processing image"}, 500
+
+
+@app.delete("/htmx/remove-image")
+async def remove_image_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Handle FilePond image removal via HTMX"""
+    try:
+        form_data = await request.form()
+        image_path = form_data.get("path")
+
+        if image_path and await cleanup_image(image_path):
+            return {"success": True}
+        else:
+            return {"error": "Failed to remove image"}, 400
+
+    except Exception as e:
+        logger.error(f"Error removing image: {e}")
+        return {"error": "Server error removing image"}, 500
 
 
 @app.get("/htmx/servers", response_class=HTMLResponse)
@@ -918,7 +966,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         import time
         system_timestamp = time.time()
         system_utc = datetime.fromtimestamp(system_timestamp, tz=pytz.UTC)
-        logger.debug(f"System time comparison:")
+        logger.debug("System time comparison:")
         logger.debug(f"  Python datetime.now(UTC): {now}")
         logger.debug(f"  System time.time() UTC: {system_utc}")
         logger.debug(
@@ -939,7 +987,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
             logger.warning(
                 f"Attempt to schedule poll in the past: {open_dt} < {next_minute}")
-            logger.debug(f"Time validation details:")
+            logger.debug("Time validation details:")
             logger.debug(f"  Current time UTC: {now}")
             logger.debug(f"  Current time local ({user_tz}): {now_local}")
             logger.debug(f"  Requested time UTC: {open_dt}")
@@ -1165,7 +1213,7 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
                     "display": tz_name
                 })
 
-        return templates.TemplateResponse("htmx/edit_form.html", {
+        return templates.TemplateResponse("htmx/edit_form_filepond.html", {
             "request": request,
             "poll": poll,
             "guilds": user_guilds,
@@ -1288,7 +1336,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         import time
         system_timestamp = time.time()
         system_utc = datetime.fromtimestamp(system_timestamp, tz=pytz.UTC)
-        logger.debug(f"System time comparison (edit):")
+        logger.debug("System time comparison (edit):")
         logger.debug(f"  Python datetime.now(UTC): {now}")
         logger.debug(f"  System time.time() UTC: {system_utc}")
         logger.debug(

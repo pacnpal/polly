@@ -1,0 +1,370 @@
+<h2><i class="fas fa-plus me-2"></i>Create New Poll</h2>
+
+<form hx-post="/htmx/create-poll" hx-target="#main-content" hx-encoding="multipart/form-data">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Poll Details</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="poll-name" class="form-label">Poll Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="poll-name" name="name" required>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="timezone" class="form-label">Timezone</label>
+                        <select class="form-select" id="timezone" name="timezone">
+                            {% for tz in timezones %}
+                            <option value="{{ tz.name }}" {% if tz.name == (user_preferences.default_timezone if user_preferences else "US/Eastern") %}selected{% endif %}>{{ tz.display }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="poll-question" class="form-label">Question <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="poll-question" name="question" rows="3" required></textarea>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
+                        <select class="form-select" id="server-select" name="server_id" required
+                                hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
+                                {% if user_preferences and user_preferences.last_server_id %}hx-trigger="load"{% endif %}>
+                            <option value="">Select a server...</option>
+                            {% for guild in guilds %}
+                            <option value="{{ guild.id }}" {% if user_preferences and guild.id|string == user_preferences.last_server_id|string %}selected{% endif %}>{{ guild.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="channel-select" class="form-label">Channel <span class="text-danger">*</span></label>
+                        <select class="form-select" id="channel-select" name="channel_id" required>
+                            <option value="">Select a server first...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Poll Options <span class="text-danger">*</span></label>
+                <div id="options-container">
+                    <div class="input-group mb-2">
+                        <span class="input-group-text">🇦</span>
+                        <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
+                    </div>
+                    <div class="input-group mb-2">
+                        <span class="input-group-text">🇧</span>
+                        <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm"
+                        hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
+                    <i class="fas fa-plus me-1"></i>Add Option
+                </button>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="open-time" class="form-label">Open Time <span class="text-danger">*</span></label>
+                        <input type="datetime-local" class="form-control" id="open-time" name="open_time" value="{{ open_time }}" required>
+                        <div class="invalid-feedback" id="open-time-error"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="close-time" class="form-label">Close Time <span class="text-danger">*</span></label>
+                        <input type="datetime-local" class="form-control" id="close-time" name="close_time" value="{{ close_time }}" required>
+                        <div class="invalid-feedback" id="close-time-error"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FilePond Image Upload Section -->
+            <div class="mb-3">
+                <label for="poll-image" class="form-label">Poll Image (Optional)</label>
+                <div class="filepond-container">
+                    <input type="file" 
+                           class="filepond" 
+                           name="image" 
+                           id="poll-image"
+                           accept="image/*"
+                           data-max-file-size="8MB"
+                           data-max-files="1">
+                </div>
+                <small class="text-muted">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Upload an image to display with your poll (max 8MB). Supported formats: JPEG, PNG, GIF, WebP
+                </small>
+                <div id="image-preview" class="mt-2" style="display: none;">
+                    <div class="card" style="max-width: 300px;">
+                        <img id="preview-img" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Image preview">
+                        <div class="card-body p-2">
+                            <small class="text-muted">Image Preview</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true">
+                    <label class="form-check-label" for="anonymous-poll">
+                        <i class="fas fa-eye-slash me-1"></i>Anonymous Poll
+                        <small class="text-muted d-block">Hide results until poll ends</small>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-rocket me-1"></i>Create Poll
+            </button>
+            <button type="button" class="btn btn-outline-secondary ms-2"
+                    hx-get="/htmx/polls" hx-target="#main-content">
+                <i class="fas fa-arrow-left me-1"></i>Back to Polls
+            </button>
+        </div>
+    </div>
+</form>
+
+<!-- FilePond CSS and JS -->
+<link href="https://unpkg.com/filepond@^4/dist/filepond.css" rel="stylesheet" />
+<link href="https://unpkg.com/filepond-plugin-image-preview@^4/dist/filepond-plugin-image-preview.css" rel="stylesheet" />
+
+<script src="https://unpkg.com/filepond-plugin-file-validate-type@^1/dist/filepond-plugin-file-validate-type.js"></script>
+<script src="https://unpkg.com/filepond-plugin-file-validate-size@^2/dist/filepond-plugin-file-validate-size.js"></script>
+<script src="https://unpkg.com/filepond-plugin-image-preview@^4/dist/filepond-plugin-image-preview.js"></script>
+<script src="https://unpkg.com/filepond-plugin-image-validate-size@^1/dist/filepond-plugin-image-validate-size.js"></script>
+<script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Register FilePond plugins
+    FilePond.registerPlugin(
+        FilePondPluginFileValidateType,
+        FilePondPluginFileValidateSize,
+        FilePondPluginImagePreview,
+        FilePondPluginImageValidateSize
+    );
+
+    // Initialize FilePond
+    const inputElement = document.querySelector('.filepond');
+    const pond = FilePond.create(inputElement, {
+        acceptedFileTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+        maxFileSize: '8MB',
+        maxFiles: 1,
+        imagePreviewHeight: 170,
+        imageCropAspectRatio: '1:1',
+        imageResizeTargetWidth: 800,
+        imageResizeTargetHeight: 600,
+        imageResizeMode: 'contain',
+        imageResizeUpscale: false,
+        labelIdle: `
+            <div class="filepond-drop-area">
+                <i class="fas fa-cloud-upload-alt fa-2x mb-2 text-primary"></i>
+                <p class="mb-1"><strong>Drag & Drop</strong> your image here</p>
+                <p class="text-muted small">or <span class="filepond-label-action">Browse</span></p>
+            </div>
+        `,
+        labelFileProcessing: 'Uploading...',
+        labelFileProcessingComplete: 'Upload complete',
+        labelFileProcessingAborted: 'Upload cancelled',
+        labelFileProcessingError: 'Error during upload',
+        labelTapToCancel: 'tap to cancel',
+        labelTapToRetry: 'tap to retry',
+        labelTapToUndo: 'tap to undo',
+        labelButtonRemoveItem: 'Remove',
+        labelButtonAbortItemLoad: 'Abort',
+        labelButtonRetryItemLoad: 'Retry',
+        labelButtonAbortItemProcessing: 'Cancel',
+        labelButtonUndoItemProcessing: 'Undo',
+        labelButtonRetryItemProcessing: 'Retry',
+        labelButtonProcessItem: 'Upload',
+        server: {
+            process: {
+                url: '/htmx/upload-image',
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                onload: (response) => {
+                    const result = JSON.parse(response);
+                    if (result.success) {
+                        return result.path;
+                    } else {
+                        throw new Error(result.error || 'Upload failed');
+                    }
+                },
+                onerror: (response) => {
+                    const result = JSON.parse(response);
+                    throw new Error(result.error || 'Upload failed');
+                }
+            },
+            revert: {
+                url: '/htmx/remove-image',
+                method: 'DELETE'
+            }
+        },
+        onprocessfile: (error, file) => {
+            if (!error) {
+                // Show success message
+                showImageUploadStatus('success', 'Image uploaded successfully!');
+            }
+        },
+        onprocessfileerror: (error, file) => {
+            showImageUploadStatus('error', error.body || 'Failed to upload image');
+        },
+        onremovefile: (error, file) => {
+            if (!error) {
+                showImageUploadStatus('info', 'Image removed');
+            }
+        }
+    });
+
+    // Time validation
+    const openTimeInput = document.getElementById('open-time');
+    const closeTimeInput = document.getElementById('close-time');
+    const timezoneSelect = document.getElementById('timezone');
+    const openTimeError = document.getElementById('open-time-error');
+    const closeTimeError = document.getElementById('close-time-error');
+    const form = openTimeInput.closest('form');
+
+    function validateTimes() {
+        let isValid = true;
+
+        // Clear previous errors
+        openTimeInput.classList.remove('is-invalid');
+        closeTimeInput.classList.remove('is-invalid');
+        openTimeError.textContent = '';
+        closeTimeError.textContent = '';
+
+        if (openTimeInput.value && closeTimeInput.value) {
+            const openTime = new Date(openTimeInput.value);
+            const closeTime = new Date(closeTimeInput.value);
+            
+            // Check if close time is after open time (basic validation)
+            if (closeTime <= openTime) {
+                closeTimeInput.classList.add('is-invalid');
+                closeTimeError.textContent = 'Close time must be after open time';
+                isValid = false;
+            }
+        }
+
+        return isValid;
+    }
+
+    function showImageUploadStatus(type, message) {
+        // Create or update status message
+        let statusDiv = document.getElementById('image-upload-status');
+        if (!statusDiv) {
+            statusDiv = document.createElement('div');
+            statusDiv.id = 'image-upload-status';
+            statusDiv.className = 'mt-2';
+            document.querySelector('.filepond-container').appendChild(statusDiv);
+        }
+
+        const alertClass = type === 'success' ? 'alert-success' : 
+                          type === 'error' ? 'alert-danger' : 'alert-info';
+        
+        statusDiv.innerHTML = `
+            <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            const alert = statusDiv.querySelector('.alert');
+            if (alert) {
+                alert.classList.remove('show');
+                setTimeout(() => statusDiv.innerHTML = '', 150);
+            }
+        }, 3000);
+    }
+
+    // Validate on input change
+    openTimeInput.addEventListener('change', validateTimes);
+    closeTimeInput.addEventListener('change', validateTimes);
+
+    // Validate on form submission
+    form.addEventListener('submit', function(e) {
+        if (!validateTimes()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    });
+});
+</script>
+
+<style>
+.filepond--root {
+    margin-bottom: 0;
+}
+
+.filepond--drop-label {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.filepond-drop-area {
+    text-align: center;
+    padding: 2rem 1rem;
+    border: 2px dashed #dee2e6;
+    border-radius: 0.375rem;
+    background-color: #f8f9fa;
+    transition: all 0.2s ease;
+}
+
+.filepond--panel-root {
+    border-radius: 0.375rem;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+}
+
+.filepond--item-panel {
+    border-radius: 0.375rem;
+}
+
+.filepond--image-preview-wrapper {
+    border-radius: 0.375rem;
+}
+
+.filepond--drop-label.filepond--drop-label-active {
+    color: #0d6efd;
+}
+
+.filepond-drop-area:hover {
+    border-color: #0d6efd;
+    background-color: #f0f8ff;
+}
+
+.filepond--label-action {
+    color: #0d6efd;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.filepond--file-status-main {
+    color: #6c757d;
+}
+
+.filepond--file-status-sub {
+    color: #6c757d;
+}
+
+.filepond-container {
+    position: relative;
+}
+</style>
