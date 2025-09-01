@@ -427,14 +427,59 @@ initializeFilePond();
     transition: opacity 0.3s ease;
 }
 
-/* Ensure FilePond doesn't overflow */
+/* List and Item Styling - Fix for green bars */
 .filepond--list {
     position: relative;
-    overflow: visible;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .filepond--item {
     position: relative;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Fix for any stray elements that might cause green bars */
+.filepond--list::before,
+.filepond--list::after,
+.filepond--item::before,
+.filepond--item::after {
+    display: none !important;
+}
+
+/* Ensure no background colors leak through */
+.filepond--list-scroller {
+    overflow: hidden;
+    background: transparent;
+}
+
+/* Progress bar styling to prevent green bars */
+.filepond--file-action-button {
+    background: transparent;
+}
+
+.filepond--progress-indicator {
+    background: transparent;
+}
+
+/* Additional fixes to prevent any visual artifacts */
+.filepond--credits {
+    display: none !important;
+}
+
+.filepond--assistant {
+    display: none !important;
+}
+
+/* Ensure clean container boundaries */
+.card-body .filepond-container {
+    border: none;
+    background: transparent;
+    box-shadow: none;
 }
 
 /* Custom drop area styling */

@@ -9,9 +9,12 @@ import os
 from datetime import datetime
 
 
+DB_PATH = os.environ.get("POLLY_DB_PATH", "polly.db")
+
+
 def migrate_database():
     """Migrate database to current schema"""
-    db_path = "polly.db"
+    db_path = DB_PATH
 
     if not os.path.exists(db_path):
         print("Database file not found. Please run the application first to create it.")
@@ -65,7 +68,7 @@ def migrate_database():
             cursor.execute("""
                 CREATE TABLE user_preferences (
                     id INTEGER NOT NULL PRIMARY KEY,
-                    user_id VARCHAR(50) NOT NULL,
+                    default_timezone VARCHAR(50) DEFAULT 'UTC',
                     last_server_id VARCHAR(50),
                     last_channel_id VARCHAR(50),
                     default_timezone VARCHAR(50) DEFAULT 'US/Eastern',

@@ -11,6 +11,7 @@ COPY pyproject.toml uv.lock ./
 COPY polly/ ./polly/
 COPY templates/ ./templates/
 COPY static/ ./static/
+COPY migrate_database.py ./
 
 # Ensure all template directories exist
 RUN mkdir -p templates/htmx
@@ -18,11 +19,15 @@ RUN mkdir -p templates/htmx
 # Install dependencies
 RUN uv sync --frozen
 
-# Create uploads directory
-RUN mkdir -p static/uploads
+# Create necessary directories
+RUN mkdir -p static/uploads logs data
 
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["uv", "run", "python", "-m", "polly.main"]
+# Create entrypoint script
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
+# Run the application with migration
+CMD ["./docker-entrypoint.sh"]

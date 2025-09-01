@@ -5,6 +5,8 @@ services:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
@@ -14,6 +16,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./static/uploads:/app/static/uploads
+      - ./logs:/app/logs
+      - polly_db:/app
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -27,9 +31,14 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/sites-available:/etc/nginx/sites-available
+      - ./nginx/sites-enabled:/etc/nginx/sites-enabled
       - ./static:/var/www/static
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - polly
     restart: unless-stopped
+
+volumes:
+  polly_db:

@@ -320,13 +320,25 @@
 </script>
 
 <style>
-.filepond--root {
+/* FilePond Container Fixes */
+.filepond-container {
+    position: relative;
     margin-bottom: 1rem;
+    overflow: hidden;
+    clear: both;
+}
+
+/* FilePond Root Styling */
+.filepond--root {
+    margin-bottom: 0;
     font-family: inherit;
     position: relative;
     z-index: 1;
+    width: 100%;
+    max-width: 100%;
 }
 
+/* FilePond Panel Styling */
 .filepond--panel-root {
     border-radius: 0.375rem;
     background-color: #fff;
@@ -334,8 +346,10 @@
     min-height: 120px;
     max-height: 300px;
     position: relative;
+    overflow: hidden;
 }
 
+/* Drop Label Styling */
 .filepond--drop-label {
     color: #6c757d;
     font-size: 0.9rem;
@@ -347,24 +361,33 @@
     min-height: 120px;
     max-height: 120px;
     position: relative;
+    margin: 0;
+    padding: 0;
 }
 
 .filepond--drop-label label {
     cursor: pointer;
     text-align: center;
     padding: 1rem;
+    margin: 0;
+    width: 100%;
 }
 
+/* Item Panel Styling */
 .filepond--item-panel {
     border-radius: 0.375rem;
     position: relative;
+    overflow: hidden;
 }
 
+/* Image Preview Styling */
 .filepond--image-preview-wrapper {
     border-radius: 0.375rem;
     max-height: 200px;
+    overflow: hidden;
 }
 
+/* Hover Effects */
 .filepond--panel-root:hover {
     border-color: #0d6efd;
     background-color: #f8f9fa;
@@ -374,12 +397,14 @@
     color: #0d6efd;
 }
 
+/* Action Label Styling */
 .filepond--label-action {
     color: #0d6efd;
     text-decoration: underline;
     cursor: pointer;
 }
 
+/* File Status Styling */
 .filepond--file-status-main {
     color: #6c757d;
 }
@@ -388,20 +413,43 @@
     color: #6c757d;
 }
 
-.filepond-container {
-    position: relative;
-    margin-bottom: 1rem;
-    overflow: hidden;
-}
-
-/* Ensure FilePond doesn't overflow */
+/* List and Item Styling - Fix for green bars */
 .filepond--list {
     position: relative;
-    overflow: visible;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .filepond--item {
     position: relative;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Fix for any stray elements that might cause green bars */
+.filepond--list::before,
+.filepond--list::after,
+.filepond--item::before,
+.filepond--item::after {
+    display: none !important;
+}
+
+/* Ensure no background colors leak through */
+.filepond--list-scroller {
+    overflow: hidden;
+    background: transparent;
+}
+
+/* Progress bar styling to prevent green bars */
+.filepond--file-action-button {
+    background: transparent;
+}
+
+.filepond--progress-indicator {
+    background: transparent;
 }
 
 /* Custom drop area styling */
@@ -423,5 +471,21 @@
 .filepond-drop-area .filepond-label-action {
     color: #0d6efd;
     font-weight: 500;
+}
+
+/* Additional fixes to prevent any visual artifacts */
+.filepond--credits {
+    display: none !important;
+}
+
+.filepond--assistant {
+    display: none !important;
+}
+
+/* Ensure clean container boundaries */
+.card-body .filepond-container {
+    border: none;
+    background: transparent;
+    box-shadow: none;
 }
 </style>
