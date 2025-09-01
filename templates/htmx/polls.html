@@ -42,7 +42,16 @@
     </div>
 </div>
 
-{% if not polls %}
+{% if error %}
+<div class="col-12 text-center">
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+    </div>
+    <button class="btn btn-primary" hx-get="/htmx/polls" hx-target="#main-content">
+        <i class="fas fa-refresh me-1"></i>Retry
+    </button>
+</div>
+{% elif not polls %}
 <div class="col-12 text-center">
     <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
     <h5 class="text-muted">No polls yet</h5>

@@ -835,49 +835,164 @@ async def dashboard(request: Request, current_user: DiscordUser = Depends(requir
 # HTMX endpoints for dynamic content without JavaScript
 @app.get("/htmx/polls", response_class=HTMLResponse)
 async def get_polls_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
-    """Get user's polls as HTML for HTMX with optional filtering"""
+    """Get user's polls as HTML for HTMX with bulletproof error handling"""
     db = get_db_session()
     try:
-        query = db.query(Poll).filter(Poll.creator_id == current_user.id)
+        logger.debug(
+            f"Getting polls for user {current_user.id} with filter: {filter}")
 
-        # Apply filter if specified
-        if filter and filter in ['active', 'scheduled', 'closed']:
-            query = query.filter(Poll.status == filter)
+        # Query polls with error handling
+        try:
+            query = db.query(Poll).filter(Poll.creator_id == current_user.id)
 
-        polls = query.order_by(Poll.created_at.desc()).all()
+            # Apply filter if specified with validation
+            if filter and filter in ['active', 'scheduled', 'closed']:
+                query = query.filter(Poll.status == filter)
+                logger.debug(f"Applied filter: {filter}")
 
-        # Add status_class to each poll for template
+            polls = query.order_by(Poll.created_at.desc()).all()
+            logger.debug(
+                f"Found {len(polls)} polls for user {current_user.id}")
+
+        except Exception as e:
+            logger.error(
+                f"Database error querying polls for user {current_user.id}: {e}")
+            logger.exception("Full traceback for polls query error:")
+
+            # Return error template with empty polls list
+            return templates.TemplateResponse("htmx/polls.html", {
+                "request": request,
+                "polls": [],
+                "current_filter": filter,
+                "user_timezone": "US/Eastern",
+                "format_datetime_for_user": format_datetime_for_user,
+                "error": "Database error loading polls"
+            })
+
+        # Process polls with individual error handling
+        processed_polls = []
         for poll in polls:
-            poll.status_class = {
-                'active': 'bg-success',
-                'scheduled': 'bg-warning',
-                'closed': 'bg-danger'
-            }.get(poll.status, 'bg-secondary')
+            try:
+                # Add status_class to each poll for template
+                poll.status_class = {
+                    'active': 'bg-success',
+                    'scheduled': 'bg-warning',
+                    'closed': 'bg-danger'
+                }.get(poll.status, 'bg-secondary')
 
-        # Get user's timezone preference
-        user_prefs = get_user_preferences(current_user.id)
-        user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+                processed_polls.append(poll)
+                logger.debug(
+                    f"Processed poll {poll.id} with status {poll.status}")
+
+            except Exception as e:
+                logger.error(f"Error processing poll {poll.id}: {e}")
+                # Continue with other polls, skip this one
+
+        # Get user's timezone preference with error handling
+        try:
+            user_prefs = get_user_preferences(current_user.id)
+            user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+            logger.debug(f"User timezone: {user_timezone}")
+        except Exception as e:
+            logger.error(
+                f"Error getting user preferences for {current_user.id}: {e}")
+            user_timezone = "US/Eastern"
+
+        logger.debug(f"Returning {len(processed_polls)} processed polls")
 
         return templates.TemplateResponse("htmx/polls.html", {
             "request": request,
-            "polls": polls,
+            "polls": processed_polls,
             "current_filter": filter,
             "user_timezone": user_timezone,
             "format_datetime_for_user": format_datetime_for_user
         })
+
+    except Exception as e:
+        logger.error(
+            f"Critical error in get_polls_htmx for user {current_user.id}: {e}")
+        logger.exception("Full traceback for polls endpoint error:")
+
+        # Return error-safe template
+        return templates.TemplateResponse("htmx/polls.html", {
+            "request": request,
+            "polls": [],
+            "current_filter": filter,
+            "user_timezone": "US/Eastern",
+            "format_datetime_for_user": format_datetime_for_user,
+            "error": f"Error loading polls: {str(e)}"
+        })
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
 
 
 @app.get("/htmx/stats", response_class=HTMLResponse)
 async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
-    """Get dashboard stats as HTML for HTMX"""
+    """Get dashboard stats as HTML for HTMX with bulletproof error handling"""
     db = get_db_session()
     try:
-        polls = db.query(Poll).filter(Poll.creator_id == current_user.id).all()
+        logger.debug(f"Getting stats for user {current_user.id}")
+
+        # Query polls with error handling
+        try:
+            polls = db.query(Poll).filter(
+                Poll.creator_id == current_user.id).all()
+            logger.debug(
+                f"Found {len(polls)} polls for user {current_user.id}")
+        except Exception as e:
+            logger.error(
+                f"Database error querying polls for user {current_user.id}: {e}")
+            return templates.TemplateResponse("htmx/stats.html", {
+                "request": request,
+                "total_polls": 0,
+                "active_polls": 0,
+                "total_votes": 0,
+                "error": "Database error loading polls"
+            })
+
+        # Calculate stats with individual error handling
         total_polls = len(polls)
-        active_polls = len([p for p in polls if p.status == 'active'])
-        total_votes = sum(p.get_total_votes() for p in polls)
+
+        # Count active polls safely
+        try:
+            active_polls = len([p for p in polls if p.status == 'active'])
+            logger.debug(f"Found {active_polls} active polls")
+        except Exception as e:
+            logger.error(f"Error counting active polls: {e}")
+            active_polls = 0
+
+        # Calculate total votes with bulletproof handling
+        total_votes = 0
+        for poll in polls:
+            try:
+                # Use the Poll model's get_total_votes method
+                poll_votes = poll.get_total_votes()
+                if isinstance(poll_votes, int):
+                    total_votes += poll_votes
+                    logger.debug(f"Poll {poll.id} has {poll_votes} votes")
+                else:
+                    logger.warning(
+                        f"Poll {poll.id} get_total_votes returned non-int: {type(poll_votes)}")
+            except Exception as e:
+                logger.error(f"Error getting votes for poll {poll.id}: {e}")
+                # Try alternative method - direct vote count
+                try:
+                    vote_count = db.query(Vote).filter(
+                        Vote.poll_id == poll.id).count()
+                    if isinstance(vote_count, int):
+                        total_votes += vote_count
+                        logger.debug(
+                            f"Poll {poll.id} fallback vote count: {vote_count}")
+                except Exception as fallback_e:
+                    logger.error(
+                        f"Fallback vote count failed for poll {poll.id}: {fallback_e}")
+                    # Continue without adding votes for this poll
+
+        logger.debug(
+            f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}")
 
         return templates.TemplateResponse("htmx/stats.html", {
             "request": request,
@@ -885,8 +1000,25 @@ async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(r
             "active_polls": active_polls,
             "total_votes": total_votes
         })
+
+    except Exception as e:
+        logger.error(
+            f"Critical error in get_stats_htmx for user {current_user.id}: {e}")
+        logger.exception("Full traceback for stats error:")
+
+        # Return error-safe template
+        return templates.TemplateResponse("htmx/stats.html", {
+            "request": request,
+            "total_polls": 0,
+            "active_polls": 0,
+            "total_votes": 0,
+            "error": f"Error loading stats: {str(e)}"
+        })
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
 
 
 @app.get("/htmx/create-form", response_class=HTMLResponse)
@@ -1165,14 +1297,15 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             "open_time": open_dt,
             "close_time": close_dt,
             "timezone": timezone_str,
-            "anonymous": anonymous
+            "anonymous": anonymous,
+            "creator_id": current_user.id
         }
 
         # Handle image file
         image_file_data = None
         image_filename = None
         image_file = form_data.get("image")
-        if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and image_file.filename:
+        if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and getattr(image_file, 'filename', None):
             try:
                 image_file_data = await image_file.read()
                 image_filename = str(image_file.filename)
@@ -1198,36 +1331,77 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         if not result["success"]:
             logger.warning(
                 f"Bulletproof poll creation failed: {result['error']}")
+            # Use error handler for user-friendly messages
+            error_msg = await PollErrorHandler.handle_poll_creation_error(
+                Exception(result["error"]), poll_data, bot
+            )
             return f"""
             <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>{result['error']}
+                <i class="fas fa-exclamation-triangle me-2"></i>{error_msg}
             </div>
             """
 
         poll_id = result["poll_id"]
         logger.info(f"Created poll {poll_id} for user {current_user.id}")
 
-        # Schedule poll to open and close
-        if open_dt <= datetime.now(pytz.UTC):
-            logger.info(f"Poll {poll_id} should be active immediately")
-        else:
-            # Schedule opening
-            scheduler.add_job(
-                post_poll_to_channel,
-                DateTrigger(run_date=open_dt),
-                args=[bot, poll_id],
-                id=f"open_poll_{poll_id}"
-            )
-            logger.info(f"Scheduled poll {poll_id} to open at {open_dt}")
+        # Use bulletproof scheduling operations
+        try:
+            # Schedule poll to open and close with error handling
+            if open_dt <= datetime.now(pytz.UTC):
+                logger.info(f"Poll {poll_id} should be active immediately")
+                # Post immediately using bulletproof operations
+                db = get_db_session()
+                try:
+                    poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                    if poll:
+                        post_result = await post_poll_to_channel(bot, poll)
+                        if not post_result:
+                            logger.error(
+                                f"Failed to post poll {poll_id} immediately")
+                finally:
+                    db.close()
+            else:
+                # Schedule opening with bulletproof error handling
+                try:
+                    scheduler.add_job(
+                        post_poll_to_channel,
+                        DateTrigger(run_date=open_dt),
+                        args=[bot, poll_id],
+                        id=f"open_poll_{poll_id}",
+                        replace_existing=True
+                    )
+                    logger.info(
+                        f"Scheduled poll {poll_id} to open at {open_dt}")
+                except Exception as schedule_error:
+                    logger.error(
+                        f"Failed to schedule poll opening: {schedule_error}")
+                    await PollErrorHandler.handle_scheduler_error(
+                        schedule_error, poll_id, "poll_opening", bot
+                    )
 
-        # Schedule poll to close
-        scheduler.add_job(
-            close_poll,
-            DateTrigger(run_date=close_dt),
-            args=[poll_id],
-            id=f"close_poll_{poll_id}"
-        )
-        logger.info(f"Scheduled poll {poll_id} to close at {close_dt}")
+            # Schedule poll to close with bulletproof error handling
+            try:
+                scheduler.add_job(
+                    close_poll,
+                    DateTrigger(run_date=close_dt),
+                    args=[poll_id],
+                    id=f"close_poll_{poll_id}",
+                    replace_existing=True
+                )
+                logger.info(f"Scheduled poll {poll_id} to close at {close_dt}")
+            except Exception as schedule_error:
+                logger.error(
+                    f"Failed to schedule poll closure: {schedule_error}")
+                await PollErrorHandler.handle_scheduler_error(
+                    schedule_error, poll_id, "poll_closure", bot
+                )
+
+        except Exception as scheduling_error:
+            logger.error(
+                f"Critical scheduling error for poll {poll_id}: {scheduling_error}")
+            await PollErrorHandler.handle_scheduler_error(
+                scheduling_error, poll_id, "poll_scheduling", bot
+            )
 
         # Save user preferences for next time
         save_user_preferences(current_user.id, server_id,
@@ -1243,9 +1417,16 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
     except Exception as e:
         logger.error(f"Error creating poll for user {current_user.id}: {e}")
+        logger.exception("Full traceback for poll creation error:")
+
+        # Use error handler for comprehensive error handling
+        error_msg = await PollErrorHandler.handle_poll_creation_error(
+            e, {"name": name if 'name' in locals() else "Unknown",
+                "user_id": current_user.id}, bot
+        )
         return f"""
         <div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle me-2"></i>Error creating poll: {str(e)}
+            <i class="fas fa-exclamation-triangle me-2"></i>{error_msg}
         </div>
         """
 
