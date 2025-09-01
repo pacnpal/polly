@@ -41,6 +41,10 @@ async def update_guild_cache(bot: commands.Bot, guild: discord.Guild):
 
     except Exception as e:
         logger.error(f"Error updating guild cache: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Guild Cache Update", guild_id=str(
+            guild.id), guild_name=guild.name)
         db.rollback()
     finally:
         db.close()
@@ -71,6 +75,10 @@ async def update_channels_cache(bot: commands.Bot, guild: discord.Guild):
 
     except Exception as e:
         logger.error(f"Error updating channel cache: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Channel Cache Update", guild_id=str(
+            guild.id), guild_name=guild.name)
         db.rollback()
     finally:
         db.close()
@@ -134,6 +142,10 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
                             except Exception as e:
                                 logger.warning(
                                     f"Error checking permissions for channel {channel.name}: {e}")
+                                # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                from .error_handler import notify_error
+                                notify_error(
+                                    e, "Channel Permission Check", channel_name=channel.name, guild_name=guild.name)
                                 continue
 
                     # Sort channels by position
@@ -148,11 +160,19 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
                 except Exception as e:
                     logger.error(
                         f"Error processing guild data for {guild.name}: {e}")
+                    # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                    from .error_handler import notify_error
+                    notify_error(e, "Guild Data Processing",
+                                 guild_name=guild.name, user_id=user_id)
                     continue
 
         except Exception as e:
             logger.error(
                 f"Unexpected error processing guild {getattr(guild, 'name', 'Unknown')}: {e}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error
+            notify_error(e, "Guild Processing", guild_name=getattr(
+                guild, 'name', 'Unknown'), user_id=user_id)
             continue
 
     return user_guilds
@@ -347,37 +367,68 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
                 f"❌ POSTING POLL {poll.id} - Bot lacks add_reactions permission in {channel.name}")
             return False
 
+        # CRITICAL FIX: Refresh poll object from database to avoid DetachedInstanceError
+        # The poll object passed to this function may be detached from the database session
+        logger.debug(
+            f"🔄 POSTING POLL {poll.id} - Refreshing poll from database to avoid DetachedInstanceError")
+        db = get_db_session()
+        try:
+            fresh_poll = db.query(Poll).filter(Poll.id == poll.id).first()
+            if not fresh_poll:
+                logger.error(
+                    f"❌ POSTING POLL {poll.id} - Poll not found in database during refresh")
+                return False
+
+            # Use the fresh poll object for all operations
+            poll = fresh_poll
+            logger.debug(
+                f"✅ POSTING POLL {poll.id} - Successfully refreshed poll from database")
+        except Exception as refresh_error:
+            logger.error(
+                f"❌ POSTING POLL {poll.id} - Failed to refresh poll from database: {refresh_error}")
+            return False
+        finally:
+            db.close()
+
         # Post image message first if poll has an image
-        if poll.image_path and hasattr(poll, 'image_message_text'):
+        if poll.image_path is not None and str(poll.image_path).strip():
             try:
-                logger.debug(f"🖼️ POSTING POLL {poll.id} - Posting image message first")
-                
-                # Prepare image message content
-                image_content = poll.image_message_text or ""
-                
+                logger.debug(
+                    f"🖼️ POSTING POLL {poll.id} - Posting image message first")
+
+                # Prepare image message content - ensure we get the actual string value
+                image_content = str(
+                    poll.image_message_text) if poll.image_message_text else ""
+
                 # Create file object for Discord
                 import os
-                if os.path.exists(poll.image_path):
-                    with open(poll.image_path, 'rb') as f:
-                        file = discord.File(f, filename=os.path.basename(poll.image_path))
-                        
+                image_path_str = str(poll.image_path)
+                if os.path.exists(image_path_str):
+                    with open(image_path_str, 'rb') as f:
+                        file = discord.File(
+                            f, filename=os.path.basename(image_path_str))
+
                         # Post image message
                         if image_content.strip():
                             await channel.send(content=image_content, file=file)
-                            logger.info(f"✅ POSTING POLL {poll.id} - Posted image with text: '{image_content[:50]}...'")
+                            logger.info(
+                                f"✅ POSTING POLL {poll.id} - Posted image with text: '{image_content[:50]}...'")
                         else:
                             await channel.send(file=file)
-                            logger.info(f"✅ POSTING POLL {poll.id} - Posted image without text")
+                            logger.info(
+                                f"✅ POSTING POLL {poll.id} - Posted image without text")
                 else:
-                    logger.warning(f"⚠️ POSTING POLL {poll.id} - Image file not found: {poll.image_path}")
-                    
+                    logger.warning(
+                        f"⚠️ POSTING POLL {poll.id} - Image file not found: {image_path_str}")
+
             except Exception as image_error:
-                logger.error(f"❌ POSTING POLL {poll.id} - Failed to post image: {image_error}")
+                logger.error(
+                    f"❌ POSTING POLL {poll.id} - Failed to post image: {image_error}")
                 # Continue with poll posting even if image fails
 
         # Create embed with debugging
         logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
-        embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
+        embed = await create_poll_embed(poll, show_results=poll.should_show_results())
         logger.debug(f"✅ POSTING POLL {poll.id} - Embed created successfully")
 
         # Post message with debugging
@@ -428,13 +479,56 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
     except discord.Forbidden as e:
         logger.error(
             f"❌ POSTING POLL {poll.id} - Discord Forbidden error: {e}")
+        # Send DM notification to bot owner about permission error
+        try:
+            from .error_handler import BotOwnerNotifier
+            await BotOwnerNotifier.send_error_dm(
+                bot, e, "Poll Posting - Permission Error",
+                {
+                    "poll_id": poll.id,
+                    "poll_name": poll.name,
+                    "server_id": str(poll.server_id),
+                    "channel_id": str(poll.channel_id)
+                }
+            )
+        except Exception as dm_error:
+            logger.error(f"Failed to send DM notification: {dm_error}")
         return False
     except discord.HTTPException as e:
         logger.error(f"❌ POSTING POLL {poll.id} - Discord HTTP error: {e}")
+        # Send DM notification to bot owner about HTTP error
+        try:
+            from .error_handler import BotOwnerNotifier
+            await BotOwnerNotifier.send_error_dm(
+                bot, e, "Poll Posting - Discord API Error",
+                {
+                    "poll_id": poll.id,
+                    "poll_name": poll.name,
+                    "server_id": str(poll.server_id),
+                    "channel_id": str(poll.channel_id)
+                }
+            )
+        except Exception as dm_error:
+            logger.error(f"Failed to send DM notification: {dm_error}")
         return False
     except Exception as e:
         logger.error(f"❌ POSTING POLL {poll.id} - Unexpected error: {e}")
         logger.exception(f"Full traceback for poll {poll.id} posting error:")
+        # Send DM notification to bot owner about unexpected error
+        try:
+            from .error_handler import BotOwnerNotifier
+            await BotOwnerNotifier.send_error_dm(
+                bot, e, "Poll Posting - Unexpected Error",
+                {
+                    "poll_id": poll.id,
+                    "poll_name": poll.name,
+                    "server_id": str(poll.server_id),
+                    "channel_id": str(poll.channel_id),
+                    "error_type": type(e).__name__
+                }
+            )
+        except Exception as dm_error:
+            logger.error(f"Failed to send DM notification: {dm_error}")
         return False
 
 
@@ -444,12 +538,16 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
         if not poll.message_id:
             return False
 
-        channel = bot.get_channel(int(poll.channel_id))
+        channel = bot.get_channel(int(str(poll.channel_id)))
         if not channel:
             return False
 
+        # Ensure we have a text channel
+        if not isinstance(channel, discord.TextChannel):
+            return False
+
         try:
-            message = await channel.fetch_message(int(poll.message_id))
+            message = await channel.fetch_message(int(str(poll.message_id)))
         except discord.NotFound:
             logger.warning(f"Poll message {poll.message_id} not found")
             return False
@@ -463,14 +561,21 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
 
     except Exception as e:
         logger.error(f"Error updating poll message {poll.id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Message Update", poll_id=poll.id)
         return False
 
 
 async def post_poll_results(bot: commands.Bot, poll: Poll):
     """Post final results when poll closes"""
     try:
-        channel = bot.get_channel(int(poll.channel_id))
+        channel = bot.get_channel(int(str(poll.channel_id)))
         if not channel:
+            return False
+
+        # Ensure we have a text channel
+        if not isinstance(channel, discord.TextChannel):
             return False
 
         # Create results embed
@@ -486,6 +591,9 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
 
     except Exception as e:
         logger.error(f"Error posting poll results {poll.id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Results Posting", poll_id=poll.id)
         return False
 
 

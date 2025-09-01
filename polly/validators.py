@@ -288,6 +288,9 @@ class PollValidator:
             raise
         except Exception as e:
             logger.error(f"Unexpected validation error: {e}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error
+            notify_error(e, "Poll Data Validation", poll_data=poll_data)
             raise ValidationError(f"Validation failed: {str(e)}")
 
 
@@ -331,6 +334,10 @@ class VoteValidator:
             return existing_vote
         except Exception as e:
             logger.error(f"Error checking existing vote: {e}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error
+            notify_error(e, "Existing Vote Check",
+                         poll_id=poll_id, user_id=user_id)
             return None
         finally:
             db.close()
@@ -389,6 +396,9 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         return str_value
     except Exception as e:
         logger.warning(f"Error extracting form data for key '{key}': {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Safe Form Data Extraction", key=key, default=default)
         return default
 
 
@@ -406,4 +416,8 @@ def validate_discord_permissions(member, required_permissions: List[str] = None)
         return any(getattr(permissions, perm, False) for perm in required_permissions)
     except Exception as e:
         logger.error(f"Error checking Discord permissions: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Discord Permission Validation",
+                     required_permissions=required_permissions)
         return False

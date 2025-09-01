@@ -265,26 +265,26 @@ class PollErrorHandler:
             logger.error(
                 f"Discord permission error creating poll '{poll_name}': {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Permission Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Poll Creation - Permission Error", context)
             return "❌ Bot lacks permissions in the selected channel. Please check bot permissions."
 
         if isinstance(e, discord.HTTPException):
             logger.error(f"Discord API error creating poll '{poll_name}': {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Discord API Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Poll Creation - Discord API Error", context)
             return "❌ Discord API error. Please try again in a moment."
 
         if isinstance(e, DatabaseError):
             logger.error(f"Database error creating poll '{poll_name}': {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Database Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Poll Creation - Database Error", context)
             return "❌ Database error. Please try again."
 
         # Unexpected errors always notify bot owner
         logger.error(f"Unexpected error creating poll '{poll_name}': {e}")
         logger.exception("Full traceback for poll creation error:")
         if bot:
-            await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Creation - Unexpected Error", context)
+            await BotOwnerNotifier.send_error_dm(bot, e, "Poll Creation - Unexpected Error", context)
         return "❌ An unexpected error occurred. Please try again."
 
     @staticmethod
@@ -304,7 +304,7 @@ class PollErrorHandler:
             logger.error(
                 f"Database error voting on poll {poll_id} by user {user_id}: {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Voting - Database Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Voting - Database Error", context)
             return "❌ Database error processing vote. Please try again."
 
         # Unexpected voting errors notify bot owner
@@ -312,7 +312,7 @@ class PollErrorHandler:
             f"Unexpected error voting on poll {poll_id} by user {user_id}: {e}")
         logger.exception("Full traceback for voting error:")
         if bot:
-            await BotOwnerNotifier.send_error_dm(bot, e, f"Voting - Unexpected Error", context)
+            await BotOwnerNotifier.send_error_dm(bot, e, "Voting - Unexpected Error", context)
         return "❌ An unexpected error occurred while voting. Please try again."
 
     @staticmethod
@@ -330,27 +330,27 @@ class PollErrorHandler:
         if isinstance(e, DatabaseError):
             logger.error(f"Database error closing poll {poll_id}: {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Database Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Poll Closure - Database Error", context)
             return "❌ Database error closing poll. Please try again."
 
         if isinstance(e, discord.Forbidden):
             logger.error(
                 f"Discord permission error closing poll {poll_id}: {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Permission Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Poll Closure - Permission Error", context)
             return "❌ Bot lacks permissions to close poll in the channel."
 
         if isinstance(e, discord.HTTPException):
             logger.error(f"Discord API error closing poll {poll_id}: {e}")
             if bot:
-                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Discord API Error", context)
+                await BotOwnerNotifier.send_error_dm(bot, e, "Poll Closure - Discord API Error", context)
             return "❌ Discord API error closing poll. Please try again."
 
         # Unexpected closure errors notify bot owner
         logger.error(f"Unexpected error closing poll {poll_id}: {e}")
         logger.exception("Full traceback for poll closure error:")
         if bot:
-            await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Unexpected Error", context)
+            await BotOwnerNotifier.send_error_dm(bot, e, "Poll Closure - Unexpected Error", context)
         return "❌ An unexpected error occurred while closing poll. Please try again."
 
     @staticmethod
@@ -656,6 +656,120 @@ async def handle_critical_error(error: Exception, operation: str, poll_id: Optio
     # - Trigger recovery procedures
 
     return False  # Indicate operation failed
+
+
+async def notify_bot_owner_of_error(error: Exception, operation: str, context: Optional[Dict[str, Any]] = None, bot: Optional[commands.Bot] = None):
+    """Universal function to notify bot owner of ANY error in the application"""
+    try:
+        # Get bot instance if not provided
+        if not bot:
+            # Try to get bot from main module
+            try:
+                from .main import bot as main_bot
+                bot = main_bot
+            except ImportError:
+                logger.warning(
+                    "Could not import bot instance for error notification")
+                return False
+
+        # Prepare error context
+        error_context = {
+            "operation": operation,
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "timestamp": datetime.now(pytz.UTC).isoformat()
+        }
+
+        # Add additional context if provided
+        if context:
+            error_context.update(context)
+
+        # Send DM notification
+        await BotOwnerNotifier.send_error_dm(
+            bot, error, f"System Error - {operation}", error_context
+        )
+
+        logger.debug(f"Sent bot owner notification for error in {operation}")
+        return True
+
+    except Exception as notification_error:
+        logger.error(
+            f"Failed to send bot owner notification for {operation}: {notification_error}")
+        return False
+
+
+def notify_bot_owner_of_error_sync(error: Exception, operation: str, context: Optional[Dict[str, Any]] = None):
+    """Synchronous wrapper for bot owner error notifications"""
+    try:
+        import asyncio
+
+        # Try to get the current event loop
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, schedule the notification
+            loop.create_task(notify_bot_owner_of_error(
+                error, operation, context))
+        except RuntimeError:
+            # No event loop running, create a new one
+            asyncio.run(notify_bot_owner_of_error(error, operation, context))
+
+        return True
+    except Exception as e:
+        logger.error(
+            f"Failed to send sync bot owner notification for {operation}: {e}")
+        return False
+
+
+# EASY-TO-USE FUNCTIONS FOR EXISTING ERROR HANDLERS
+def notify_error(error: Exception, operation: str, **context_kwargs):
+    """
+    SIMPLE FUNCTION TO ADD TO ANY EXISTING ERROR HANDLER
+
+    Usage examples:
+
+    # Basic usage:
+    except Exception as e:
+        logger.error(f"Something failed: {e}")
+        notify_error(e, "Database Operation")
+
+    # With context:
+    except Exception as e:
+        logger.error(f"Poll creation failed: {e}")
+        notify_error(e, "Poll Creation", poll_id=123, user_id="456")
+
+    # With any additional context:
+    except Exception as e:
+        logger.error(f"Image upload failed: {e}")
+        notify_error(e, "Image Upload", file_size=1024, file_type="png")
+    """
+    try:
+        context = context_kwargs if context_kwargs else None
+        notify_bot_owner_of_error_sync(error, operation, context)
+    except Exception:
+        pass  # Never let notification errors crash the application
+
+
+async def notify_error_async(error: Exception, operation: str, **context_kwargs):
+    """
+    SIMPLE ASYNC FUNCTION TO ADD TO ANY EXISTING ASYNC ERROR HANDLER
+
+    Usage examples:
+
+    # Basic usage:
+    except Exception as e:
+        logger.error(f"Something failed: {e}")
+        await notify_error_async(e, "Discord Operation")
+
+    # With context:
+    except Exception as e:
+        logger.error(f"Poll posting failed: {e}")
+        await notify_error_async(e, "Poll Posting", poll_id=123, channel_id="456")
+    """
+    try:
+        context = context_kwargs if context_kwargs else None
+        await notify_bot_owner_of_error(error, operation, context)
+    except Exception:
+        pass  # Never let notification errors crash the application
 
 
 # Decorator for critical operations

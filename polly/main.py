@@ -5,7 +5,7 @@ Discord bot + FastAPI web server with admin-only poll creation.
 # Load environment variables FIRST before importing other modules
 from .discord_utils import (
     get_user_guilds_with_channels, create_poll_embed, post_poll_to_channel,
-    update_poll_message, post_poll_results, user_has_admin_permissions
+    update_poll_message, user_has_admin_permissions
 )
 from .auth import (
     save_user_to_db, get_discord_oauth_url, exchange_code_for_token,
@@ -81,6 +81,9 @@ async def cleanup_image(image_path: str) -> bool:
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Image Cleanup", image_path=image_path)
     return False
 
 
@@ -93,6 +96,9 @@ async def cleanup_poll_images(poll_id: int) -> None:
             await cleanup_image(str(poll.image_path))
     except Exception as e:
         logger.error(f"Error cleaning up poll {poll_id} images: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Poll Image Cleanup", poll_id=poll_id)
     finally:
         db.close()
 
@@ -106,6 +112,9 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         return str(value).strip()
     except Exception as e:
         logger.warning(f"Error extracting form data for key '{key}': {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Form Data Extraction", key=key, default=default)
         return default
 
 
@@ -143,6 +152,9 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         return "UTC"
     except Exception as e:
         logger.error(f"Error validating timezone '{timezone_str}': {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Timezone Validation", timezone_str=timezone_str)
         return "UTC"
 
 
@@ -184,6 +196,10 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
             return dt.astimezone(pytz.UTC)
         except Exception as fallback_error:
             logger.error(f"Fallback datetime parsing failed: {fallback_error}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error
+            notify_error(fallback_error, "Fallback Datetime Parsing",
+                         datetime_str=datetime_str, timezone_str=timezone_str)
             # Last resort: return current time
             return datetime.now(pytz.UTC)
 
@@ -209,6 +225,9 @@ async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
         return True, "", content
     except Exception as e:
         logger.error(f"Error validating image file: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Image File Validation")
         return False, "Error processing image file", None
 
 
@@ -230,6 +249,9 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
         return image_path
     except Exception as e:
         logger.error(f"Error saving image file: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Image File Saving", filename=filename)
         return None
 
 
@@ -252,6 +274,9 @@ def get_user_preferences(user_id: str) -> dict:
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "User Preferences Retrieval", user_id=user_id)
         return {
             "last_server_id": None,
             "last_channel_id": None,
@@ -276,6 +301,10 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
     except Exception as e:
         logger.error(
             f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Datetime Formatting", dt=str(
+            dt), user_timezone=user_timezone)
         # Fallback to UTC
         return dt.strftime('%b %d, %I:%M %p UTC')
 
@@ -374,6 +403,10 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
             f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "User Preferences Saving", user_id=user_id,
+                     server_id=server_id, channel_id=channel_id, timezone=timezone)
         db.rollback()
     finally:
         db.close()
@@ -390,6 +423,9 @@ async def on_ready():
         logger.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error
+        notify_error(e, "Discord Command Sync")
 
 
 @bot.tree.command(name="quickpoll", description="Create a quick poll in the current channel")
@@ -472,6 +508,9 @@ async def create_quick_poll_command(
 
     except Exception as e:
         logger.error(f"Error creating poll: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Quick Poll Creation", question=question, user_id=str(interaction.user.id))
         if not interaction.response.is_done():
             await interaction.response.send_message("❌ Error creating poll. Please try again.", ephemeral=True)
         else:
@@ -812,6 +851,9 @@ async def auth_callback(code: str):
 
     except Exception as e:
         logger.error(f"Auth callback error: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Discord OAuth Callback", code=code)
         return HTMLResponse("Authentication failed", status_code=400)
 
 
@@ -1146,6 +1188,9 @@ async def upload_image_htmx(request: Request, current_user: DiscordUser = Depend
 
     except Exception as e:
         logger.error(f"Error in FilePond image upload: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "FilePond Image Upload", user_id=current_user.id)
         return {"error": "Server error processing image"}, 500
 
 
@@ -1163,6 +1208,9 @@ async def remove_image_htmx(request: Request, current_user: DiscordUser = Depend
 
     except Exception as e:
         logger.error(f"Error removing image: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "FilePond Image Removal", user_id=current_user.id)
         return {"error": "Server error removing image"}, 500
 
 
@@ -1218,6 +1266,9 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
 
     except Exception as e:
         logger.error(f"Error saving settings for user {current_user.id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "User Settings Save", user_id=current_user.id)
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error saving settings: {str(e)}
@@ -1527,6 +1578,9 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
                 })
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(f"Error formatting timezone {tz_name}: {e}")
+                # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                from .error_handler import notify_error
+                notify_error(e, "Timezone Formatting", tz_name=tz_name)
                 timezones.append({
                     "name": tz_name,
                     "display": tz_name
@@ -1761,6 +1815,9 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
     except Exception as e:
         logger.error(f"Error updating poll {poll_id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Update", poll_id=poll_id, user_id=current_user.id)
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error updating poll: {str(e)}
@@ -1834,6 +1891,9 @@ async def close_poll_manually(poll_id: int, current_user: DiscordUser = Depends(
 
     except Exception as e:
         logger.error(f"Error closing poll {poll_id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Manual Poll Closure", poll_id=poll_id, user_id=current_user.id)
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error closing poll: {str(e)}
@@ -1872,24 +1932,54 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         if poll.image_path:
             await cleanup_image(str(poll.image_path))
 
-        # Remove scheduled jobs
-        try:
-            scheduler.remove_job(f"open_poll_{poll.id}")
-        except Exception as e:
-            logger.debug(
-                f"Job open_poll_{poll.id} not found or already removed: {e}")
-        try:
-            scheduler.remove_job(f"close_poll_{poll.id}")
-        except Exception as e:
-            logger.debug(
-                f"Job close_poll_{poll.id} not found or already removed: {e}")
+        # Remove scheduled jobs with improved error handling
+        jobs_removed = 0
+        for job_type in ["open", "close"]:
+            job_id = f"{job_type}_poll_{poll.id}"
+            try:
+                if scheduler.get_job(job_id):
+                    scheduler.remove_job(job_id)
+                    jobs_removed += 1
+                    logger.debug(f"Removed scheduled job: {job_id}")
+            except Exception as e:
+                # Only log if it's an unexpected error (not "job not found")
+                if "No job by the id" not in str(e):
+                    logger.warning(
+                        f"Unexpected error removing job {job_id}: {e}")
 
-        # Delete poll and associated votes
-        db.query(Vote).filter(Vote.poll_id == poll_id).delete()
-        db.delete(poll)
-        db.commit()
+        if jobs_removed > 0:
+            logger.info(
+                f"Removed {jobs_removed} scheduled jobs for poll {poll.id}")
 
-        logger.info(f"Successfully deleted poll {poll_id}")
+        # Delete poll and associated votes with detailed logging
+        logger.info(f"Starting database deletion for poll {poll_id}")
+
+        try:
+            # Delete associated votes first
+            vote_count = db.query(Vote).filter(Vote.poll_id == poll_id).count()
+            logger.info(
+                f"Found {vote_count} votes to delete for poll {poll_id}")
+
+            deleted_votes = db.query(Vote).filter(
+                Vote.poll_id == poll_id).delete()
+            logger.info(f"Deleted {deleted_votes} votes for poll {poll_id}")
+
+            # Delete the poll
+            logger.info(f"Deleting poll {poll_id} from database")
+            db.delete(poll)
+
+            # Commit the transaction
+            logger.info(f"Committing deletion transaction for poll {poll_id}")
+            db.commit()
+
+            logger.info(f"Successfully deleted poll {poll_id}")
+
+        except Exception as db_error:
+            logger.error(
+                f"Database error during poll {poll_id} deletion: {db_error}")
+            logger.exception("Full traceback for database deletion error:")
+            db.rollback()
+            raise db_error
 
         return """
         <div class="alert alert-success">
@@ -1900,6 +1990,9 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
 
     except Exception as e:
         logger.error(f"Error deleting poll {poll_id}: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Deletion", poll_id=poll_id, user_id=current_user.id)
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error deleting poll: {str(e)}
