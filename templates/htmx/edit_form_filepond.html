@@ -162,8 +162,14 @@
 <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
 
 <script>
-// Initialize FilePond immediately when template loads (HTMX compatible)
-(function() {
+// Initialize FilePond with loading check for HTMX compatibility
+function initializeFilePond() {
+    // Check if FilePond is loaded
+    if (typeof FilePond === 'undefined') {
+        setTimeout(initializeFilePond, 100);
+        return;
+    }
+
     // Register FilePond plugins
     FilePond.registerPlugin(
         FilePondPluginFileValidateType,
@@ -342,7 +348,10 @@
         });
     }
     }
-})();
+}
+
+// Start initialization
+initializeFilePond();
 </script>
 
 <style>

@@ -148,20 +148,28 @@
 <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
 
 <script>
-// Initialize FilePond immediately when template loads (HTMX compatible)
+// Initialize FilePond with proper loading checks (HTMX compatible)
 (function() {
-    // Register FilePond plugins
-    FilePond.registerPlugin(
-        FilePondPluginFileValidateType,
-        FilePondPluginFileValidateSize,
-        FilePondPluginImagePreview,
-        FilePondPluginImageValidateSize
-    );
+    function initializeFilePond() {
+        // Check if FilePond is available
+        if (typeof FilePond === 'undefined') {
+            // Wait a bit and try again
+            setTimeout(initializeFilePond, 100);
+            return;
+        }
 
-    // Initialize FilePond
-    const inputElement = document.querySelector('.filepond');
-    if (inputElement) {
-        const pond = FilePond.create(inputElement, {
+        // Register FilePond plugins
+        FilePond.registerPlugin(
+            FilePondPluginFileValidateType,
+            FilePondPluginFileValidateSize,
+            FilePondPluginImagePreview,
+            FilePondPluginImageValidateSize
+        );
+
+        // Initialize FilePond
+        const inputElement = document.querySelector('.filepond');
+        if (inputElement) {
+            const pond = FilePond.create(inputElement, {
         acceptedFileTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
         maxFileSize: '8MB',
         maxFiles: 1,
@@ -296,20 +304,24 @@
         }, 3000);
     }
 
-    // Validate on input change
-    if (openTimeInput) openTimeInput.addEventListener('change', validateTimes);
-    if (closeTimeInput) closeTimeInput.addEventListener('change', validateTimes);
+        // Validate on input change
+        if (openTimeInput) openTimeInput.addEventListener('change', validateTimes);
+        if (closeTimeInput) closeTimeInput.addEventListener('change', validateTimes);
 
-    // Validate on form submission
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            if (!validateTimes()) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        });
+        // Validate on form submission
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                if (!validateTimes()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            });
+        }
+        }
     }
-    }
+    
+    // Start initialization
+    initializeFilePond();
 })();
 </script>
 
