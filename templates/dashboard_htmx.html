@@ -32,18 +32,36 @@
             opacity: 1;
         }
         .dropdown-menu {
-            z-index: 1050 !important;
+            z-index: 1060 !important;
             position: absolute !important;
         }
         .dropdown {
             position: relative;
-            z-index: 1000;
+            z-index: 1050;
+        }
+        .dropdown.show {
+            z-index: 1055 !important;
         }
         .poll-card {
             overflow: visible !important;
+            position: relative;
+        }
+        .poll-card .dropdown {
+            z-index: 1050;
+        }
+        .poll-card .dropdown.show {
+            z-index: 1055 !important;
         }
         .card-body {
             overflow: visible !important;
+            position: relative;
+        }
+        .card {
+            overflow: visible !important;
+        }
+        /* Ensure dropdown menus appear above all other content */
+        .dropdown-menu.show {
+            z-index: 1060 !important;
         }
     </style>
 </head>
