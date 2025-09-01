@@ -13,6 +13,7 @@ from .auth import (
 )
 from .database import init_database, get_db_session, Poll, Vote, POLL_EMOJIS, UserPreference
 from .bulletproof_operations import BulletproofPollOperations
+from .error_handler import PollErrorHandler
 import uvicorn
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -481,7 +482,7 @@ async def create_quick_poll_command(
 
 @bot.event
 async def on_reaction_add(reaction, user):
-    """Handle poll voting via reactions"""
+    """Handle poll voting via reactions using bulletproof operations"""
     if user.bot:
         return
 
@@ -501,59 +502,57 @@ async def on_reaction_add(reaction, user):
         if option_index >= len(poll.options):
             return
 
-        # Check if user already voted
-        existing_vote = db.query(Vote).filter(
-            Vote.poll_id == poll.id,
-            Vote.user_id == str(user.id)
-        ).first()
+        # Use bulletproof vote collection
+        bulletproof_ops = BulletproofPollOperations(bot)
+        result = await bulletproof_ops.bulletproof_vote_collection(
+            poll.id, str(user.id), option_index
+        )
 
-        if existing_vote:
-            # Update existing vote
-            existing_vote.option_index = option_index
-            existing_vote.voted_at = datetime.now(pytz.UTC)
-        else:
-            # Create new vote
-            vote = Vote(
-                poll_id=poll.id,
-                user_id=str(user.id),
-                option_index=option_index
+        if not result["success"]:
+            # Handle vote error with bot owner notification
+            error_msg = await PollErrorHandler.handle_vote_error(
+                Exception(result["error"]), poll.id, str(user.id), bot
             )
-            db.add(vote)
-
-        db.commit()
-
-        # Always update poll embed for live updates (key requirement)
-        await update_poll_message(bot, poll)
+            logger.warning(
+                f"Vote failed for user {user.id} on poll {poll.id}: {error_msg}")
+        else:
+            # Always update poll embed for live updates (key requirement)
+            await update_poll_message(bot, poll)
 
     except Exception as e:
-        logger.error(f"Error handling vote: {e}")
+        # Handle unexpected voting errors with bot owner notification
+        error_msg = await PollErrorHandler.handle_vote_error(
+            e, poll.id if 'poll' in locals() else 0, str(user.id), bot
+        )
+        logger.error(f"Error handling vote: {error_msg}")
     finally:
         db.close()
 
 
 async def close_poll(poll_id: int):
-    """Close a poll and update the message"""
-    db = get_db_session()
+    """Close a poll using bulletproof operations"""
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id).first()
-        if poll:
-            poll.status = "closed"
-            db.commit()
+        # Use bulletproof poll closure
+        bulletproof_ops = BulletproofPollOperations(bot)
+        result = await bulletproof_ops.bulletproof_poll_closure(poll_id)
 
-            # Post final results to the same channel (key requirement)
-            await post_poll_results(bot, poll)
+        if not result["success"]:
+            # Handle closure error with bot owner notification
+            error_msg = await PollErrorHandler.handle_poll_closure_error(
+                Exception(result["error"]), poll_id, bot
+            )
+            logger.error(
+                f"Bulletproof poll closure failed for poll {poll_id}: {error_msg}")
+        else:
+            logger.info(
+                f"Successfully closed poll {poll_id} using bulletproof operations")
 
-            # Update original message
-            await update_poll_message(bot, poll)
-
-            # Clean up poll images after closing
-            await cleanup_poll_images(poll_id)
-
-            logger.info(f"Closed poll {poll_id}")
     except Exception as e:
-        logger.error(f"Error closing poll {poll_id}: {e}")
-    finally:
-        db.close()
+        # Handle unexpected closure errors with bot owner notification
+        error_msg = await PollErrorHandler.handle_poll_closure_error(
+            e, poll_id, bot
+        )
+        logger.error(f"Error in close_poll function: {error_msg}")
 
 
 async def start_bot():
@@ -1295,7 +1294,7 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         # Ensure the stored times have timezone info (they should be UTC)
         open_time_value = poll.open_time
         close_time_value = poll.close_time
-        
+
         if open_time_value.tzinfo is None:
             open_time_utc = pytz.UTC.localize(open_time_value)
         else:

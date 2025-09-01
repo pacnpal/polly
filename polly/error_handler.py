@@ -316,6 +316,44 @@ class PollErrorHandler:
         return "❌ An unexpected error occurred while voting. Please try again."
 
     @staticmethod
+    async def handle_poll_closure_error(e: Exception, poll_id: int, bot: Optional[commands.Bot] = None) -> str:
+        """Handle poll closure errors with user-friendly messages and bot owner notifications"""
+        context = {
+            "poll_id": poll_id
+        }
+
+        if isinstance(e, ValidationError):
+            logger.warning(
+                f"Validation error closing poll {poll_id}: {e.message}")
+            return f"❌ {e.message}"
+
+        if isinstance(e, DatabaseError):
+            logger.error(f"Database error closing poll {poll_id}: {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Database Error", context)
+            return "❌ Database error closing poll. Please try again."
+
+        if isinstance(e, discord.Forbidden):
+            logger.error(
+                f"Discord permission error closing poll {poll_id}: {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Permission Error", context)
+            return "❌ Bot lacks permissions to close poll in the channel."
+
+        if isinstance(e, discord.HTTPException):
+            logger.error(f"Discord API error closing poll {poll_id}: {e}")
+            if bot:
+                await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Discord API Error", context)
+            return "❌ Discord API error closing poll. Please try again."
+
+        # Unexpected closure errors notify bot owner
+        logger.error(f"Unexpected error closing poll {poll_id}: {e}")
+        logger.exception("Full traceback for poll closure error:")
+        if bot:
+            await BotOwnerNotifier.send_error_dm(bot, e, f"Poll Closure - Unexpected Error", context)
+        return "❌ An unexpected error occurred while closing poll. Please try again."
+
+    @staticmethod
     async def handle_scheduler_error(e: Exception, poll_id: int, operation: str, bot: Optional[commands.Bot] = None) -> bool:
         """Handle scheduler errors and attempt recovery with bot owner notifications"""
         context = {
@@ -353,7 +391,7 @@ class PollErrorHandler:
                         now = datetime.now(pytz.UTC)
 
                         # Reschedule opening if needed
-                        if poll.status == "scheduled" and poll.open_time is not None and poll.open_time > now:
+                        if poll.status == "scheduled" and poll.open_time and poll.open_time > now:
                             from .discord_utils import post_poll_to_channel
                             from .main import bot as main_bot
                             from apscheduler.triggers.date import DateTrigger
@@ -639,7 +677,8 @@ def critical_operation(operation_name: str):
             except Exception as e:
                 # For sync functions, we can't await, so we'll use asyncio.create_task
                 # or just log the error without bot notification
-                log_error_with_context(e, {"operation": operation_name}, operation_name)
+                log_error_with_context(
+                    e, {"operation": operation_name}, operation_name)
                 return None
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
