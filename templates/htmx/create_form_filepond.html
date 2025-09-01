@@ -58,18 +58,25 @@
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
                     <div class="input-group mb-2">
-                        <span class="input-group-text">🇦</span>
+                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
                         <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
+                        <input type="hidden" name="emoji1" value="🇦">
                     </div>
                     <div class="input-group mb-2">
-                        <span class="input-group-text">🇧</span>
+                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
                         <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
+                        <input type="hidden" name="emoji2" value="🇧">
                     </div>
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm"
                         hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
                     <i class="fas fa-plus me-1"></i>Add Option
                 </button>
+            </div>
+
+            <!-- Emoji Picker (hidden by default) -->
+            <div id="emoji-picker-container" style="display: none; position: absolute; z-index: 1050;">
+                <emoji-picker></emoji-picker>
             </div>
 
             <div class="row">
@@ -147,14 +154,17 @@
 <script src="https://unpkg.com/filepond-plugin-image-validate-size@^1/dist/filepond-plugin-image-validate-size.js"></script>
 <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
 
+<!-- Emoji Picker Element -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+
 <script>
 // Initialize FilePond with proper loading checks (HTMX compatible)
 (function() {
-    function initializeFilePond() {
+    function initializeCreateFormFilePond() {
         // Check if FilePond is available
         if (typeof FilePond === 'undefined') {
             // Wait a bit and try again
-            setTimeout(initializeFilePond, 100);
+            setTimeout(initializeCreateFormFilePond, 100);
             return;
         }
 
@@ -235,6 +245,72 @@
         }
     });
 
+        // Emoji picker functionality
+        let currentEmojiButton = null;
+        const emojiPickerContainer = document.getElementById('emoji-picker-container');
+        
+        // Wait for emoji-picker element to be defined
+        function waitForEmojiPicker(callback) {
+            if (customElements.get('emoji-picker')) {
+                callback();
+            } else {
+                customElements.whenDefined('emoji-picker').then(callback);
+            }
+        }
+
+        waitForEmojiPicker(function() {
+            const emojiPicker = document.querySelector('emoji-picker');
+            
+            if (!emojiPicker) {
+                console.warn('Emoji picker element not found');
+                return;
+            }
+
+            // Handle emoji picker button clicks
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('emoji-picker-btn')) {
+                    e.preventDefault();
+                    currentEmojiButton = e.target;
+                    
+                    // Position the emoji picker near the button
+                    const rect = e.target.getBoundingClientRect();
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+                    
+                    emojiPickerContainer.style.display = 'block';
+                    emojiPickerContainer.style.left = (rect.left + scrollLeft) + 'px';
+                    emojiPickerContainer.style.top = (rect.bottom + scrollTop + 5) + 'px';
+                }
+            });
+
+            // Handle emoji selection
+            emojiPicker.addEventListener('emoji-click', function(event) {
+                if (currentEmojiButton) {
+                    const emoji = event.detail.emoji.unicode;
+                    const optionNumber = currentEmojiButton.dataset.option;
+                    
+                    // Update button text and hidden input
+                    currentEmojiButton.textContent = emoji;
+                    const hiddenInput = currentEmojiButton.parentElement.querySelector(`input[name="emoji${optionNumber}"]`);
+                    if (hiddenInput) {
+                        hiddenInput.value = emoji;
+                    }
+                    
+                    // Hide the picker
+                    emojiPickerContainer.style.display = 'none';
+                    currentEmojiButton = null;
+                }
+            });
+
+            // Hide emoji picker when clicking outside
+            document.addEventListener('click', function(e) {
+                if (emojiPickerContainer && !emojiPickerContainer.contains(e.target) && !e.target.classList.contains('emoji-picker-btn')) {
+                    emojiPickerContainer.style.display = 'none';
+                    currentEmojiButton = null;
+                }
+            });
+        });
+
     // Time validation
     const openTimeInput = document.getElementById('open-time');
     const closeTimeInput = document.getElementById('close-time');
@@ -314,8 +390,20 @@
         }
     }
     
-    // Start initialization
-    initializeFilePond();
+    // Initialize on DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeCreateFormFilePond);
+    } else {
+        initializeCreateFormFilePond();
+    }
+
+    // Re-initialize when HTMX loads new content
+    document.addEventListener('htmx:afterSwap', function(event) {
+        // Only re-initialize if this content contains our form
+        if (event.detail.target.querySelector('#emoji-picker-container') || event.detail.target.querySelector('.filepond')) {
+            initializeCreateFormFilePond();
+        }
+    });
 })();
 </script>
 

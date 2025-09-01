@@ -59,8 +59,9 @@
                 <div id="options-container">
                     {% for option in poll.options %}
                     <div class="input-group mb-2">
-                        <span class="input-group-text">{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else "🔸" }}</span>
+                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else "🔸" }}</button>
                         <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option }}" {% if loop.index <= 2 %}required{% endif %}>
+                        <input type="hidden" name="emoji{{ loop.index }}" value="{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else "🔸" }}">
                         {% if loop.index > 2 %}
                         <button type="button" class="btn btn-outline-danger"
                                 hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
@@ -76,6 +77,11 @@
                     <i class="fas fa-plus me-1"></i>Add Option
                 </button>
                 {% endif %}
+            </div>
+
+            <!-- Emoji Picker (hidden by default) -->
+            <div id="emoji-picker-container" style="display: none; position: absolute; z-index: 1050;">
+                <emoji-picker></emoji-picker>
             </div>
 
             <div class="row">
@@ -161,14 +167,84 @@
 <script src="https://unpkg.com/filepond-plugin-image-validate-size@^1/dist/filepond-plugin-image-validate-size.js"></script>
 <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
 
+<!-- Emoji Picker Element -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+
 <script>
 // Initialize FilePond with loading check for HTMX compatibility
-function initializeFilePond() {
-    // Check if FilePond is loaded
-    if (typeof FilePond === 'undefined') {
-        setTimeout(initializeFilePond, 100);
-        return;
-    }
+(function() {
+    function initializeEditFormFilePond() {
+        // Check if FilePond is loaded
+        if (typeof FilePond === 'undefined') {
+            setTimeout(initializeEditFormFilePond, 100);
+            return;
+        }
+
+        // Emoji picker functionality
+        let currentEmojiButton = null;
+        const emojiPickerContainer = document.getElementById('emoji-picker-container');
+        
+        // Wait for emoji-picker element to be defined
+        function waitForEmojiPicker(callback) {
+            if (customElements.get('emoji-picker')) {
+                callback();
+            } else {
+                customElements.whenDefined('emoji-picker').then(callback);
+            }
+        }
+
+        waitForEmojiPicker(function() {
+            const emojiPicker = document.querySelector('emoji-picker');
+            
+            if (!emojiPicker) {
+                console.warn('Emoji picker element not found');
+                return;
+            }
+
+            // Handle emoji picker button clicks
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('emoji-picker-btn')) {
+                    e.preventDefault();
+                    currentEmojiButton = e.target;
+                    
+                    // Position the emoji picker near the button
+                    const rect = e.target.getBoundingClientRect();
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+                    
+                    emojiPickerContainer.style.display = 'block';
+                    emojiPickerContainer.style.left = (rect.left + scrollLeft) + 'px';
+                    emojiPickerContainer.style.top = (rect.bottom + scrollTop + 5) + 'px';
+                }
+            });
+
+            // Handle emoji selection
+            emojiPicker.addEventListener('emoji-click', function(event) {
+                if (currentEmojiButton) {
+                    const emoji = event.detail.emoji.unicode;
+                    const optionNumber = currentEmojiButton.dataset.option;
+                    
+                    // Update button text and hidden input
+                    currentEmojiButton.textContent = emoji;
+                    const hiddenInput = currentEmojiButton.parentElement.querySelector(`input[name="emoji${optionNumber}"]`);
+                    if (hiddenInput) {
+                        hiddenInput.value = emoji;
+                    }
+                    
+                    // Hide the picker
+                    emojiPickerContainer.style.display = 'none';
+                    currentEmojiButton = null;
+                }
+            });
+
+            // Hide emoji picker when clicking outside
+            document.addEventListener('click', function(e) {
+                if (emojiPickerContainer && !emojiPickerContainer.contains(e.target) && !e.target.classList.contains('emoji-picker-btn')) {
+                    emojiPickerContainer.style.display = 'none';
+                    currentEmojiButton = null;
+                }
+            });
+        });
 
     // Register FilePond plugins
     FilePond.registerPlugin(

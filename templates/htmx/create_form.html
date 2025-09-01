@@ -58,18 +58,25 @@
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
                     <div class="input-group mb-2">
-                        <span class="input-group-text">🇦</span>
+                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
                         <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
+                        <input type="hidden" name="emoji1" value="🇦">
                     </div>
                     <div class="input-group mb-2">
-                        <span class="input-group-text">🇧</span>
+                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
                         <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
+                        <input type="hidden" name="emoji2" value="🇧">
                     </div>
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm"
                         hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
                     <i class="fas fa-plus me-1"></i>Add Option
                 </button>
+            </div>
+
+            <!-- Emoji Picker (hidden by default) -->
+            <div id="emoji-picker-container" style="display: none; position: absolute; z-index: 1050;">
+                <emoji-picker></emoji-picker>
             </div>
 
             <div class="row">
@@ -117,52 +124,143 @@
     </div>
 </form>
 
+<!-- Emoji Picker Element -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const openTimeInput = document.getElementById('open-time');
-    const closeTimeInput = document.getElementById('close-time');
-    const timezoneSelect = document.getElementById('timezone');
-    const openTimeError = document.getElementById('open-time-error');
-    const closeTimeError = document.getElementById('close-time-error');
-    const form = openTimeInput.closest('form');
-
-    function validateTimes() {
-        let isValid = true;
-
-        // Clear previous errors
-        openTimeInput.classList.remove('is-invalid');
-        closeTimeInput.classList.remove('is-invalid');
-        openTimeError.textContent = '';
-        closeTimeError.textContent = '';
-
-        if (openTimeInput.value && closeTimeInput.value) {
-            const openTime = new Date(openTimeInput.value);
-            const closeTime = new Date(closeTimeInput.value);
-            
-            // Check if close time is after open time (basic validation)
-            if (closeTime <= openTime) {
-                closeTimeInput.classList.add('is-invalid');
-                closeTimeError.textContent = 'Close time must be after open time';
-                isValid = false;
+// Initialize everything with proper HTMX compatibility
+(function() {
+    function initializeCreateForm() {
+        // Emoji picker functionality
+        let currentEmojiButton = null;
+        const emojiPickerContainer = document.getElementById('emoji-picker-container');
+        
+        // Wait for emoji-picker element to be defined
+        function waitForEmojiPicker(callback) {
+            if (customElements.get('emoji-picker')) {
+                callback();
+            } else {
+                customElements.whenDefined('emoji-picker').then(callback);
             }
         }
 
-        // Note: We skip the "future time" validation in JavaScript since it's complex
-        // with timezones. The server will handle this validation properly.
+        waitForEmojiPicker(function() {
+            const emojiPicker = document.querySelector('emoji-picker');
+            
+            if (!emojiPicker) {
+                console.warn('Emoji picker element not found');
+                return;
+            }
 
-        return isValid;
+            // Handle emoji picker button clicks
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('emoji-picker-btn')) {
+                    e.preventDefault();
+                    currentEmojiButton = e.target;
+                    
+                    // Position the emoji picker near the button
+                    const rect = e.target.getBoundingClientRect();
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+                    
+                    emojiPickerContainer.style.display = 'block';
+                    emojiPickerContainer.style.left = (rect.left + scrollLeft) + 'px';
+                    emojiPickerContainer.style.top = (rect.bottom + scrollTop + 5) + 'px';
+                }
+            });
+
+            // Handle emoji selection
+            emojiPicker.addEventListener('emoji-click', function(event) {
+                if (currentEmojiButton) {
+                    const emoji = event.detail.emoji.unicode;
+                    const optionNumber = currentEmojiButton.dataset.option;
+                    
+                    // Update button text and hidden input
+                    currentEmojiButton.textContent = emoji;
+                    const hiddenInput = currentEmojiButton.parentElement.querySelector(`input[name="emoji${optionNumber}"]`);
+                    if (hiddenInput) {
+                        hiddenInput.value = emoji;
+                    }
+                    
+                    // Hide the picker
+                    emojiPickerContainer.style.display = 'none';
+                    currentEmojiButton = null;
+                }
+            });
+
+            // Hide emoji picker when clicking outside
+            document.addEventListener('click', function(e) {
+                if (emojiPickerContainer && !emojiPickerContainer.contains(e.target) && !e.target.classList.contains('emoji-picker-btn')) {
+                    emojiPickerContainer.style.display = 'none';
+                    currentEmojiButton = null;
+                }
+            });
+        });
+
+        // Time validation functionality
+        const openTimeInput = document.getElementById('open-time');
+        const closeTimeInput = document.getElementById('close-time');
+        const timezoneSelect = document.getElementById('timezone');
+        const openTimeError = document.getElementById('open-time-error');
+        const closeTimeError = document.getElementById('close-time-error');
+        const form = openTimeInput?.closest('form');
+
+        function validateTimes() {
+            let isValid = true;
+
+            if (!openTimeInput || !closeTimeInput || !openTimeError || !closeTimeError) {
+                return isValid;
+            }
+
+            // Clear previous errors
+            openTimeInput.classList.remove('is-invalid');
+            closeTimeInput.classList.remove('is-invalid');
+            openTimeError.textContent = '';
+            closeTimeError.textContent = '';
+
+            if (openTimeInput.value && closeTimeInput.value) {
+                const openTime = new Date(openTimeInput.value);
+                const closeTime = new Date(closeTimeInput.value);
+                
+                // Check if close time is after open time (basic validation)
+                if (closeTime <= openTime) {
+                    closeTimeInput.classList.add('is-invalid');
+                    closeTimeError.textContent = 'Close time must be after open time';
+                    isValid = false;
+                }
+            }
+
+            return isValid;
+        }
+
+        // Validate on input change
+        if (openTimeInput) openTimeInput.addEventListener('change', validateTimes);
+        if (closeTimeInput) closeTimeInput.addEventListener('change', validateTimes);
+
+        // Validate on form submission
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                if (!validateTimes()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            });
+        }
     }
 
-    // Validate on input change
-    openTimeInput.addEventListener('change', validateTimes);
-    closeTimeInput.addEventListener('change', validateTimes);
+    // Initialize on DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeCreateForm);
+    } else {
+        initializeCreateForm();
+    }
 
-    // Validate on form submission
-    form.addEventListener('submit', function(e) {
-        if (!validateTimes()) {
-            e.preventDefault();
-            e.stopPropagation();
+    // Re-initialize when HTMX loads new content
+    document.addEventListener('htmx:afterSwap', function(event) {
+        // Only re-initialize if this content contains our form
+        if (event.detail.target.querySelector('#emoji-picker-container')) {
+            initializeCreateForm();
         }
     });
-});
+})();
 </script>
