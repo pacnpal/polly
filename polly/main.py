@@ -106,6 +106,78 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         return default
 
 
+def validate_and_normalize_timezone(timezone_str: str) -> str:
+    """Validate and normalize timezone string, handling EDT/EST issues"""
+    if not timezone_str:
+        return "UTC"
+
+    # Handle common timezone aliases and server timezone issues
+    timezone_mapping = {
+        "EDT": "US/Eastern",
+        "EST": "US/Eastern",
+        "CDT": "US/Central",
+        "CST": "US/Central",
+        "MDT": "US/Mountain",
+        "MST": "US/Mountain",
+        "PDT": "US/Pacific",
+        "PST": "US/Pacific",
+        "Eastern": "US/Eastern",
+        "Central": "US/Central",
+        "Mountain": "US/Mountain",
+        "Pacific": "US/Pacific"
+    }
+
+    # Check if it's a mapped timezone
+    if timezone_str in timezone_mapping:
+        timezone_str = timezone_mapping[timezone_str]
+
+    # Validate the timezone
+    try:
+        pytz.timezone(timezone_str)
+        return timezone_str
+    except pytz.UnknownTimeZoneError:
+        logger.warning(f"Unknown timezone '{timezone_str}', defaulting to UTC")
+        return "UTC"
+    except Exception as e:
+        logger.error(f"Error validating timezone '{timezone_str}': {e}")
+        return "UTC"
+
+
+def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> datetime:
+    """Safely parse datetime string with timezone, handling server timezone issues"""
+    try:
+        # Validate and normalize timezone
+        normalized_tz = validate_and_normalize_timezone(timezone_str)
+        tz = pytz.timezone(normalized_tz)
+
+        # Parse the datetime string
+        dt = datetime.fromisoformat(datetime_str)
+
+        # If datetime is naive, localize it to the specified timezone
+        if dt.tzinfo is None:
+            localized_dt = tz.localize(dt)
+        else:
+            # If it already has timezone info, convert to the specified timezone
+            localized_dt = dt.astimezone(tz)
+
+        # Convert to UTC for storage
+        return localized_dt.astimezone(pytz.UTC)
+
+    except Exception as e:
+        logger.error(
+            f"Error parsing datetime '{datetime_str}' with timezone '{timezone_str}': {e}")
+        # Fallback: parse as UTC
+        try:
+            dt = datetime.fromisoformat(datetime_str)
+            if dt.tzinfo is None:
+                return pytz.UTC.localize(dt)
+            return dt.astimezone(pytz.UTC)
+        except Exception as fallback_error:
+            logger.error(f"Fallback datetime parsing failed: {fallback_error}")
+            # Last resort: return current time
+            return datetime.now(pytz.UTC)
+
+
 async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
     """Validate uploaded image file and return validation result"""
     try:
@@ -713,12 +785,12 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             </div>
             """
 
-        # Parse times with timezone
-        tz = pytz.timezone(timezone_str)
-        open_dt = tz.localize(datetime.fromisoformat(
-            open_time)).astimezone(pytz.UTC)
-        close_dt = tz.localize(datetime.fromisoformat(
-            close_time)).astimezone(pytz.UTC)
+        # Parse times with timezone using safe parsing
+        open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
+        close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+
+        # Normalize timezone for storage
+        timezone_str = validate_and_normalize_timezone(timezone_str)
 
         # Validate times
         now = datetime.now(pytz.UTC)
@@ -1014,12 +1086,12 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             </div>
             """
 
-        # Parse times with timezone
-        tz = pytz.timezone(timezone_str)
-        open_dt = tz.localize(datetime.fromisoformat(
-            open_time)).astimezone(pytz.UTC)
-        close_dt = tz.localize(datetime.fromisoformat(
-            close_time)).astimezone(pytz.UTC)
+        # Parse times with timezone using safe parsing
+        open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
+        close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+
+        # Normalize timezone for storage
+        timezone_str = validate_and_normalize_timezone(timezone_str)
 
         # Validate times
         datetime.now(pytz.UTC)

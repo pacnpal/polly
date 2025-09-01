@@ -31,31 +31,28 @@
         .htmx-request.htmx-indicator {
             opacity: 1;
         }
-        .dropdown-menu {
+        /* Fix dropdown z-index issues in Bootstrap grid */
+        .poll-card-container {
+            position: relative !important;
+            z-index: 1;
+        }
+        .poll-card-container .dropdown {
+            position: static !important;
+        }
+        .poll-card-container .dropdown.show {
+            position: static !important;
             z-index: 1060 !important;
-            position: absolute !important;
         }
-        .dropdown {
-            position: relative !important;
-            z-index: 1050 !important;
+        .poll-card-container .dropdown-menu {
+            position: fixed !important;
+            z-index: 1060 !important;
+            transform: none !important;
         }
-        .dropdown.show {
-            position: relative !important;
-            z-index: 1055 !important;
+        .poll-card-container .dropdown-menu.show {
+            position: fixed !important;
+            z-index: 1060 !important;
         }
         .poll-card {
-            overflow: visible !important;
-            position: relative !important;
-        }
-        .poll-card .dropdown {
-            position: relative !important;
-            z-index: 1050 !important;
-        }
-        .poll-card .dropdown.show {
-            position: relative !important;
-            z-index: 1055 !important;
-        }
-        .card-body {
             overflow: visible !important;
             position: relative !important;
         }
@@ -63,14 +60,16 @@
             overflow: visible !important;
             position: relative !important;
         }
-        /* Ensure dropdown menus appear above all other content */
-        .dropdown-menu.show {
-            z-index: 1060 !important;
-            position: absolute !important;
-        }
-        /* Force positioning context for all dropdown containers */
-        .dropdown-toggle {
+        .card-body {
+            overflow: visible !important;
             position: relative !important;
+        }
+        /* Ensure Bootstrap columns don't interfere */
+        .col-md-6, .col-lg-4 {
+            overflow: visible !important;
+        }
+        .row {
+            overflow: visible !important;
         }
     </style>
 </head>
