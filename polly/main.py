@@ -686,8 +686,9 @@ async def get_create_form_htmx(request: Request, current_user: DiscordUser = Dep
     common_timezones = [tz for tz in common_timezones if not (
         tz in seen or seen.add(tz))]
 
-    # Set default times
-    now = datetime.now()
+    # Set default times in user's timezone
+    user_tz = pytz.timezone(user_prefs["default_timezone"])
+    now = datetime.now(user_tz)
     open_time = (now + timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M')
     close_time = (now + timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M')
 

@@ -121,13 +121,12 @@
 document.addEventListener('DOMContentLoaded', function() {
     const openTimeInput = document.getElementById('open-time');
     const closeTimeInput = document.getElementById('close-time');
+    const timezoneSelect = document.getElementById('timezone');
     const openTimeError = document.getElementById('open-time-error');
     const closeTimeError = document.getElementById('close-time-error');
     const form = openTimeInput.closest('form');
 
     function validateTimes() {
-        const now = new Date();
-        const minTime = new Date(now.getTime() + 60000); // 1 minute from now
         let isValid = true;
 
         // Clear previous errors
@@ -136,26 +135,20 @@ document.addEventListener('DOMContentLoaded', function() {
         openTimeError.textContent = '';
         closeTimeError.textContent = '';
 
-        if (openTimeInput.value) {
-            const openTime = new Date(openTimeInput.value);
-            
-            if (openTime < minTime) {
-                openTimeInput.classList.add('is-invalid');
-                openTimeError.textContent = 'Poll open time must be at least 1 minute in the future';
-                isValid = false;
-            }
-        }
-
         if (openTimeInput.value && closeTimeInput.value) {
             const openTime = new Date(openTimeInput.value);
             const closeTime = new Date(closeTimeInput.value);
             
+            // Check if close time is after open time (basic validation)
             if (closeTime <= openTime) {
                 closeTimeInput.classList.add('is-invalid');
                 closeTimeError.textContent = 'Close time must be after open time';
                 isValid = false;
             }
         }
+
+        // Note: We skip the "future time" validation in JavaScript since it's complex
+        // with timezones. The server will handle this validation properly.
 
         return isValid;
     }
