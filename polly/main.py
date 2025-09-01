@@ -1279,6 +1279,15 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
         # Validate times
         now = datetime.now(pytz.UTC)
+        
+        # Debug: Show system time vs Python time
+        import time
+        system_timestamp = time.time()
+        system_utc = datetime.fromtimestamp(system_timestamp, tz=pytz.UTC)
+        logger.debug(f"System time comparison (edit):")
+        logger.debug(f"  Python datetime.now(UTC): {now}")
+        logger.debug(f"  System time.time() UTC: {system_utc}")
+        logger.debug(f"  Difference: {(now - system_utc).total_seconds()} seconds")
 
         # Don't allow scheduling polls in the past (with 1 minute buffer)
         min_open_time = now + timedelta(minutes=1)
