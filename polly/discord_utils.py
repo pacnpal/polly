@@ -250,8 +250,9 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     value=local_open.strftime("%Y-%m-%d %I:%M %p"),
                     inline=True
                 )
-            except:
-                pass
+            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+                logger.warning(
+                    f"Error formatting timezone {poll.timezone}: {e}")
 
     if poll.status in ["scheduled", "active"]:
         embed.add_field(
@@ -270,8 +271,9 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     value=local_close.strftime("%Y-%m-%d %I:%M %p"),
                     inline=True
                 )
-            except:
-                pass
+            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+                logger.warning(
+                    f"Error formatting timezone {poll.timezone}: {e}")
 
     # Add poll info in footer
     embed.set_footer(text=f"Poll ID: {poll.id} • Created by Polly")

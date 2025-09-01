@@ -561,7 +561,8 @@ async def get_create_form_htmx(request: Request, current_user: DiscordUser = Dep
                 "name": tz,
                 "display": f"{tz} (UTC{offset})"
             })
-        except:
+        except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+            logger.warning(f"Error formatting timezone {tz}: {e}")
             timezones.append({
                 "name": tz,
                 "display": tz
@@ -891,7 +892,8 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
                     "name": tz_name,
                     "display": f"{tz_name} (UTC{offset})"
                 })
-            except:
+            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+                logger.warning(f"Error formatting timezone {tz_name}: {e}")
                 timezones.append({
                     "name": tz_name,
                     "display": tz_name
@@ -1057,12 +1059,14 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         # Update scheduled jobs
         try:
             scheduler.remove_job(f"open_poll_{poll.id}")
-        except:
-            pass
+        except Exception as e:
+            logger.debug(
+                f"Job open_poll_{poll.id} not found or already removed: {e}")
         try:
             scheduler.remove_job(f"close_poll_{poll.id}")
-        except:
-            pass
+        except Exception as e:
+            logger.debug(
+                f"Job close_poll_{poll.id} not found or already removed: {e}")
 
         # Reschedule jobs
         if open_dt > datetime.now(pytz.UTC):
@@ -1205,12 +1209,12 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         # Remove scheduled jobs
         try:
             scheduler.remove_job(f"open_poll_{poll.id}")
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Job open_poll_{poll.id} not found or already removed: {e}")
         try:
             scheduler.remove_job(f"close_poll_{poll.id}")
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Job close_poll_{poll.id} not found or already removed: {e}")
 
         # Delete poll and associated votes
         db.query(Vote).filter(Vote.poll_id == poll_id).delete()
