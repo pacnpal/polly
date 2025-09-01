@@ -69,3 +69,256 @@
                     </div>
                 </div>
 
+                <!-- Create Poll Section -->
+                <div id="create-section" style="display: none;">
+                    <h2 class="mb-4">
+                        <i class="fas fa-plus me-2"></i>Create New Poll
+                    </h2>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <form id="create-poll-form">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="poll-name" class="form-label">Poll Name</label>
+                                            <input type="text" class="form-control" id="poll-name" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="server-select" class="form-label">Server</label>
+                                            <select class="form-select" id="server-select" required>
+                                                <option value="">Select a server...</option>
+                                                {% for guild_id in user.admin_guilds %}
+                                                <option value="{{ guild_id }}">Server {{ guild_id }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="poll-question" class="form-label">Question</label>
+                                    <textarea class="form-control" id="poll-question" rows="3" required></textarea>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Poll Options</label>
+                                    <div id="options-container">
+                                        <div class="input-group mb-2">
+                                            <span class="input-group-text">🇦</span>
+                                            <input type="text" class="form-control" placeholder="Option 1" required>
+                                        </div>
+                                        <div class="input-group mb-2">
+                                            <span class="input-group-text">🇧</span>
+                                            <input type="text" class="form-control" placeholder="Option 2" required>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addOption()">
+                                        <i class="fas fa-plus me-1"></i>Add Option
+                                    </button>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="open-time" class="form-label">Open Time</label>
+                                            <input type="datetime-local" class="form-control" id="open-time" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="close-time" class="form-label">Close Time</label>
+                                            <input type="datetime-local" class="form-control" id="close-time" required>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="poll-image" class="form-label">Poll Image (Optional)</label>
+                                    <input type="file" class="form-control" id="poll-image" accept="image/*">
+                                    <div class="form-text">Upload an image to display with your poll</div>
+                                </div>
+
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save me-1"></i>Create Poll
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" onclick="showPolls()">
+                                        <i class="fas fa-times me-1"></i>Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let optionCount = 2;
+        const emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'];
+
+        // Set default times
+        document.addEventListener('DOMContentLoaded', function() {
+            const now = new Date();
+            const openTime = new Date(now.getTime() + 5 * 60000); // 5 minutes from now
+            const closeTime = new Date(now.getTime() + 24 * 60 * 60000); // 24 hours from now
+            
+            document.getElementById('open-time').value = openTime.toISOString().slice(0, 16);
+            document.getElementById('close-time').value = closeTime.toISOString().slice(0, 16);
+            
+            loadPolls();
+        });
+
+        function showCreatePoll() {
+            document.getElementById('polls-section').style.display = 'none';
+            document.getElementById('create-section').style.display = 'block';
+        }
+
+        function showPolls() {
+            document.getElementById('create-section').style.display = 'none';
+            document.getElementById('polls-section').style.display = 'block';
+            loadPolls();
+        }
+
+        function addOption() {
+            if (optionCount >= 10) {
+                alert('Maximum 10 options allowed');
+                return;
+            }
+            
+            const container = document.getElementById('options-container');
+            const div = document.createElement('div');
+            div.className = 'input-group mb-2';
+            div.innerHTML = `
+                <span class="input-group-text">${emojis[optionCount]}</span>
+                <input type="text" class="form-control" placeholder="Option ${optionCount + 1}">
+                <button type="button" class="btn btn-outline-danger" onclick="removeOption(this)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            container.appendChild(div);
+            optionCount++;
+        }
+
+        function removeOption(button) {
+            if (optionCount <= 2) {
+                alert('Minimum 2 options required');
+                return;
+            }
+            button.parentElement.remove();
+            optionCount--;
+        }
+
+        async function loadPolls() {
+            try {
+                const response = await fetch('/api/polls');
+                const polls = await response.json();
+                
+                const container = document.getElementById('polls-container');
+                
+                if (polls.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-5">
+                            <i class="fas fa-poll fa-3x text-muted mb-3"></i>
+                            <h4 class="text-muted">No polls yet</h4>
+                            <p class="text-muted">Create your first poll to get started!</p>
+                            <button class="btn btn-primary" onclick="showCreatePoll()">
+                                <i class="fas fa-plus me-1"></i>Create Poll
+                            </button>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = polls.map(poll => `
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5 class="card-title">${poll.name}</h5>
+                                    <p class="card-text text-muted">${poll.question}</p>
+                                    <small class="text-muted">
+                                        <i class="fas fa-calendar me-1"></i>
+                                        Created ${new Date(poll.created_at).toLocaleDateString()}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-${poll.status === 'active' ? 'success' : poll.status === 'scheduled' ? 'warning' : 'secondary'}">
+                                        ${poll.status}
+                                    </span>
+                                    <div class="mt-2">
+                                        <small class="text-muted">
+                                            <i class="fas fa-vote-yea me-1"></i>
+                                            ${poll.total_votes} votes
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Error loading polls:', error);
+                document.getElementById('polls-container').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Error loading polls. Please refresh the page.
+                    </div>
+                `;
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('create-poll-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('name', document.getElementById('poll-name').value);
+            formData.append('question', document.getElementById('poll-question').value);
+            formData.append('server_id', document.getElementById('server-select').value);
+            formData.append('open_time', document.getElementById('open-time').value);
+            formData.append('close_time', document.getElementById('close-time').value);
+            
+            // Collect options
+            const options = [];
+            document.querySelectorAll('#options-container input').forEach(input => {
+                if (input.value.trim()) {
+                    options.push(input.value.trim());
+                }
+            });
+            formData.append('options', JSON.stringify(options));
+            
+            // Add image if selected
+            const imageFile = document.getElementById('poll-image').files[0];
+            if (imageFile) {
+                formData.append('image', imageFile);
+            }
+            
+            try {
+                const response = await fetch('/api/polls', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    alert('Poll created successfully!');
+                    document.getElementById('create-poll-form').reset();
+                    showPolls();
+                } else {
+                    const error = await response.json();
+                    alert('Error creating poll: ' + error.detail);
+                }
+            } catch (error) {
+                console.error('Error creating poll:', error);
+                alert('Error creating poll. Please try again.');
+            }
+        });
+    </script>
+</body>
+</html>

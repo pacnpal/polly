@@ -1,16 +1,16 @@
 """
-Discord OAuth Authentication
-Only allows server administrators to create polls.
+Discord Authentication
+Discord OAuth for web interface and bot permission checking.
 """
 
 import os
 import httpx
+import discord
 from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-import discord
 from .database import get_db_session, User
 
 # Discord OAuth settings
@@ -61,6 +61,14 @@ class DiscordUser:
         return server_id in self.admin_guilds
 
 
+def is_admin(member: discord.Member) -> bool:
+    """Check if Discord member has admin permissions"""
+    return (
+        member.guild_permissions.administrator or
+        member.guild_permissions.manage_guild
+    )
+
+
 def get_discord_oauth_url() -> str:
     """Generate Discord OAuth URL"""
     params = {
@@ -69,7 +77,6 @@ def get_discord_oauth_url() -> str:
         "response_type": "code",
         "scope": "identify guilds"
     }
-
     query_string = "&".join([f"{k}={v}" for k, v in params.items()])
     return f"{DISCORD_OAUTH_URL}?{query_string}"
 
@@ -83,16 +90,13 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
         "code": code,
         "redirect_uri": DISCORD_REDIRECT_URI
     }
-
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
     async with httpx.AsyncClient() as client:
         response = await client.post(DISCORD_TOKEN_URL, data=data, headers=headers)
-
         if response.status_code != 200:
             raise HTTPException(
                 status_code=400, detail="Failed to exchange code for token")
-
         return response.json()
 
 
@@ -106,7 +110,6 @@ async def get_discord_user(access_token: str) -> DiscordUser:
         if user_response.status_code != 200:
             raise HTTPException(
                 status_code=400, detail="Failed to get user info")
-
         user_data = user_response.json()
 
         # Get user guilds
@@ -114,7 +117,6 @@ async def get_discord_user(access_token: str) -> DiscordUser:
         if guilds_response.status_code != 200:
             raise HTTPException(
                 status_code=400, detail="Failed to get user guilds")
-
         guilds_data = guilds_response.json()
 
         return DiscordUser(user_data, guilds_data)
@@ -129,7 +131,6 @@ def create_access_token(user: DiscordUser) -> str:
         "admin_guilds": user.admin_guilds,
         "exp": expire
     }
-
     return jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
 
 
@@ -145,9 +146,14 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
 async def get_current_user(request: Request, token=Depends(security)) -> Optional[DiscordUser]:
     """Get current authenticated user"""
     if not token:
-        return None
+        # Try to get token from cookie
+        token_str = request.cookies.get("access_token")
+        if not token_str:
+            return None
+    else:
+        token_str = token.credentials
 
-    payload = verify_token(token.credentials)
+    payload = verify_token(token_str)
     if not payload:
         return None
 
@@ -156,11 +162,9 @@ async def get_current_user(request: Request, token=Depends(security)) -> Optiona
         "id": payload["sub"],
         "username": payload["username"]
     }
-
     # Mock guilds data from token
     guilds_data = [{"id": guild_id, "permissions": "32"}
                    for guild_id in payload.get("admin_guilds", [])]
-
     return DiscordUser(user_data, guilds_data)
 
 
@@ -168,16 +172,6 @@ async def require_auth(current_user: Optional[DiscordUser] = Depends(get_current
     """Require authentication"""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    return current_user
-
-
-async def require_server_admin(server_id: str, current_user: DiscordUser = Depends(require_auth)) -> DiscordUser:
-    """Require server admin permissions"""
-    if not current_user.can_manage_server(server_id):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Admin permissions required for server {server_id}"
-        )
     return current_user
 
 
@@ -205,16 +199,3 @@ def save_user_to_db(user: DiscordUser):
         db.commit()
     finally:
         db.close()
-
-
-async def get_bot_guilds(bot_token: str) -> List[Dict[str, Any]]:
-    """Get guilds where the bot is present"""
-    headers = {"Authorization": f"Bot {bot_token}"}
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{DISCORD_API_BASE}/users/@me/guilds", headers=headers)
-
-        if response.status_code != 200:
-            return []
-
-        return response.json()
