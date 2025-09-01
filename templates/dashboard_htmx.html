@@ -36,32 +36,41 @@
             position: absolute !important;
         }
         .dropdown {
-            position: relative;
-            z-index: 1050;
+            position: relative !important;
+            z-index: 1050 !important;
         }
         .dropdown.show {
+            position: relative !important;
             z-index: 1055 !important;
         }
         .poll-card {
             overflow: visible !important;
-            position: relative;
+            position: relative !important;
         }
         .poll-card .dropdown {
-            z-index: 1050;
+            position: relative !important;
+            z-index: 1050 !important;
         }
         .poll-card .dropdown.show {
+            position: relative !important;
             z-index: 1055 !important;
         }
         .card-body {
             overflow: visible !important;
-            position: relative;
+            position: relative !important;
         }
         .card {
             overflow: visible !important;
+            position: relative !important;
         }
         /* Ensure dropdown menus appear above all other content */
         .dropdown-menu.show {
             z-index: 1060 !important;
+            position: absolute !important;
+        }
+        /* Force positioning context for all dropdown containers */
+        .dropdown-toggle {
+            position: relative !important;
         }
     </style>
 </head>
