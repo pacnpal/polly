@@ -11,28 +11,28 @@
         <!-- Filter Tabs -->
         <ul class="nav nav-pills mb-3" id="poll-filter-tabs">
             <li class="nav-item">
-                <button class="nav-link {% if not request.args.get('filter') or request.args.get('filter') == 'all' %}active{% endif %}" 
+                <button class="nav-link {% if not current_filter or current_filter == 'all' %}active{% endif %}" 
                         hx-get="/htmx/polls" hx-target="#main-content">
                     <i class="fas fa-list me-1"></i>All Polls
                     <span class="badge bg-secondary ms-1">{{ polls|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link {% if request.args.get('filter') == 'active' %}active{% endif %}" 
+                <button class="nav-link {% if current_filter == 'active' %}active{% endif %}" 
                         hx-get="/htmx/polls?filter=active" hx-target="#main-content">
                     <i class="fas fa-play-circle me-1"></i>Active
                     <span class="badge bg-success ms-1">{{ polls|selectattr("status", "equalto", "active")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link {% if request.args.get('filter') == 'scheduled' %}active{% endif %}" 
+                <button class="nav-link {% if current_filter == 'scheduled' %}active{% endif %}" 
                         hx-get="/htmx/polls?filter=scheduled" hx-target="#main-content">
                     <i class="fas fa-clock me-1"></i>Scheduled
                     <span class="badge bg-warning ms-1">{{ polls|selectattr("status", "equalto", "scheduled")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link {% if request.args.get('filter') == 'closed' %}active{% endif %}" 
+                <button class="nav-link {% if current_filter == 'closed' %}active{% endif %}" 
                         hx-get="/htmx/polls?filter=closed" hx-target="#main-content">
                     <i class="fas fa-stop-circle me-1"></i>Closed
                     <span class="badge bg-danger ms-1">{{ polls|selectattr("status", "equalto", "closed")|list|length }}</span>

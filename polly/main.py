@@ -489,11 +489,11 @@ async def get_polls_htmx(request: Request, filter: str = None, current_user: Dis
     db = get_db_session()
     try:
         query = db.query(Poll).filter(Poll.creator_id == current_user.id)
-        
+
         # Apply filter if specified
         if filter and filter in ['active', 'scheduled', 'closed']:
             query = query.filter(Poll.status == filter)
-        
+
         polls = query.order_by(Poll.created_at.desc()).all()
 
         # Add status_class to each poll for template
@@ -506,7 +506,8 @@ async def get_polls_htmx(request: Request, filter: str = None, current_user: Dis
 
         return templates.TemplateResponse("htmx/polls.html", {
             "request": request,
-            "polls": polls
+            "polls": polls,
+            "current_filter": filter
         })
     finally:
         db.close()
@@ -1215,11 +1216,13 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         try:
             scheduler.remove_job(f"open_poll_{poll.id}")
         except Exception as e:
-            logger.debug(f"Job open_poll_{poll.id} not found or already removed: {e}")
+            logger.debug(
+                f"Job open_poll_{poll.id} not found or already removed: {e}")
         try:
             scheduler.remove_job(f"close_poll_{poll.id}")
         except Exception as e:
-            logger.debug(f"Job close_poll_{poll.id} not found or already removed: {e}")
+            logger.debug(
+                f"Job close_poll_{poll.id} not found or already removed: {e}")
 
         # Delete poll and associated votes
         db.query(Vote).filter(Vote.poll_id == poll_id).delete()
