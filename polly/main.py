@@ -531,10 +531,63 @@ async def start_bot():
         await bot.start(DISCORD_TOKEN)
 
 
+async def restore_scheduled_jobs():
+    """Restore scheduled jobs from database on startup"""
+    db = get_db_session()
+    try:
+        # Get all scheduled polls
+        scheduled_polls = db.query(Poll).filter(Poll.status == "scheduled").all()
+        logger.info(f"Restoring {len(scheduled_polls)} scheduled polls")
+        
+        now = datetime.now(pytz.UTC)
+        
+        for poll in scheduled_polls:
+            try:
+                # Check if poll should have already opened
+                if poll.open_time <= now:
+                    # Poll should be active now, post it immediately
+                    logger.info(f"Poll {poll.id} should be active, posting immediately")
+                    await post_poll_to_channel(bot, poll)
+                else:
+                    # Schedule poll to open
+                    scheduler.add_job(
+                        post_poll_to_channel,
+                        DateTrigger(run_date=poll.open_time),
+                        args=[bot, poll],
+                        id=f"open_poll_{poll.id}"
+                    )
+                    logger.info(f"Scheduled poll {poll.id} to open at {poll.open_time}")
+                
+                # Always schedule poll to close (whether it's active or scheduled)
+                if poll.close_time > now:
+                    scheduler.add_job(
+                        close_poll,
+                        DateTrigger(run_date=poll.close_time),
+                        args=[poll.id],
+                        id=f"close_poll_{poll.id}"
+                    )
+                    logger.info(f"Scheduled poll {poll.id} to close at {poll.close_time}")
+                else:
+                    # Poll should have already closed
+                    logger.info(f"Poll {poll.id} should have closed, closing now")
+                    await close_poll(poll.id)
+                    
+            except Exception as e:
+                logger.error(f"Error restoring scheduled job for poll {poll.id}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Error restoring scheduled jobs: {e}")
+    finally:
+        db.close()
+
+
 async def start_scheduler():
     """Start the job scheduler"""
     scheduler.start()
     logger.info("Scheduler started")
+    
+    # Restore scheduled jobs from database
+    await restore_scheduled_jobs()
 
 
 # Lifespan manager for background tasks

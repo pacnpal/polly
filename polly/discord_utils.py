@@ -175,7 +175,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         title=f"{status_emoji} {poll.name}",
         description=poll.question,
         color=color,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(pytz.UTC)
     )
 
     # Add poll options
