@@ -1112,9 +1112,23 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         ]
 
         # Convert times to local timezone for editing
-        tz = pytz.timezone(poll.timezone or "UTC")
-        open_time_local = poll.open_time.astimezone(tz)
-        close_time_local = poll.close_time.astimezone(tz)
+        poll_timezone = poll.timezone or "UTC"
+        tz = pytz.timezone(poll_timezone)
+        
+        # Ensure the stored times have timezone info (they should be UTC)
+        if poll.open_time.tzinfo is None:
+            open_time_utc = pytz.UTC.localize(poll.open_time)
+        else:
+            open_time_utc = poll.open_time.astimezone(pytz.UTC)
+            
+        if poll.close_time.tzinfo is None:
+            close_time_utc = pytz.UTC.localize(poll.close_time)
+        else:
+            close_time_utc = poll.close_time.astimezone(pytz.UTC)
+        
+        # Convert from UTC to the poll's timezone
+        open_time_local = open_time_utc.astimezone(tz)
+        close_time_local = close_time_utc.astimezone(tz)
 
         # Debug logging for edit form time conversion
         logger.debug(f"Edit form for poll {poll_id}:")
