@@ -52,8 +52,9 @@
                     <div class="mb-4">
                         <h6 class="text-muted">Options & Results</h6>
                         {% set total_votes = poll.get_total_votes() %}
+                        {% set results = poll.get_results() %}
                         {% for i in range(poll.options|length) %}
-                        {% set option_votes = poll.get_option_votes(i) %}
+                        {% set option_votes = results[i] if i in results else 0 %}
                         {% set percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0 %}
                         <div class="mb-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
