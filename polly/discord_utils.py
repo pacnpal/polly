@@ -383,6 +383,13 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             poll = fresh_poll
             logger.debug(
                 f"✅ POSTING POLL {poll.id} - Successfully refreshed poll from database")
+            
+            # Keep the database session open for embed creation to avoid DetachedInstanceError
+            # Create embed with debugging while poll is still attached to session
+            logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
+            embed = await create_poll_embed(poll, show_results=poll.should_show_results())
+            logger.debug(f"✅ POSTING POLL {poll.id} - Embed created successfully")
+            
         except Exception as refresh_error:
             logger.error(
                 f"❌ POSTING POLL {poll.id} - Failed to refresh poll from database: {refresh_error}")
@@ -426,10 +433,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
                     f"❌ POSTING POLL {poll.id} - Failed to post image: {image_error}")
                 # Continue with poll posting even if image fails
 
-        # Create embed with debugging
-        logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
-        embed = await create_poll_embed(poll, show_results=poll.should_show_results())
-        logger.debug(f"✅ POSTING POLL {poll.id} - Embed created successfully")
+        # Embed was already created above while poll was attached to database session
 
         # Post message with debugging
         logger.info(
