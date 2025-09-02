@@ -1,0 +1,86 @@
+<!-- Poll Cards Content - Used for real-time updates -->
+{% set active_polls = polls|selectattr("status", "equalto", "active")|list %}
+{% set scheduled_polls = polls|selectattr("status", "equalto", "scheduled")|list %}
+{% set closed_polls = polls|selectattr("status", "equalto", "closed")|list %}
+
+<!-- Active Polls Section -->
+{% if active_polls %}
+<div class="row poll-section" data-status="active">
+    {% set status_color = "success" %}
+    {% set icon = "play-circle" %}
+    {% set title = "Active Polls" %}
+    {% set count = active_polls|length %}
+    {% include "htmx/components/poll_section_header.html" %}
+    
+    {% for poll in active_polls %}
+        {% set poll_id = poll.id %}
+        {% set poll_name = poll.name %}
+        {% set poll_question = poll.question %}
+        {% set server_name = poll.server_name %}
+        {% set channel_name = poll.channel_name %}
+        {% set vote_count = poll.get_total_votes() %}
+        {% set is_anonymous = poll.anonymous %}
+        {% set close_time_formatted = format_datetime_for_user(poll.close_time, user_timezone) %}
+        {% include "htmx/components/poll_card_active.html" %}
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Scheduled Polls Section -->
+{% if scheduled_polls %}
+<div class="row poll-section" data-status="scheduled">
+    {% set status_color = "warning" %}
+    {% set icon = "clock" %}
+    {% set title = "Scheduled Polls" %}
+    {% set count = scheduled_polls|length %}
+    {% include "htmx/components/poll_section_header.html" %}
+    
+    {% for poll in scheduled_polls %}
+        {% set poll_id = poll.id %}
+        {% set poll_name = poll.name %}
+        {% set poll_question = poll.question %}
+        {% set server_name = poll.server_name %}
+        {% set channel_name = poll.channel_name %}
+        {% set vote_count = poll.get_total_votes() %}
+        {% set is_anonymous = poll.anonymous %}
+        {% set open_time_formatted = format_datetime_for_user(poll.open_time, user_timezone) %}
+        {% set close_time_formatted = format_datetime_for_user(poll.close_time, user_timezone) %}
+        {% include "htmx/components/poll_card_scheduled.html" %}
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Closed Polls Section -->
+{% if closed_polls %}
+<div class="row poll-section" data-status="closed">
+    {% set status_color = "danger" %}
+    {% set icon = "stop-circle" %}
+    {% set title = "Closed Polls" %}
+    {% set count = closed_polls|length %}
+    {% include "htmx/components/poll_section_header.html" %}
+    
+    {% for poll in closed_polls %}
+        {% set poll_id = poll.id %}
+        {% set poll_name = poll.name %}
+        {% set poll_question = poll.question %}
+        {% set server_name = poll.server_name %}
+        {% set channel_name = poll.channel_name %}
+        {% set vote_count = poll.get_total_votes() %}
+        {% set is_anonymous = poll.anonymous %}
+        {% set close_time_formatted = format_datetime_for_user(poll.close_time, user_timezone) %}
+        {% include "htmx/components/poll_card_closed.html" %}
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- No polls message -->
+{% if not polls %}
+<div class="col-12 text-center">
+    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+    <h5 class="text-muted">No polls yet</h5>
+    <p class="text-muted">Create your first poll to get started!</p>
+    <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
+        <i class="fas fa-plus me-1"></i>Create Poll
+    </button>
+</div>
+{% endif %}

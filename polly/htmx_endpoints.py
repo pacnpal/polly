@@ -14,6 +14,7 @@ import os
 
 from fastapi import Request, Depends
 from fastapi.templating import Jinja2Templates
+from apscheduler.triggers.date import DateTrigger
 
 from .auth import require_auth, DiscordUser
 from .database import get_db_session, Poll, Vote, UserPreference, TypeSafeColumn
@@ -741,7 +742,7 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
 
 
 async def get_polls_realtime_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
-    """Get real-time poll data for HTMX polling updates using proper template components"""
+    """Get real-time poll data for HTMX polling updates - returns only poll cards content"""
     db = get_db_session()
     try:
         # Query polls with error handling
@@ -786,8 +787,8 @@ async def get_polls_realtime_htmx(request: Request, filter: str = None, current_
                 f"Error getting user preferences for {current_user.id}: {e}")
             user_timezone = "US/Eastern"
 
-        # Use the same template as get_polls_htmx for consistency
-        return templates.TemplateResponse("htmx/polls.html", {
+        # Use the dedicated poll cards content component for real-time updates
+        return templates.TemplateResponse("htmx/components/poll_cards_content.html", {
             "request": request,
             "polls": processed_polls,
             "current_filter": filter,
@@ -1289,6 +1290,224 @@ async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: 
             "timezones": timezones,
             "open_time": open_time,
             "close_time": close_time
+        })
+    finally:
+        db.close()
+
+
+async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)):
+    """Update a scheduled poll"""
+    logger.info(f"User {current_user.id} updating poll {poll_id}")
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            logger.warning(
+                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        if TypeSafeColumn.get_string(poll, 'status') != "scheduled":
+            logger.warning(
+                f"Attempt to edit non-scheduled poll {poll_id} (status: {TypeSafeColumn.get_string(poll, 'status')})")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Only scheduled polls can be edited"
+            })
+
+        form_data = await request.form()
+
+        # Extract form data
+        name = safe_get_form_data(form_data, "name")
+        question = safe_get_form_data(form_data, "question")
+        server_id = safe_get_form_data(form_data, "server_id")
+        channel_id = safe_get_form_data(form_data, "channel_id")
+        open_time = safe_get_form_data(form_data, "open_time")
+        close_time = safe_get_form_data(form_data, "close_time")
+        timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
+        anonymous = form_data.get("anonymous") == "true"
+        multiple_choice = form_data.get("multiple_choice") == "true"
+        image_message_text = safe_get_form_data(
+            form_data, "image_message_text", "")
+
+        # Validate required fields
+        if not all([name, question, server_id, channel_id, open_time, close_time]):
+            logger.warning(
+                f"Missing required fields for poll {poll_id} update")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "All required fields must be filled"
+            })
+
+        # Handle image upload
+        image_file = form_data.get("image")
+        is_valid, error_msg, content = await validate_image_file(image_file)
+
+        if not is_valid:
+            logger.warning(
+                f"Image validation failed for poll {poll_id}: {error_msg}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": error_msg
+            })
+
+        # Save new image if provided
+        new_image_path = TypeSafeColumn.get_string(poll, 'image_path')
+        if content and hasattr(image_file, 'filename') and getattr(image_file, 'filename', None):
+            new_image_path = await save_image_file(content, str(getattr(image_file, 'filename', '')))
+            if not new_image_path:
+                logger.error(f"Failed to save new image for poll {poll_id}")
+                return templates.TemplateResponse("htmx/components/alert_error.html", {
+                    "request": request,
+                    "message": "Failed to save image file"
+                })
+            # Clean up old image
+            old_image_path = TypeSafeColumn.get_string(poll, 'image_path')
+            if old_image_path:
+                await cleanup_image(str(old_image_path))
+
+        # Get options and emojis
+        options = []
+        emojis = []
+        for i in range(1, 11):
+            option = form_data.get(f"option{i}")
+            if option:
+                options.append(str(option).strip())
+                # Extract emoji from form data, fallback to default if not provided
+                emoji = safe_get_form_data(form_data, f"emoji{i}")
+                if emoji and emoji.strip():
+                    emojis.append(emoji.strip())
+                else:
+                    # Fallback to default emojis if not provided
+                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
+                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                    fallback_emoji = default_emojis[len(emojis)] if len(
+                        emojis) < 10 else "⭐"
+                    emojis.append(fallback_emoji)
+
+        if len(options) < 2:
+            logger.warning(
+                f"Insufficient options for poll {poll_id}: {len(options)}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "At least 2 options required"
+            })
+
+        # Parse times with timezone using safe parsing
+        open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
+        close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+
+        # Normalize timezone for storage
+        timezone_str = validate_and_normalize_timezone(timezone_str)
+
+        # Validate times
+        now = datetime.now(pytz.UTC)
+        next_minute = now.replace(
+            second=0, microsecond=0) + timedelta(minutes=1)
+
+        if open_dt < next_minute:
+            # Convert next_minute to user's timezone for display
+            user_tz = pytz.timezone(timezone_str)
+            next_minute_local = next_minute.astimezone(user_tz)
+            suggested_time = next_minute_local.strftime('%I:%M %p')
+
+            logger.warning(
+                f"Attempt to schedule poll in the past: {open_dt} < {next_minute}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": f"Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later."
+            })
+
+        if close_dt <= open_dt:
+            logger.warning(
+                f"Invalid time range for poll {poll_id}: open={open_dt}, close={close_dt}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Close time must be after open time"
+            })
+
+        # Get server and channel names
+        guild = bot.get_guild(int(server_id))
+        channel = bot.get_channel(int(channel_id))
+
+        if not guild or not channel:
+            logger.error(
+                f"Invalid guild or channel for poll {poll_id}: guild={guild}, channel={channel}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Invalid server or channel"
+            })
+
+        # Update poll using setattr to avoid SQLAlchemy Column type issues
+        setattr(poll, 'name', name)
+        setattr(poll, 'question', question)
+        poll.options = options
+        poll.emojis = emojis
+        setattr(poll, 'image_path', new_image_path)
+        setattr(poll, 'image_message_text',
+                image_message_text if new_image_path else None)
+        setattr(poll, 'server_id', server_id)
+        setattr(poll, 'server_name', guild.name)
+        setattr(poll, 'channel_id', channel_id)
+        setattr(poll, 'channel_name', getattr(channel, 'name', 'Unknown'))
+        setattr(poll, 'open_time', open_dt)
+        setattr(poll, 'close_time', close_dt)
+        setattr(poll, 'timezone', timezone_str)
+        setattr(poll, 'anonymous', anonymous)
+        setattr(poll, 'multiple_choice', multiple_choice)
+
+        db.commit()
+
+        # Update scheduled jobs
+        try:
+            scheduler.remove_job(f"open_poll_{poll_id}")
+        except Exception as e:
+            logger.debug(
+                f"Job open_poll_{poll_id} not found or already removed: {e}")
+        try:
+            scheduler.remove_job(f"close_poll_{poll_id}")
+        except Exception as e:
+            logger.debug(
+                f"Job close_poll_{poll_id} not found or already removed: {e}")
+
+        # Reschedule jobs
+        from .discord_utils import post_poll_to_channel
+        from .background_tasks import close_poll
+
+        if open_dt > datetime.now(pytz.UTC):
+            scheduler.add_job(
+                post_poll_to_channel,
+                DateTrigger(run_date=open_dt),
+                args=[bot, poll_id],
+                id=f"open_poll_{poll_id}"
+            )
+
+        scheduler.add_job(
+            close_poll,
+            DateTrigger(run_date=close_dt),
+            args=[poll_id],
+            id=f"close_poll_{poll_id}"
+        )
+
+        logger.info(f"Successfully updated poll {poll_id}")
+
+        return templates.TemplateResponse("htmx/components/alert_success.html", {
+            "request": request,
+            "message": "Poll updated successfully! Redirecting to polls...",
+            "redirect_url": "/htmx/polls"
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating poll {poll_id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Update", poll_id=poll_id, user_id=current_user.id)
+        db.rollback()
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error updating poll: {str(e)}"
         })
     finally:
         db.close()

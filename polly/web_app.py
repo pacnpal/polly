@@ -301,6 +301,13 @@ def add_htmx_routes(app: FastAPI):
         bot = get_bot_instance()
         return await get_poll_edit_form(poll_id, request, bot, current_user)
 
+    @app.post("/htmx/poll/{poll_id}/edit", response_class=HTMLResponse)
+    async def htmx_poll_update(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        from .htmx_endpoints import update_poll_htmx
+        bot = get_bot_instance()
+        scheduler = get_scheduler()
+        return await update_poll_htmx(poll_id, request, bot, scheduler, current_user)
+
     @app.get("/htmx/poll/{poll_id}/details", response_class=HTMLResponse)
     async def htmx_poll_details(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
         return await get_poll_details_htmx(poll_id, request, current_user)
