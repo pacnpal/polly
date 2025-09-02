@@ -12,11 +12,11 @@
     <div class="col-md-6 col-lg-4 mb-3">
         <div class="card">
             <div class="card-body">
-                <h6 class="card-title">{{ guild.name }}</h6>
+                <h6 class="card-title">{{ guild.name|e }}</h6>
                 <p class="card-text text-muted">{{ guild.channels|length }} channels</p>
                 <div class="small">
                     {% for channel in guild.channels[:3] %}
-                    <span class="badge bg-light text-dark me-1">#{{ channel.name }}</span>
+                    <span class="badge bg-light text-dark me-1">#{{ channel.name|e }}</span>
                     {% endfor %}
                     {% if guild.channels|length > 3 %}
                     <span class="text-muted">+{{ guild.channels|length - 3 }} more</span>

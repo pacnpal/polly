@@ -4,7 +4,7 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">
-                        <i class="fas fa-poll me-2"></i>{{ poll.name }}
+                        <i class="fas fa-poll me-2"></i>{{ poll.name|e }}
                     </h5>
                     <span class="badge {% if poll.status == 'active' %}bg-success{% elif poll.status == 'scheduled' %}bg-warning{% else %}bg-danger{% endif %}">
                         {{ poll.status.title() }}
@@ -14,7 +14,7 @@
                     <!-- Poll Question -->
                     <div class="mb-4">
                         <h6 class="text-muted">Question</h6>
-                        <p class="fs-5">{{ poll.question }}</p>
+                        <p class="fs-5">{{ poll.question|e }}</p>
                     </div>
 
                     <!-- Poll Image -->
@@ -29,7 +29,7 @@
                     <div class="row mb-4">
                         <div class="col-md-6">
                             <h6 class="text-muted">Server & Channel</h6>
-                            <p><strong>{{ poll.server_name }}</strong> → #{{ poll.channel_name }}</p>
+                            <p><strong>{{ poll.server_name|e }}</strong> → #{{ poll.channel_name|e }}</p>
                         </div>
                         <div class="col-md-6">
                             <h6 class="text-muted">Timezone</h6>
@@ -58,7 +58,7 @@
                         {% set percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0 %}
                         <div class="mb-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
-                                <span>{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else "🇦" }} {{ poll.options[i] }}</span>
+                                <span>{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else "🇦" }} {{ poll.options[i]|e }}</span>
                                 <span class="text-muted">{{ option_votes }} votes ({{ "%.1f"|format(percentage) }}%)</span>
                             </div>
                             <div class="progress" style="height: 20px;">
