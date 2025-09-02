@@ -1,5 +1,14 @@
 <div class="input-group mb-2">
-    <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ option_num }}">{{ emoji }}</button>
+    <div class="btn-group">
+        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ option_num }}">{{ emoji }}</button>
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                data-bs-toggle="dropdown" data-option="{{ option_num }}" aria-expanded="false">
+            <span class="visually-hidden">Discord Emojis</span>
+        </button>
+        <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ option_num }}">
+            <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+        </ul>
+    </div>
     <input type="text" class="form-control" name="option{{ option_num }}" placeholder="Option {{ option_num }}">
     <input type="hidden" name="emoji{{ option_num }}" value="{{ emoji }}">
     <button type="button" class="btn btn-outline-danger"

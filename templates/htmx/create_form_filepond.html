@@ -486,6 +486,8 @@
 
                 let html = '<li><h6 class="dropdown-header">Discord Custom Emojis</h6></li>';
                 html += '<li><hr class="dropdown-divider"></li>';
+                html += '<li class="px-3 py-2">';
+                html += '<div class="discord-emoji-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 8px; max-height: 200px; overflow-y: auto; padding: 8px;">';
                 
                 emojis.forEach(emoji => {
                     // Handle both animated and static emojis using the URL from the backend
@@ -493,15 +495,25 @@
                     const displayUrl = emoji.url; // Use the URL from backend
                     
                     html += `
-                        <li>
-                            <a class="dropdown-item discord-emoji-item" href="#" data-emoji="${emojiFormat}" data-option="${dropdown.dataset.option}" data-emoji-url="${displayUrl}" data-emoji-name="${emoji.name}">
-                                <img src="${displayUrl}?size=32" alt="${emoji.name}" style="width: 20px; height: 20px; margin-right: 8px; object-fit: contain;" onerror="this.style.display='none';">
-                                :${emoji.name}:
-                            </a>
-                        </li>
+                        <div class="discord-emoji-item" 
+                             style="cursor: pointer; padding: 4px; border-radius: 4px; transition: background-color 0.2s; display: flex; align-items: center; justify-content: center;"
+                             data-emoji="${emojiFormat}" 
+                             data-option="${dropdown.dataset.option}" 
+                             data-emoji-url="${displayUrl}" 
+                             data-emoji-name="${emoji.name}"
+                             title=":${emoji.name}:"
+                             onmouseover="this.style.backgroundColor='#f8f9fa'"
+                             onmouseout="this.style.backgroundColor='transparent'">
+                            <img src="${displayUrl}?size=32" 
+                                 alt="${emoji.name}" 
+                                 style="width: 32px; height: 32px; object-fit: contain;" 
+                                 onerror="this.style.display='none';">
+                        </div>
                     `;
                 });
 
+                html += '</div>';
+                html += '</li>';
                 dropdown.innerHTML = html;
             });
 
