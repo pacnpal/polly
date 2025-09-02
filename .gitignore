@@ -7,3 +7,7 @@ WARP.md
 .clinerules/bulletproof-operations.md
 .clinerules/
 polly/__pycache__/
+.env
+logs/
+static/
+polly/_pycache_
