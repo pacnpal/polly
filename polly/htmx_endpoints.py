@@ -1,0 +1,1300 @@
+"""
+HTMX Endpoints Module
+Handles all HTMX-related endpoints for dynamic web content without JavaScript.
+"""
+
+import logging
+from datetime import datetime, timedelta
+from html import escape
+import pytz
+import random
+import uuid
+import aiofiles
+import os
+
+from fastapi import Request, Depends
+from fastapi.templating import Jinja2Templates
+
+from .auth import require_auth, DiscordUser
+from .database import get_db_session, Poll, Vote, UserPreference, TypeSafeColumn
+from .discord_utils import get_user_guilds_with_channels
+from .poll_operations import BulletproofPollOperations
+from .error_handler import PollErrorHandler
+from .timezone_scheduler_fix import TimezoneAwareScheduler
+
+logger = logging.getLogger(__name__)
+
+# Templates setup
+templates = Jinja2Templates(directory="templates")
+
+
+def safe_get_form_data(form_data, key: str, default: str = "") -> str:
+    """Safely extract form data with proper error handling"""
+    try:
+        value = form_data.get(key)
+        if value is None:
+            return default
+        return str(value).strip()
+    except Exception as e:
+        logger.warning(f"Error extracting form data for key '{key}': {e}")
+        from .error_handler import notify_error
+        notify_error(e, "Form Data Extraction", key=key, default=default)
+        return default
+
+
+def validate_and_normalize_timezone(timezone_str: str) -> str:
+    """Validate and normalize timezone string, handling EDT/EST issues"""
+    if not timezone_str:
+        return "UTC"
+
+    # Handle common timezone aliases and server timezone issues
+    timezone_mapping = {
+        "EDT": "US/Eastern",
+        "EST": "US/Eastern",
+        "CDT": "US/Central",
+        "CST": "US/Central",
+        "MDT": "US/Mountain",
+        "MST": "US/Mountain",
+        "PDT": "US/Pacific",
+        "PST": "US/Pacific",
+        "Eastern": "US/Eastern",
+        "Central": "US/Central",
+        "Mountain": "US/Mountain",
+        "Pacific": "US/Pacific"
+    }
+
+    # Check if it's a mapped timezone
+    if timezone_str in timezone_mapping:
+        timezone_str = timezone_mapping[timezone_str]
+
+    # Validate the timezone
+    try:
+        pytz.timezone(timezone_str)
+        return timezone_str
+    except pytz.UnknownTimeZoneError:
+        logger.warning(f"Unknown timezone '{timezone_str}', defaulting to UTC")
+        return "UTC"
+    except Exception as e:
+        logger.error(f"Error validating timezone '{timezone_str}': {e}")
+        from .error_handler import notify_error
+        notify_error(e, "Timezone Validation", timezone_str=timezone_str)
+        return "UTC"
+
+
+def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> datetime:
+    """Safely parse datetime string with timezone, handling server timezone issues"""
+    try:
+        # Validate and normalize timezone
+        normalized_tz = validate_and_normalize_timezone(timezone_str)
+        tz = pytz.timezone(normalized_tz)
+
+        # Parse the datetime string
+        dt = datetime.fromisoformat(datetime_str)
+
+        # HTML datetime-local inputs are always naive and represent local time
+        # in the user's selected timezone, so we always localize to the specified timezone
+        if dt.tzinfo is None:
+            localized_dt = tz.localize(dt)
+        else:
+            # If it already has timezone info, convert to the specified timezone
+            localized_dt = dt.astimezone(tz)
+
+        # Convert to UTC for storage
+        utc_dt = localized_dt.astimezone(pytz.UTC)
+
+        # Debug logging to help troubleshoot timezone issues
+        logger.debug(
+            f"Timezone parsing: '{datetime_str}' in '{timezone_str}' -> {localized_dt} -> {utc_dt}")
+
+        return utc_dt
+
+    except Exception as e:
+        logger.error(
+            f"Error parsing datetime '{datetime_str}' with timezone '{timezone_str}': {e}")
+        # Fallback: parse as UTC
+        try:
+            dt = datetime.fromisoformat(datetime_str)
+            if dt.tzinfo is None:
+                return pytz.UTC.localize(dt)
+            return dt.astimezone(pytz.UTC)
+        except Exception as fallback_error:
+            logger.error(f"Fallback datetime parsing failed: {fallback_error}")
+            from .error_handler import notify_error
+            notify_error(fallback_error, "Fallback Datetime Parsing",
+                         datetime_str=datetime_str, timezone_str=timezone_str)
+            # Last resort: return current time
+            return datetime.now(pytz.UTC)
+
+
+async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
+    """Validate uploaded image file and return validation result"""
+    try:
+        if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
+            return True, "", None
+
+        # Read file content
+        content = await image_file.read()
+
+        # Validate file size (8MB limit)
+        if len(content) > 8 * 1024 * 1024:
+            return False, "Image file too large (max 8MB)", None
+
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        if hasattr(image_file, 'content_type') and image_file.content_type not in allowed_types:
+            return False, "Invalid image format (JPEG, PNG, GIF, WebP only)", None
+
+        return True, "", content
+    except Exception as e:
+        logger.error(f"Error validating image file: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Image File Validation")
+        return False, "Error processing image file", None
+
+
+async def save_image_file(content: bytes, filename: str) -> str | None:
+    """Save image file with proper error handling"""
+    try:
+        file_extension = filename.split('.')[-1].lower()
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
+        image_path = f"static/uploads/{unique_filename}"
+
+        # Ensure uploads directory exists
+        os.makedirs("static/uploads", exist_ok=True)
+
+        # Save file
+        async with aiofiles.open(image_path, "wb") as f:
+            await f.write(content)
+
+        logger.info(f"Saved image: {image_path}")
+        return image_path
+    except Exception as e:
+        logger.error(f"Error saving image file: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Image File Saving", filename=filename)
+        return None
+
+
+async def cleanup_image(image_path: str) -> bool:
+    """Safely delete an image file"""
+    try:
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
+            logger.info(f"Cleaned up image: {image_path}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to cleanup image {image_path}: {e}")
+        from .error_handler import notify_error
+        notify_error(e, "Image Cleanup", image_path=image_path)
+    return False
+
+
+def get_user_preferences(user_id: str) -> dict:
+    """Get user preferences for poll creation"""
+    db = get_db_session()
+    try:
+        prefs = db.query(UserPreference).filter(
+            UserPreference.user_id == user_id).first()
+        if prefs:
+            return {
+                "last_server_id": TypeSafeColumn.get_string(prefs, 'last_server_id') or None,
+                "last_channel_id": TypeSafeColumn.get_string(prefs, 'last_channel_id') or None,
+                "default_timezone": TypeSafeColumn.get_string(prefs, 'default_timezone', 'US/Eastern')
+            }
+        return {
+            "last_server_id": None,
+            "last_channel_id": None,
+            "default_timezone": "US/Eastern"
+        }
+    except Exception as e:
+        logger.error(f"Error getting user preferences for {user_id}: {e}")
+        from .error_handler import notify_error
+        notify_error(e, "User Preferences Retrieval", user_id=user_id)
+        return {
+            "last_server_id": None,
+            "last_channel_id": None,
+            "default_timezone": "US/Eastern"
+        }
+    finally:
+        db.close()
+
+
+def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None):
+    """Save user preferences for poll creation"""
+    db = get_db_session()
+    try:
+        prefs = db.query(UserPreference).filter(
+            UserPreference.user_id == user_id).first()
+
+        if prefs:
+            # Update existing preferences using setattr for SQLAlchemy compatibility
+            if server_id:
+                setattr(prefs, 'last_server_id', server_id)
+            if channel_id:
+                setattr(prefs, 'last_channel_id', channel_id)
+            if timezone:
+                setattr(prefs, 'default_timezone', timezone)
+            setattr(prefs, 'updated_at', datetime.now(pytz.UTC))
+        else:
+            # Create new preferences
+            prefs = UserPreference(
+                user_id=user_id,
+                last_server_id=server_id,
+                last_channel_id=channel_id,
+                default_timezone=timezone or "US/Eastern"
+            )
+            db.add(prefs)
+
+        db.commit()
+        logger.debug(
+            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
+    except Exception as e:
+        logger.error(f"Error saving user preferences for {user_id}: {e}")
+        from .error_handler import notify_error
+        notify_error(e, "User Preferences Saving", user_id=user_id,
+                     server_id=server_id, channel_id=channel_id, timezone=timezone)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
+    """Format datetime in user's timezone for display"""
+    try:
+        if dt.tzinfo is None:
+            # Assume UTC if no timezone info
+            dt = pytz.UTC.localize(dt)
+
+        # Convert to user's timezone
+        user_tz = pytz.timezone(validate_and_normalize_timezone(user_timezone))
+        local_dt = dt.astimezone(user_tz)
+
+        return local_dt.strftime('%b %d, %I:%M %p')
+    except Exception as e:
+        logger.error(
+            f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
+        from .error_handler import notify_error
+        notify_error(e, "Datetime Formatting", dt=str(
+            dt), user_timezone=user_timezone)
+        # Fallback to UTC
+        return dt.strftime('%b %d, %I:%M %p UTC')
+
+
+def get_common_timezones() -> list:
+    """Get comprehensive list of timezones with display names"""
+    common_timezones = [
+        # North America
+        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
+        "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+        "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
+        "America/Mexico_City", "America/Sao_Paulo", "America/Argentina/Buenos_Aires",
+
+        # Europe
+        "UTC", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome",
+        "Europe/Madrid", "Europe/Amsterdam", "Europe/Brussels", "Europe/Vienna",
+        "Europe/Prague", "Europe/Warsaw", "Europe/Stockholm", "Europe/Helsinki",
+        "Europe/Oslo", "Europe/Copenhagen", "Europe/Zurich", "Europe/Athens",
+        "Europe/Istanbul", "Europe/Moscow",
+
+        # Asia Pacific
+        "Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Singapore",
+        "Asia/Bangkok", "Asia/Jakarta", "Asia/Manila", "Asia/Kuala_Lumpur",
+        "Asia/Mumbai", "Asia/Kolkata", "Asia/Dubai", "Asia/Tehran", "Asia/Jerusalem",
+        "Australia/Sydney", "Australia/Melbourne", "Australia/Perth", "Australia/Brisbane",
+        "Pacific/Auckland", "Pacific/Fiji", "Pacific/Honolulu",
+
+        # Africa
+        "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
+        "Africa/Casablanca", "Africa/Tunis", "Africa/Algiers",
+
+        # South America
+        "America/Lima", "America/Bogota", "America/Santiago", "America/Caracas",
+
+        # Other
+        "GMT", "EST", "CST", "MST", "PST"
+    ]
+
+    timezones = []
+    for tz_name in common_timezones:
+        try:
+            tz_obj = pytz.timezone(tz_name)
+            offset = datetime.now(tz_obj).strftime('%z')
+            # Format offset nicely
+            if offset:
+                offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
+            else:
+                offset_formatted = "UTC"
+
+            # Create a more readable display name
+            display_name = tz_name.replace('_', ' ').replace('/', ' / ')
+            timezones.append({
+                "name": tz_name,
+                "display": f"{display_name} ({offset_formatted})"
+            })
+        except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+            logger.warning(f"Error formatting timezone {tz_name}: {e}")
+            timezones.append({
+                "name": tz_name,
+                "display": tz_name
+            })
+
+    # Sort by offset for better UX
+    timezones.sort(key=lambda x: x['display'])
+    return timezones
+
+
+# HTMX endpoint functions that will be registered with the FastAPI app
+async def get_polls_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
+    """Get user's polls as HTML for HTMX with bulletproof error handling"""
+    db = get_db_session()
+    try:
+        logger.debug(
+            f"Getting polls for user {current_user.id} with filter: {filter}")
+
+        # Query polls with error handling
+        try:
+            query = db.query(Poll).filter(Poll.creator_id == current_user.id)
+
+            # Apply filter if specified with validation
+            if filter and filter in ['active', 'scheduled', 'closed']:
+                query = query.filter(Poll.status == filter)
+                logger.debug(f"Applied filter: {filter}")
+
+            polls = query.order_by(Poll.created_at.desc()).all()
+            logger.debug(
+                f"Found {len(polls)} polls for user {current_user.id}")
+
+        except Exception as e:
+            logger.error(
+                f"Database error querying polls for user {current_user.id}: {e}")
+            logger.exception("Full traceback for polls query error:")
+
+            # Return error template with empty polls list
+            return templates.TemplateResponse("htmx/polls.html", {
+                "request": request,
+                "polls": [],
+                "current_filter": filter,
+                "user_timezone": "US/Eastern",
+                "format_datetime_for_user": format_datetime_for_user,
+                "error": "Database error loading polls"
+            })
+
+        # Process polls with individual error handling
+        processed_polls = []
+        for poll in polls:
+            try:
+                # Add status_class to each poll for template
+                poll.status_class = {
+                    'active': 'bg-success',
+                    'scheduled': 'bg-warning',
+                    'closed': 'bg-danger'
+                }.get(TypeSafeColumn.get_string(poll, 'status'), 'bg-secondary')
+
+                processed_polls.append(poll)
+                logger.debug(
+                    f"Processed poll {TypeSafeColumn.get_int(poll, 'id')} with status {TypeSafeColumn.get_string(poll, 'status')}")
+
+            except Exception as e:
+                logger.error(
+                    f"Error processing poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {e}")
+                # Continue with other polls, skip this one
+
+        # Get user's timezone preference with error handling
+        try:
+            user_prefs = get_user_preferences(current_user.id)
+            user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+            logger.debug(f"User timezone: {user_timezone}")
+        except Exception as e:
+            logger.error(
+                f"Error getting user preferences for {current_user.id}: {e}")
+            user_timezone = "US/Eastern"
+
+        logger.debug(f"Returning {len(processed_polls)} processed polls")
+
+        return templates.TemplateResponse("htmx/polls.html", {
+            "request": request,
+            "polls": processed_polls,
+            "current_filter": filter,
+            "user_timezone": user_timezone,
+            "format_datetime_for_user": format_datetime_for_user
+        })
+
+    except Exception as e:
+        logger.error(
+            f"Critical error in get_polls_htmx for user {current_user.id}: {e}")
+        logger.exception("Full traceback for polls endpoint error:")
+
+        # Return error-safe template
+        return templates.TemplateResponse("htmx/polls.html", {
+            "request": request,
+            "polls": [],
+            "current_filter": filter,
+            "user_timezone": "US/Eastern",
+            "format_datetime_for_user": format_datetime_for_user,
+            "error": f"Error loading polls: {str(e)}"
+        })
+    finally:
+        try:
+            db.close()
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
+
+
+async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Get dashboard stats as HTML for HTMX with bulletproof error handling"""
+    db = get_db_session()
+    try:
+        logger.debug(f"Getting stats for user {current_user.id}")
+
+        # Query polls with error handling
+        try:
+            polls = db.query(Poll).filter(
+                Poll.creator_id == current_user.id).all()
+            logger.debug(
+                f"Found {len(polls)} polls for user {current_user.id}")
+        except Exception as e:
+            logger.error(
+                f"Database error querying polls for user {current_user.id}: {e}")
+            return templates.TemplateResponse("htmx/stats.html", {
+                "request": request,
+                "total_polls": 0,
+                "active_polls": 0,
+                "total_votes": 0,
+                "error": "Database error loading polls"
+            })
+
+        # Calculate stats with individual error handling
+        total_polls = len(polls)
+
+        # Count active polls safely
+        try:
+            active_polls = len(
+                [p for p in polls if TypeSafeColumn.get_string(p, 'status') == 'active'])
+            logger.debug(f"Found {active_polls} active polls")
+        except Exception as e:
+            logger.error(f"Error counting active polls: {e}")
+            active_polls = 0
+
+        # Calculate total votes with bulletproof handling
+        total_votes = 0
+        for poll in polls:
+            try:
+                # Use the Poll model's get_total_votes method
+                poll_votes = poll.get_total_votes()
+                if isinstance(poll_votes, int):
+                    total_votes += poll_votes
+                    logger.debug(
+                        f"Poll {TypeSafeColumn.get_int(poll, 'id')} has {poll_votes} votes")
+                else:
+                    logger.warning(
+                        f"Poll {TypeSafeColumn.get_int(poll, 'id')} get_total_votes returned non-int: {type(poll_votes)}")
+            except Exception as e:
+                logger.error(
+                    f"Error getting votes for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {e}")
+                # Try alternative method - direct vote count
+                try:
+                    vote_count = db.query(Vote).filter(
+                        Vote.poll_id == TypeSafeColumn.get_int(poll, 'id')).count()
+                    if isinstance(vote_count, int):
+                        total_votes += vote_count
+                        logger.debug(
+                            f"Poll {TypeSafeColumn.get_int(poll, 'id')} fallback vote count: {vote_count}")
+                except Exception as fallback_e:
+                    logger.error(
+                        f"Fallback vote count failed for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {fallback_e}")
+                    # Continue without adding votes for this poll
+
+        logger.debug(
+            f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}")
+
+        return templates.TemplateResponse("htmx/stats.html", {
+            "request": request,
+            "total_polls": total_polls,
+            "active_polls": active_polls,
+            "total_votes": total_votes
+        })
+
+    except Exception as e:
+        logger.error(
+            f"Critical error in get_stats_htmx for user {current_user.id}: {e}")
+        logger.exception("Full traceback for stats error:")
+
+        # Return error-safe template
+        return templates.TemplateResponse("htmx/stats.html", {
+            "request": request,
+            "total_polls": 0,
+            "active_polls": 0,
+            "total_votes": 0,
+            "error": f"Error loading stats: {str(e)}"
+        })
+    finally:
+        try:
+            db.close()
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
+
+
+async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get create poll form as HTML for HTMX"""
+    # Get user's guilds with channels with error handling
+    try:
+        user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+        # Ensure user_guilds is always a valid list
+        if user_guilds is None:
+            user_guilds = []
+    except Exception as e:
+        logger.error(
+            f"Error getting user guilds for create form for {current_user.id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Create Form Guild Retrieval", user_id=current_user.id)
+        user_guilds = []
+
+    # Get user preferences
+    user_prefs = get_user_preferences(current_user.id)
+
+    # Get timezones - user's default first
+    common_timezones = [
+        user_prefs["default_timezone"], "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
+        "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+    ]
+    # Remove duplicates while preserving order
+    seen = set()
+    common_timezones = [tz for tz in common_timezones if not (
+        tz in seen or seen.add(tz))]
+
+    # Set default times in user's timezone
+    user_tz = pytz.timezone(user_prefs["default_timezone"])
+    now = datetime.now(user_tz)
+    open_time = (now + timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M')
+    close_time = (now + timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M')
+
+    # Prepare timezone data for template
+    timezones = []
+    for tz in common_timezones:
+        try:
+            tz_obj = pytz.timezone(tz)
+            offset = datetime.now(tz_obj).strftime('%z')
+            timezones.append({
+                "name": tz,
+                "display": f"{tz} (UTC{offset})"
+            })
+        except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+            logger.warning(f"Error formatting timezone {tz}: {e}")
+            timezones.append({
+                "name": tz,
+                "display": tz
+            })
+
+    return templates.TemplateResponse("htmx/create_form_filepond.html", {
+        "request": request,
+        "guilds": user_guilds,
+        "timezones": timezones,
+        "open_time": open_time,
+        "close_time": close_time,
+        "user_preferences": user_prefs
+    })
+
+
+async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get channels for a server as HTML options for HTMX"""
+    if not server_id:
+        return '<option value="">Select a server first...</option>'
+
+    user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+    guild = next((g for g in user_guilds if g["id"] == server_id), None)
+
+    if not guild:
+        return '<option value="">Server not found...</option>'
+
+    options = '<option value="">Select a channel...</option>'
+    for channel in guild["channels"]:
+        # HTML escape the channel name to prevent JavaScript syntax errors
+        escaped_channel_name = escape(channel["name"])
+        options += f'<option value="{channel["id"]}">#{escaped_channel_name}</option>'
+
+    return options
+
+
+async def add_option_htmx(request: Request):
+    """Add a new poll option input for HTMX"""
+    option_num = random.randint(3, 10)  # Simple way to get next option number
+    emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯']
+    emoji = emojis[min(option_num - 1, len(emojis) - 1)]
+
+    return templates.TemplateResponse("htmx/components/poll_option.html", {
+        "request": request,
+        "emoji": emoji,
+        "option_num": option_num
+    })
+
+
+async def remove_option_htmx():
+    """Remove a poll option for HTMX"""
+    return ""  # Empty response removes the element
+
+
+async def upload_image_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Handle FilePond image upload via HTMX"""
+    try:
+        form_data = await request.form()
+        image_file = form_data.get("image")
+
+        if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
+            return {"error": "No image file provided"}, 400
+
+        # Validate image file
+        is_valid, error_msg, content = await validate_image_file(image_file)
+
+        if not is_valid:
+            return {"error": error_msg}, 400
+
+        if content and image_file.filename:
+            image_path = await save_image_file(content, str(image_file.filename))
+            if image_path:
+                # Return the file path for FilePond to track
+                return {"success": True, "path": image_path}
+            else:
+                return {"error": "Failed to save image file"}, 500
+
+        return {"error": "No valid image content"}, 400
+
+    except Exception as e:
+        logger.error(f"Error in FilePond image upload: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "FilePond Image Upload", user_id=current_user.id)
+        return {"error": "Server error processing image"}, 500
+
+
+async def remove_image_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Handle FilePond image removal via HTMX"""
+    try:
+        form_data = await request.form()
+        image_path = form_data.get("path")
+
+        if image_path and await cleanup_image(image_path):
+            return {"success": True}
+        else:
+            return {"error": "Failed to remove image"}, 400
+
+    except Exception as e:
+        logger.error(f"Error removing image: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "FilePond Image Removal", user_id=current_user.id)
+        return {"error": "Server error removing image"}, 500
+
+
+async def get_servers_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get user's servers as HTML for HTMX"""
+    user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+
+    return templates.TemplateResponse("htmx/servers.html", {
+        "request": request,
+        "guilds": user_guilds
+    })
+
+
+async def get_settings_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Get user settings form as HTML for HTMX"""
+    # Get user preferences
+    user_prefs = get_user_preferences(current_user.id)
+
+    # Get common timezones
+    timezones = get_common_timezones()
+
+    return templates.TemplateResponse("htmx/settings.html", {
+        "request": request,
+        "user_prefs": user_prefs,
+        "timezones": timezones
+    })
+
+
+async def save_settings_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Save user settings via HTMX"""
+    try:
+        form_data = await request.form()
+        timezone = safe_get_form_data(form_data, "timezone", "US/Eastern")
+
+        # Validate and normalize timezone
+        normalized_timezone = validate_and_normalize_timezone(timezone)
+
+        # Save user preferences
+        save_user_preferences(current_user.id, timezone=normalized_timezone)
+
+        logger.info(
+            f"Updated timezone preference for user {current_user.id} to {normalized_timezone}")
+
+        return templates.TemplateResponse("htmx/components/alert_success.html", {
+            "request": request,
+            "message": "Settings saved successfully! Your timezone preference has been updated.",
+            "redirect_url": "/htmx/settings"
+        })
+
+    except Exception as e:
+        logger.error(f"Error saving settings for user {current_user.id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "User Settings Save", user_id=current_user.id)
+
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error saving settings: {str(e)}"
+        })
+
+
+async def get_polls_realtime_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
+    """Get real-time poll data for HTMX polling updates"""
+    db = get_db_session()
+    try:
+        # Query polls with error handling
+        try:
+            query = db.query(Poll).filter(Poll.creator_id == current_user.id)
+
+            # Apply filter if specified with validation
+            if filter and filter in ['active', 'scheduled', 'closed']:
+                query = query.filter(Poll.status == filter)
+
+            polls = query.order_by(Poll.created_at.desc()).all()
+
+        except Exception as e:
+            logger.error(
+                f"Database error in realtime polls for user {current_user.id}: {e}")
+            return ""  # Return empty for real-time updates on error
+
+        # Generate HTML for poll cards with real-time data
+        html_parts = []
+
+        # Group polls by status for organized display
+        active_polls = [p for p in polls if TypeSafeColumn.get_string(
+            p, 'status') == 'active']
+        scheduled_polls = [p for p in polls if TypeSafeColumn.get_string(
+            p, 'status') == 'scheduled']
+        closed_polls = [p for p in polls if TypeSafeColumn.get_string(
+            p, 'status') == 'closed']
+
+        # Active polls section
+        if active_polls:
+            html_parts.append(
+                '<div class="row poll-section" data-status="active">')
+
+            # Add section header using template rendering
+            header_template = templates.get_template(
+                "htmx/components/poll_section_header.html")
+            header_html = header_template.render({
+                "request": request,
+                "status_color": "success",
+                "icon": "play-circle",
+                "title": "Active Polls",
+                "count": len(active_polls)
+            })
+            html_parts.append(header_html)
+
+            for poll in active_polls:
+                try:
+                    vote_count = poll.get_total_votes()
+                    server_name = TypeSafeColumn.get_string(
+                        poll, 'server_name', f'Server {TypeSafeColumn.get_string(poll, "server_id")}')
+                    channel_name = TypeSafeColumn.get_string(
+                        poll, 'channel_name', f'Channel {TypeSafeColumn.get_string(poll, "channel_id")}')
+                    poll_timezone = TypeSafeColumn.get_string(
+                        poll, 'timezone', 'UTC')
+                    close_time_formatted = format_datetime_for_user(
+                        TypeSafeColumn.get_datetime(poll, 'close_time'), poll_timezone)
+                    poll_id = TypeSafeColumn.get_int(poll, 'id')
+                    poll_name = TypeSafeColumn.get_string(
+                        poll, 'name', 'Unknown')
+                    poll_question = TypeSafeColumn.get_string(
+                        poll, 'question', '')
+                    is_anonymous = TypeSafeColumn.get_bool(
+                        poll, 'anonymous', False)
+
+                    # Use template component for poll card
+                    card_template = templates.get_template(
+                        "htmx/components/poll_card_active.html")
+                    card_html = card_template.render({
+                        "request": request,
+                        "poll_id": poll_id,
+                        "poll_name": poll_name,
+                        "poll_question": poll_question,
+                        "server_name": server_name,
+                        "channel_name": channel_name,
+                        "vote_count": vote_count,
+                        "is_anonymous": is_anonymous,
+                        "close_time_formatted": close_time_formatted
+                    })
+                    html_parts.append(card_html)
+
+                except Exception as e:
+                    logger.error(
+                        f"Error processing active poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
+                    continue
+
+            html_parts.append('</div>')
+
+        # Scheduled polls section
+        if scheduled_polls:
+            html_parts.append(
+                '<div class="row poll-section" data-status="scheduled">')
+
+            # Add section header using template rendering
+            header_template = templates.get_template(
+                "htmx/components/poll_section_header.html")
+            header_html = header_template.render({
+                "request": request,
+                "status_color": "warning",
+                "icon": "clock",
+                "title": "Scheduled Polls",
+                "count": len(scheduled_polls)
+            })
+            html_parts.append(header_html)
+
+            for poll in scheduled_polls:
+                try:
+                    server_name = TypeSafeColumn.get_string(
+                        poll, 'server_name', f'Server {TypeSafeColumn.get_string(poll, "server_id")}')
+                    channel_name = TypeSafeColumn.get_string(
+                        poll, 'channel_name', f'Channel {TypeSafeColumn.get_string(poll, "channel_id")}')
+                    poll_timezone = TypeSafeColumn.get_string(
+                        poll, 'timezone', 'UTC')
+                    # Get datetime values with proper type checking
+                    open_time_dt = TypeSafeColumn.get_datetime(
+                        poll, 'open_time')
+                    close_time_dt = TypeSafeColumn.get_datetime(
+                        poll, 'close_time')
+
+                    # Ensure we have valid datetime objects
+                    if isinstance(open_time_dt, datetime):
+                        open_time_formatted = format_datetime_for_user(
+                            open_time_dt, poll_timezone)
+                    else:
+                        open_time_formatted = "Unknown"
+
+                    if isinstance(close_time_dt, datetime):
+                        close_time_formatted = format_datetime_for_user(
+                            close_time_dt, poll_timezone)
+                    else:
+                        close_time_formatted = "Unknown"
+                    poll_id = TypeSafeColumn.get_int(poll, 'id')
+                    poll_name = TypeSafeColumn.get_string(
+                        poll, 'name', 'Unknown')
+                    poll_question = TypeSafeColumn.get_string(
+                        poll, 'question', '')
+                    is_anonymous = TypeSafeColumn.get_bool(
+                        poll, 'anonymous', False)
+
+                    # Use template component for scheduled poll card
+                    card_response = templates.TemplateResponse("htmx/components/poll_card_scheduled.html", {
+                        "request": request,
+                        "poll_id": poll_id,
+                        "poll_name": poll_name,
+                        "poll_question": poll_question,
+                        "server_name": server_name,
+                        "channel_name": channel_name,
+                        "open_time_formatted": open_time_formatted,
+                        "close_time_formatted": close_time_formatted,
+                        "is_anonymous": is_anonymous
+                    })
+
+                    # Render the template to get HTML string
+                    from starlette.responses import Response
+
+                    # Create a mock response to capture the rendered content
+                    Response()
+                    card_html = card_response.body
+                    if hasattr(card_html, 'decode'):
+                        card_html = card_html.decode('utf-8')
+                    elif isinstance(card_html, (bytes, memoryview)):
+                        card_html = bytes(card_html).decode('utf-8')
+                    else:
+                        # Fallback: render template manually
+                        template = templates.get_template(
+                            "htmx/components/poll_card_scheduled.html")
+                        card_html = template.render({
+                            "request": request,
+                            "poll_id": poll_id,
+                            "poll_name": poll_name,
+                            "poll_question": poll_question,
+                            "server_name": server_name,
+                            "channel_name": channel_name,
+                            "open_time_formatted": open_time_formatted,
+                            "close_time_formatted": close_time_formatted,
+                            "is_anonymous": is_anonymous
+                        })
+
+                    html_parts.append(card_html)
+                except Exception as e:
+                    logger.error(
+                        f"Error processing scheduled poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
+                    continue
+
+            html_parts.append('</div>')
+
+        # Closed polls section
+        if closed_polls:
+            html_parts.append(
+                '<div class="row poll-section" data-status="closed">')
+
+            # Add section header using template rendering
+            header_template = templates.get_template(
+                "htmx/components/poll_section_header.html")
+            header_html = header_template.render({
+                "request": request,
+                "status_color": "danger",
+                "icon": "stop-circle",
+                "title": "Closed Polls",
+                "count": len(closed_polls)
+            })
+            html_parts.append(header_html)
+
+            for poll in closed_polls:
+                try:
+                    vote_count = poll.get_total_votes()
+                    server_name = TypeSafeColumn.get_string(
+                        poll, 'server_name', f'Server {TypeSafeColumn.get_string(poll, "server_id")}')
+                    channel_name = TypeSafeColumn.get_string(
+                        poll, 'channel_name', f'Channel {TypeSafeColumn.get_string(poll, "channel_id")}')
+                    poll_timezone = TypeSafeColumn.get_string(
+                        poll, 'timezone', 'UTC')
+                    # Get close time with proper type checking
+                    close_time_dt = TypeSafeColumn.get_datetime(
+                        poll, 'close_time')
+                    if isinstance(close_time_dt, datetime):
+                        close_time_formatted = format_datetime_for_user(
+                            close_time_dt, poll_timezone)
+                    else:
+                        close_time_formatted = "Unknown"
+                    poll_id = TypeSafeColumn.get_int(poll, 'id')
+                    poll_name = TypeSafeColumn.get_string(
+                        poll, 'name', 'Unknown')
+                    poll_question = TypeSafeColumn.get_string(
+                        poll, 'question', '')
+                    is_anonymous = TypeSafeColumn.get_bool(
+                        poll, 'anonymous', False)
+
+                    # Use template component for closed poll card
+                    card_template = templates.get_template(
+                        "htmx/components/poll_card_closed.html")
+                    card_html = card_template.render({
+                        "request": request,
+                        "poll_id": poll_id,
+                        "poll_name": poll_name,
+                        "poll_question": poll_question,
+                        "server_name": server_name,
+                        "channel_name": channel_name,
+                        "vote_count": vote_count,
+                        "is_anonymous": is_anonymous,
+                        "close_time_formatted": close_time_formatted
+                    })
+                    html_parts.append(card_html)
+                except Exception as e:
+                    logger.error(
+                        f"Error processing closed poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
+                    continue
+
+            html_parts.append('</div>')
+
+        return ''.join(html_parts)
+
+    except Exception as e:
+        logger.error(
+            f"Critical error in realtime polls for user {current_user.id}: {e}")
+        return ""  # Return empty on error for real-time updates
+    finally:
+        try:
+            db.close()
+        except Exception as e:
+            logger.error(f"Error closing database connection in realtime: {e}")
+
+
+async def create_poll_htmx(request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)):
+    """Create a new poll via HTMX using bulletproof operations"""
+    logger.info(f"User {current_user.id} creating new poll")
+
+    try:
+        form_data = await request.form()
+
+        # Extract form data with proper error handling
+        name = safe_get_form_data(form_data, "name")
+        question = safe_get_form_data(form_data, "question")
+        server_id = safe_get_form_data(form_data, "server_id")
+        channel_id = safe_get_form_data(form_data, "channel_id")
+        open_time = safe_get_form_data(form_data, "open_time")
+        close_time = safe_get_form_data(form_data, "close_time")
+        timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
+        anonymous = form_data.get("anonymous") == "true"
+        multiple_choice = form_data.get("multiple_choice") == "true"
+        image_message_text = safe_get_form_data(
+            form_data, "image_message_text", "")
+
+        # Get options and emojis
+        options = []
+        emojis = []
+        for i in range(1, 11):
+            option = form_data.get(f"option{i}")
+            if option:
+                options.append(str(option).strip())
+                # Extract emoji from form data, fallback to default if not provided
+                emoji = safe_get_form_data(form_data, f"emoji{i}")
+                if emoji and emoji.strip():
+                    emojis.append(emoji.strip())
+                else:
+                    # Fallback to default emojis if not provided
+                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
+                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                    fallback_emoji = default_emojis[len(
+                        emojis)] if len(emojis) < 10 else "⭐"
+                    emojis.append(fallback_emoji)
+
+        if len(options) < 2:
+            logger.warning(f"Insufficient options provided: {len(options)}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "At least 2 options required"
+            })
+
+        # Parse times with timezone using safe parsing
+        open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
+        close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+        timezone_str = validate_and_normalize_timezone(timezone_str)
+
+        # Validate times
+        now = datetime.now(pytz.UTC)
+        next_minute = now.replace(
+            second=0, microsecond=0) + timedelta(minutes=1)
+
+        if open_dt < next_minute:
+            user_tz = pytz.timezone(timezone_str)
+            next_minute_local = next_minute.astimezone(user_tz)
+            suggested_time = next_minute_local.strftime('%I:%M %p')
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": f"Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later."
+            })
+
+        if close_dt <= open_dt:
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Close time must be after open time"
+            })
+
+        # Prepare poll data for bulletproof operations
+        poll_data = {
+            "name": name,
+            "question": question,
+            "options": options,
+            "emojis": emojis,
+            "server_id": server_id,
+            "channel_id": channel_id,
+            "open_time": open_dt,
+            "close_time": close_dt,
+            "timezone": timezone_str,
+            "anonymous": anonymous,
+            "multiple_choice": multiple_choice,
+            "creator_id": current_user.id
+        }
+
+        # Handle image file
+        image_file_data = None
+        image_filename = None
+        image_file = form_data.get("image")
+        if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and getattr(image_file, 'filename', None):
+            try:
+                # Ensure image_file has read method before calling it
+                if callable(getattr(image_file, 'read', None)):
+                    image_file_data = await image_file.read()
+                    image_filename = str(getattr(image_file, 'filename', ''))
+                else:
+                    logger.warning(
+                        "Image file object does not have a callable read method")
+                    image_file_data = None
+                    image_filename = None
+            except Exception as e:
+                logger.error(f"Error reading image file: {e}")
+                return templates.TemplateResponse("htmx/components/alert_error.html", {
+                    "request": request,
+                    "message": "Error reading image file"
+                })
+
+        # Use bulletproof poll operations for creation
+        bulletproof_ops = BulletproofPollOperations(bot)
+
+        result = await bulletproof_ops.create_bulletproof_poll(
+            poll_data=poll_data,
+            user_id=current_user.id,
+            image_file=image_file_data,
+            image_filename=image_filename,
+            image_message_text=image_message_text if image_file_data else None
+        )
+
+        if not result["success"]:
+            logger.warning(
+                f"Bulletproof poll creation failed: {result['error']}")
+            # Use error handler for user-friendly messages
+            error_msg = await PollErrorHandler.handle_poll_creation_error(
+                Exception(result["error"]), poll_data, bot
+            )
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": error_msg
+            })
+
+        poll_id = result["poll_id"]
+        logger.info(f"Created poll {poll_id} for user {current_user.id}")
+
+        # Schedule poll opening and closing using timezone-aware scheduler
+        try:
+            from .discord_utils import post_poll_to_channel
+            from .background_tasks import close_poll
+
+            # Use the timezone-aware scheduler wrapper
+            tz_scheduler = TimezoneAwareScheduler(scheduler)
+
+            # Schedule poll to open at the specified time
+            success_open = tz_scheduler.schedule_poll_opening(
+                poll_id, open_dt, timezone_str, post_poll_to_channel, bot
+            )
+            if not success_open:
+                logger.error(f"Failed to schedule poll {poll_id} opening")
+                await PollErrorHandler.handle_scheduler_error(
+                    Exception(
+                        "Failed to schedule poll opening"), poll_id, "poll_opening", bot
+                )
+
+            # Schedule poll to close
+            success_close = tz_scheduler.schedule_poll_closing(
+                poll_id, close_dt, timezone_str, close_poll
+            )
+            if not success_close:
+                logger.error(f"Failed to schedule poll {poll_id} closing")
+                await PollErrorHandler.handle_scheduler_error(
+                    Exception(
+                        "Failed to schedule poll closing"), poll_id, "poll_closure", bot
+                )
+
+        except Exception as scheduling_error:
+            logger.error(
+                f"Critical scheduling error for poll {poll_id}: {scheduling_error}")
+            await PollErrorHandler.handle_scheduler_error(
+                scheduling_error, poll_id, "poll_scheduling", bot
+            )
+
+        # Save user preferences for next time
+        save_user_preferences(current_user.id, server_id,
+                              channel_id, timezone_str)
+
+        # Return success message and redirect to polls view
+        return templates.TemplateResponse("htmx/components/alert_success.html", {
+            "request": request,
+            "message": "Poll created successfully! Redirecting to polls...",
+            "redirect_url": "/htmx/polls"
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating poll for user {current_user.id}: {e}")
+        logger.exception("Full traceback for poll creation error:")
+
+        # Use error handler for comprehensive error handling
+        poll_name = locals().get('name', 'Unknown')
+        error_msg = await PollErrorHandler.handle_poll_creation_error(
+            e, {"name": poll_name, "user_id": current_user.id}, bot
+        )
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": error_msg
+        })
+
+
+async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get edit form for a scheduled poll"""
+    logger.info(
+        f"User {current_user.id} requesting edit form for poll {poll_id}")
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            logger.warning(
+                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        if TypeSafeColumn.get_string(poll, 'status') != "scheduled":
+            logger.warning(
+                f"Attempt to edit non-scheduled poll {poll_id} (status: {TypeSafeColumn.get_string(poll, 'status')})")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Only scheduled polls can be edited"
+            })
+
+        # Get user's guilds with channels
+        user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+
+        # Get timezones - US/Eastern first as default
+        common_timezones = [
+            "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
+            "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+        ]
+
+        # Convert times to local timezone for editing
+        poll_timezone = TypeSafeColumn.get_string(poll, 'timezone', 'UTC')
+        tz = pytz.timezone(poll_timezone)
+
+        # Ensure the stored times have timezone info (they should be UTC)
+        # Use TypeSafeColumn to get datetime values safely
+        open_time_value = TypeSafeColumn.get_datetime(poll, 'open_time')
+        close_time_value = TypeSafeColumn.get_datetime(poll, 'close_time')
+
+        # Ensure we have valid datetime objects before processing
+        if not isinstance(open_time_value, datetime) or not isinstance(close_time_value, datetime):
+            logger.error(f"Invalid datetime values for poll {poll_id}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Error processing poll times"
+            })
+
+        if open_time_value.tzinfo is None:
+            open_time_utc = pytz.UTC.localize(open_time_value)
+        else:
+            open_time_utc = open_time_value.astimezone(pytz.UTC)
+
+        if close_time_value.tzinfo is None:
+            close_time_utc = pytz.UTC.localize(close_time_value)
+        else:
+            close_time_utc = close_time_value.astimezone(pytz.UTC)
+
+        # Convert from UTC to the poll's timezone
+        open_time_local = open_time_utc.astimezone(tz)
+        close_time_local = close_time_utc.astimezone(tz)
+
+        open_time = open_time_local.strftime('%Y-%m-%dT%H:%M')
+        close_time = close_time_local.strftime('%Y-%m-%dT%H:%M')
+
+        # Prepare timezone data for template
+        timezones = []
+        for tz_name in common_timezones:
+            try:
+                tz_obj = pytz.timezone(tz_name)
+                offset = datetime.now(tz_obj).strftime('%z')
+                timezones.append({
+                    "name": tz_name,
+                    "display": f"{tz_name} (UTC{offset})"
+                })
+            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+                logger.warning(f"Error formatting timezone {tz_name}: {e}")
+                from .error_handler import notify_error
+                notify_error(e, "Timezone Formatting", tz_name=tz_name)
+                timezones.append({
+                    "name": tz_name,
+                    "display": tz_name
+                })
+
+        return templates.TemplateResponse("htmx/edit_form_filepond.html", {
+            "request": request,
+            "poll": poll,
+            "guilds": user_guilds,
+            "timezones": timezones,
+            "open_time": open_time,
+            "close_time": close_time
+        })
+    finally:
+        db.close()

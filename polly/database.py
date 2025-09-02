@@ -6,8 +6,53 @@ SQLite database with SQLAlchemy ORM for polls, votes, and users.
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
-from typing import List
+from typing import List, Optional
 import json
+
+
+class TypeSafeColumn:
+    """Type-safe column access for SQLAlchemy models"""
+    
+    @staticmethod
+    def get_string(obj, column_name: str, default: str = "") -> str:
+        """Safely get string value from SQLAlchemy column"""
+        try:
+            value = getattr(obj, column_name, default)
+            return str(value) if value is not None else default
+        except (AttributeError, TypeError):
+            return default
+    
+    @staticmethod
+    def get_int(obj, column_name: str, default: int = 0) -> int:
+        """Safely get integer value from SQLAlchemy column"""
+        try:
+            value = getattr(obj, column_name, default)
+            return int(value) if value is not None else default
+        except (AttributeError, TypeError, ValueError):
+            return default
+    
+    @staticmethod
+    def get_bool(obj, column_name: str, default: bool = False) -> bool:
+        """Safely get boolean value from SQLAlchemy column"""
+        try:
+            value = getattr(obj, column_name, default)
+            if value is None:
+                return default
+            # Handle SQLAlchemy boolean columns that might return 0/1
+            if isinstance(value, (int, str)):
+                return bool(int(value))
+            return bool(value)
+        except (AttributeError, TypeError, ValueError):
+            return default
+    
+    @staticmethod
+    def get_datetime(obj, column_name: str, default: Optional[object] = None):
+        """Safely get datetime value from SQLAlchemy column"""
+        try:
+            value = getattr(obj, column_name, default)
+            return value if value is not None else default
+        except AttributeError:
+            return default
 
 # Database setup
 DATABASE_URL = "sqlite:///./polly.db"

@@ -40,40 +40,46 @@
                     <div class="row mb-4">
                         <div class="col-md-6">
                             <h6 class="text-muted">Open Time</h6>
-                            <p>{{ poll.open_time.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+                            <p>{{ format_datetime_for_user(poll.open_time, poll.timezone or "UTC") }} {{ poll.timezone or "UTC" }}</p>
                         </div>
                         <div class="col-md-6">
                             <h6 class="text-muted">Close Time</h6>
-                            <p>{{ poll.close_time.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+                            <p>{{ format_datetime_for_user(poll.close_time, poll.timezone or "UTC") }} {{ poll.timezone or "UTC" }}</p>
                         </div>
                     </div>
 
-                    <!-- Poll Options and Results -->
+                    <!-- Poll Options and Results with Real-time Updates -->
                     <div class="mb-4">
                         <h6 class="text-muted">Options & Results</h6>
-                        {% set total_votes = poll.get_total_votes() %}
-                        {% set results = poll.get_results() %}
-                        {% for i in range(poll.options|length) %}
-                        {% set option_votes = results[i] if i in results else 0 %}
-                        {% set percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0 %}
-                        <div class="mb-3">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <span>{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else "🇦" }} {{ poll.options[i]|e }}</span>
-                                <span class="text-muted">{{ option_votes }} votes ({{ "%.1f"|format(percentage) }}%)</span>
-                            </div>
-                            <div class="progress" style="height: 20px;">
-                                <div class="progress-bar" role="progressbar" style="width: {{ percentage }}%;" 
-                                     aria-valuenow="{{ percentage }}" aria-valuemin="0" aria-valuemax="100">
+                        <div id="poll-results-realtime" 
+                             hx-get="/htmx/poll/{{ poll.id }}/results-realtime" 
+                             hx-trigger="load, every 5s" 
+                             hx-swap="innerHTML">
+                            <!-- Real-time results will be loaded here -->
+                            {% set total_votes = poll.get_total_votes() %}
+                            {% set results = poll.get_results() %}
+                            {% for i in range(poll.options|length) %}
+                            {% set option_votes = results[i] if i in results else 0 %}
+                            {% set percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0 %}
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span>{{ poll.emojis[i] if poll.emojis and i < poll.emojis|length else "🇦" }} {{ poll.options[i]|e }}</span>
+                                    <span class="text-muted">{{ option_votes }} votes ({{ "%.1f"|format(percentage) }}%)</span>
+                                </div>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar" role="progressbar" style="width: {{ percentage }}%;" 
+                                         aria-valuenow="{{ percentage }}" aria-valuemin="0" aria-valuemax="100">
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        {% endfor %}
-                        
-                        <div class="mt-3">
-                            <strong>Total Votes: {{ total_votes }}</strong>
-                            {% if poll.anonymous %}
-                            <span class="badge bg-info ms-2">Anonymous</span>
-                            {% endif %}
+                            {% endfor %}
+                            
+                            <div class="mt-3">
+                                <strong>Total Votes: {{ total_votes }}</strong>
+                                {% if poll.anonymous %}
+                                <span class="badge bg-info ms-2">Anonymous</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
 
@@ -82,7 +88,7 @@
                         <h6 class="text-muted">Settings</h6>
                         <ul class="list-unstyled">
                             <li><i class="fas fa-user-secret me-2"></i>Anonymous: {{ "Yes" if poll.anonymous else "No" }}</li>
-                            <li><i class="fas fa-calendar me-2"></i>Created: {{ poll.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</li>
+                            <li><i class="fas fa-calendar me-2"></i>Created: {{ format_datetime_for_user(poll.created_at, poll.timezone or "UTC") }} {{ poll.timezone or "UTC" }}</li>
                             {% if poll.message_id %}
                             <li><i class="fas fa-link me-2"></i>Discord Message ID: {{ poll.message_id }}</li>
                             {% endif %}

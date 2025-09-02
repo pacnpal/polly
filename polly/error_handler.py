@@ -377,7 +377,8 @@ class PollErrorHandler:
 
         # Attempt to recover by rescheduling
         try:
-            from .main import scheduler
+            from .background_tasks import get_scheduler
+            scheduler = get_scheduler()
             if scheduler and scheduler.running:
                 # Remove any existing jobs for this poll
                 for job_type in ['open', 'close']:
@@ -400,9 +401,10 @@ class PollErrorHandler:
                         poll_open_time = getattr(poll, 'open_time', None)
                         if str(poll.status) == "scheduled" and poll_open_time and poll_open_time > now:
                             from .discord_utils import post_poll_to_channel
-                            from .main import bot as main_bot
+                            from .discord_bot import get_bot_instance
                             from apscheduler.triggers.date import DateTrigger
 
+                            main_bot = get_bot_instance()
                             scheduler.add_job(
                                 post_poll_to_channel,
                                 DateTrigger(run_date=poll.open_time),
@@ -416,7 +418,7 @@ class PollErrorHandler:
                         # Reschedule closing if needed
                         poll_close_time = getattr(poll, 'close_time', None)
                         if str(poll.status) in ["scheduled", "active"] and poll_close_time is not None and poll_close_time > now:
-                            from .main import close_poll
+                            from .background_tasks import close_poll
                             from apscheduler.triggers.date import DateTrigger
 
                             scheduler.add_job(
@@ -674,10 +676,10 @@ async def notify_bot_owner_of_error(error: Exception, operation: str, context: O
     try:
         # Get bot instance if not provided
         if not bot:
-            # Try to get bot from main module
+            # Try to get bot from discord_bot module
             try:
-                from .main import bot as main_bot
-                bot = main_bot
+                from .discord_bot import get_bot_instance
+                bot = get_bot_instance()
             except ImportError:
                 logger.warning(
                     "Could not import bot instance for error notification")
