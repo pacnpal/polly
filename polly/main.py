@@ -1656,6 +1656,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             "name": name,
             "question": question,
             "options": options,
+            "emojis": emojis,  # Include emojis in poll data
             "server_id": server_id,
             "channel_id": channel_id,
             "open_time": open_dt,
@@ -1673,7 +1674,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and getattr(image_file, 'filename', None):
             try:
                 image_file_data = await image_file.read()
-                image_filename = str(image_file.filename)
+                image_filename = str(getattr(image_file, 'filename', ''))
             except Exception as e:
                 logger.error(f"Error reading image file: {e}")
                 return """
@@ -1711,49 +1712,35 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
         # Use bulletproof scheduling operations
         try:
-            # Schedule poll to open and close with error handling
-            if open_dt <= datetime.now(pytz.UTC):
-                logger.info(f"Poll {poll_id} should be active immediately")
-                # Post immediately using bulletproof operations
+            # Always schedule polls - never post immediately to respect scheduling
+            # Schedule opening with bulletproof error handling
+            try:
+                # Get the poll object for scheduling
                 db = get_db_session()
                 try:
-                    poll = db.query(Poll).filter(Poll.id == poll_id).first()
-                    if poll:
-                        post_result = await post_poll_to_channel(bot, poll)
-                        if not post_result:
-                            logger.error(
-                                f"Failed to post poll {poll_id} immediately")
+                    poll_obj = db.query(Poll).filter(
+                        Poll.id == poll_id).first()
+                    if poll_obj:
+                        scheduler.add_job(
+                            post_poll_to_channel,
+                            DateTrigger(run_date=open_dt),
+                            args=[bot, poll_obj],
+                            id=f"open_poll_{poll_id}",
+                            replace_existing=True
+                        )
+                        logger.info(
+                            f"Scheduled poll {poll_id} to open at {open_dt}")
+                    else:
+                        logger.error(
+                            f"Poll {poll_id} not found for scheduling")
                 finally:
                     db.close()
-            else:
-                # Schedule opening with bulletproof error handling
-                try:
-                    # Get the poll object for scheduling
-                    db = get_db_session()
-                    try:
-                        poll_obj = db.query(Poll).filter(
-                            Poll.id == poll_id).first()
-                        if poll_obj:
-                            scheduler.add_job(
-                                post_poll_to_channel,
-                                DateTrigger(run_date=open_dt),
-                                args=[bot, poll_obj],
-                                id=f"open_poll_{poll_id}",
-                                replace_existing=True
-                            )
-                            logger.info(
-                                f"Scheduled poll {poll_id} to open at {open_dt}")
-                        else:
-                            logger.error(
-                                f"Poll {poll_id} not found for scheduling")
-                    finally:
-                        db.close()
-                except Exception as schedule_error:
-                    logger.error(
-                        f"Failed to schedule poll opening: {schedule_error}")
-                    await PollErrorHandler.handle_scheduler_error(
-                        schedule_error, poll_id, "poll_opening", bot
-                    )
+            except Exception as schedule_error:
+                logger.error(
+                    f"Failed to schedule poll opening: {schedule_error}")
+                await PollErrorHandler.handle_scheduler_error(
+                    schedule_error, poll_id, "poll_opening", bot
+                )
 
             # Schedule poll to close with bulletproof error handling
             try:
@@ -1826,9 +1813,9 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
             </div>
             """
 
-        if poll.status != "scheduled":
+        if str(getattr(poll, 'status', '')) != "scheduled":
             logger.warning(
-                f"Attempt to edit non-scheduled poll {poll_id} (status: {poll.status})")
+                f"Attempt to edit non-scheduled poll {poll_id} (status: {getattr(poll, 'status', '')})")
             return """
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>Only scheduled polls can be edited
@@ -1845,12 +1832,12 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         ]
 
         # Convert times to local timezone for editing
-        poll_timezone = str(poll.timezone) if poll.timezone else "UTC"
+        poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
         tz = pytz.timezone(poll_timezone)
 
         # Ensure the stored times have timezone info (they should be UTC)
-        open_time_value = poll.open_time
-        close_time_value = poll.close_time
+        open_time_value = getattr(poll, 'open_time')
+        close_time_value = getattr(poll, 'close_time')
 
         if open_time_value.tzinfo is None:
             open_time_utc = pytz.UTC.localize(open_time_value)
@@ -1929,9 +1916,9 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             </div>
             """
 
-        if poll.status != "scheduled":
+        if str(getattr(poll, 'status', '')) != "scheduled":
             logger.warning(
-                f"Attempt to edit non-scheduled poll {poll_id} (status: {poll.status})")
+                f"Attempt to edit non-scheduled poll {poll_id} (status: {getattr(poll, 'status', '')})")
             return """
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>Only scheduled polls can be edited
@@ -2079,21 +2066,22 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             </div>
             """
 
-        # Update poll
-        poll.name = name
-        poll.question = question
+        # Update poll using setattr to avoid SQLAlchemy Column type issues
+        setattr(poll, 'name', name)
+        setattr(poll, 'question', question)
         poll.options = options
-        poll.emojis = emojis
-        poll.image_path = new_image_path
-        poll.image_message_text = image_message_text if new_image_path else None
-        poll.server_id = server_id
-        poll.server_name = guild.name
-        poll.channel_id = channel_id
-        poll.channel_name = getattr(channel, 'name', 'Unknown')
-        poll.open_time = open_dt
-        poll.close_time = close_dt
-        poll.timezone = timezone_str
-        poll.anonymous = anonymous
+        poll.emojis = emojis  # Set emojis properly
+        setattr(poll, 'image_path', new_image_path)
+        setattr(poll, 'image_message_text',
+                image_message_text if new_image_path else None)
+        setattr(poll, 'server_id', server_id)
+        setattr(poll, 'server_name', guild.name)
+        setattr(poll, 'channel_id', channel_id)
+        setattr(poll, 'channel_name', getattr(channel, 'name', 'Unknown'))
+        setattr(poll, 'open_time', open_dt)
+        setattr(poll, 'close_time', close_dt)
+        setattr(poll, 'timezone', timezone_str)
+        setattr(poll, 'anonymous', anonymous)
 
         db.commit()
 
@@ -2115,14 +2103,14 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 post_poll_to_channel,
                 DateTrigger(run_date=open_dt),
                 args=[bot, poll],
-                id=f"open_poll_{int(poll.id)}"
+                id=f"open_poll_{int(getattr(poll, 'id'))}"
             )
 
         scheduler.add_job(
             close_poll,
             DateTrigger(run_date=close_dt),
-            args=[int(poll.id)],
-            id=f"close_poll_{int(poll.id)}"
+            args=[int(getattr(poll, 'id'))],
+            id=f"close_poll_{int(getattr(poll, 'id'))}"
         )
 
         logger.info(f"Successfully updated poll {poll_id}")
@@ -2190,9 +2178,9 @@ async def close_poll_manually(poll_id: int, current_user: DiscordUser = Depends(
             </div>
             """
 
-        if poll.status != "active":
+        if str(getattr(poll, 'status', '')) != "active":
             logger.warning(
-                f"Attempt to close non-active poll {poll_id} (status: {poll.status})")
+                f"Attempt to close non-active poll {poll_id} (status: {getattr(poll, 'status', '')})")
             return """
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>Only active polls can be closed
@@ -2241,7 +2229,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             </div>
             """
 
-        if poll.status == "active":
+        if str(getattr(poll, 'status', '')) == "active":
             logger.warning(f"Attempt to delete active poll {poll_id}")
             return """
             <div class="alert alert-warning">
@@ -2250,8 +2238,9 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             """
 
         # Clean up image
-        if poll.image_path:
-            await cleanup_image(str(poll.image_path))
+        image_path = getattr(poll, 'image_path', None)
+        if image_path:
+            await cleanup_image(str(image_path))
 
         # Remove scheduled jobs with improved error handling
         jobs_removed = 0
@@ -2270,7 +2259,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
 
         if jobs_removed > 0:
             logger.info(
-                f"Removed {jobs_removed} scheduled jobs for poll {int(poll.id)}")
+                f"Removed {jobs_removed} scheduled jobs for poll {int(getattr(poll, 'id'))}")
 
         # Delete poll and associated votes with detailed logging
         logger.info(f"Starting database deletion for poll {poll_id}")

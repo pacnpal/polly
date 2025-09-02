@@ -260,6 +260,8 @@ class BulletproofPollOperations:
                         name=validated_data["name"],
                         question=validated_data["question"],
                         options=validated_data["options"],
+                        emojis=validated_data.get(
+                            "emojis", []),  # Include emojis
                         server_id=validated_data["server_id"],
                         channel_id=validated_data["channel_id"],
                         creator_id=user_id,
@@ -269,12 +271,13 @@ class BulletproofPollOperations:
                         anonymous=validated_data["anonymous"],
                         multiple_choice=validated_data.get(
                             "multiple_choice", False),
-                        image_path=image_info["file_path"] if image_info else None
+                        image_path=image_info["file_path"] if image_info else None,
+                        image_message_text=image_message_text or ''
                     )
 
                     db.add(poll)
                     db.commit()
-                    poll_id = poll.id
+                    poll_id = int(getattr(poll, 'id'))
 
                     if not poll_id:
                         raise Exception("Failed to create poll record")
@@ -293,99 +296,114 @@ class BulletproofPollOperations:
                     "step": "database"
                 }
 
-            # STEP 5: Discord Message Posting
-            logger.info("Step 5: Posting to Discord")
-            try:
-                # Post image message first (if provided)
-                if image_info:
-                    image_message_result = await self._post_image_message(
-                        channel, image_info, image_message_text
-                    )
-                    if image_message_result["success"]:
-                        discord_image_message_id = image_message_result["message_id"]
-                    else:
-                        logger.warning(
-                            f"Image message posting failed: {image_message_result['error']}")
-                        # Continue with poll posting even if image fails
+            # STEP 5: Discord Message Posting (only if poll opens immediately)
+            now = datetime.now(timezone.utc)
+            open_time = validated_data["open_time"]
 
-                # Post poll message using existing discord utils
-                from .discord_utils import post_poll_to_channel
+            # Only post immediately if poll opens within the next 60 seconds
+            should_post_now = (open_time - now).total_seconds() <= 60
+
+            if should_post_now:
+                logger.info(
+                    "Step 5: Posting to Discord (poll opens immediately)")
                 try:
-                    db = get_db_session()
-                    try:
-                        poll = db.query(Poll).filter(
-                            Poll.id == poll_id).first()
-                        if poll:
-                            result = await post_poll_to_channel(self.bot, poll)
-
-                            # Handle new dictionary return format
-                            if isinstance(result, dict):
-                                if result.get("success"):
-                                    discord_poll_message_id = result.get(
-                                        "message_id")
-                                    if discord_poll_message_id:
-                                        logger.info(
-                                            f"Successfully posted poll {poll_id} with message ID {discord_poll_message_id}")
-                                    else:
-                                        raise Exception(
-                                            "Message ID not returned from post_poll_to_channel")
-                                else:
-                                    error_msg = result.get(
-                                        "error", "Unknown error")
-                                    raise Exception(
-                                        f"Failed to post poll: {error_msg}")
-                            elif result is True:
-                                # Handle legacy boolean return for backward compatibility
-                                # Try to get message ID from database
-                                db.commit()
-                                db.close()
-                                db = get_db_session()
-                                updated_poll = db.query(Poll).filter(
-                                    Poll.id == poll_id).first()
-                                if updated_poll:
-                                    message_id = getattr(
-                                        updated_poll, 'message_id', None)
-                                    if message_id and str(message_id).strip():
-                                        discord_poll_message_id = int(
-                                            str(message_id))
-                                        logger.info(
-                                            f"Retrieved message ID {discord_poll_message_id} for poll {poll_id} (legacy mode)")
-                                    else:
-                                        raise Exception(
-                                            "Failed to get message ID after posting")
-                                else:
-                                    raise Exception(
-                                        "Poll not found after posting")
-                            else:
-                                raise Exception("Failed to post poll message")
+                    # Post image message first (if provided)
+                    if image_info:
+                        image_message_result = await self._post_image_message(
+                            channel, image_info, image_message_text
+                        )
+                        if image_message_result["success"]:
+                            discord_image_message_id = image_message_result["message_id"]
                         else:
-                            raise Exception("Poll not found after creation")
-                    finally:
-                        if db:
-                            db.close()
+                            logger.warning(
+                                f"Image message posting failed: {image_message_result['error']}")
+                            # Continue with poll posting even if image fails
+
+                    # Post poll message using existing discord utils
+                    from .discord_utils import post_poll_to_channel
+                    try:
+                        db = get_db_session()
+                        try:
+                            poll = db.query(Poll).filter(
+                                Poll.id == poll_id).first()
+                            if poll:
+                                result = await post_poll_to_channel(self.bot, poll)
+
+                                # Handle new dictionary return format
+                                if isinstance(result, dict):
+                                    if result.get("success"):
+                                        discord_poll_message_id = result.get(
+                                            "message_id")
+                                        if discord_poll_message_id:
+                                            logger.info(
+                                                f"Successfully posted poll {poll_id} with message ID {discord_poll_message_id}")
+                                        else:
+                                            raise Exception(
+                                                "Message ID not returned from post_poll_to_channel")
+                                    else:
+                                        error_msg = result.get(
+                                            "error", "Unknown error")
+                                        raise Exception(
+                                            f"Failed to post poll: {error_msg}")
+                                elif result is True:
+                                    # Handle legacy boolean return for backward compatibility
+                                    # Try to get message ID from database
+                                    db.commit()
+                                    db.close()
+                                    db = get_db_session()
+                                    updated_poll = db.query(Poll).filter(
+                                        Poll.id == poll_id).first()
+                                    if updated_poll:
+                                        message_id = getattr(
+                                            updated_poll, 'message_id', None)
+                                        if message_id and str(message_id).strip():
+                                            discord_poll_message_id = int(
+                                                str(message_id))
+                                            logger.info(
+                                                f"Retrieved message ID {discord_poll_message_id} for poll {poll_id} (legacy mode)")
+                                        else:
+                                            raise Exception(
+                                                "Failed to get message ID after posting")
+                                    else:
+                                        raise Exception(
+                                            "Poll not found after posting")
+                                else:
+                                    raise Exception(
+                                        "Failed to post poll message")
+                            else:
+                                raise Exception(
+                                    "Poll not found after creation")
+                        finally:
+                            if db:
+                                db.close()
+                    except Exception as e:
+                        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                        from .error_handler import notify_error_async
+                        await notify_error_async(e, "Discord Poll Posting", poll_id=poll_id, user_id=user_id)
+                        poll_id_int = int(
+                            poll_id) if poll_id is not None else None
+                        await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id)
+                        return {
+                            "success": False,
+                            "error": f"Discord poll posting failed: {str(e)}",
+                            "step": "discord_posting"
+                        }
+
                 except Exception as e:
                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                     from .error_handler import notify_error_async
-                    await notify_error_async(e, "Discord Poll Posting", poll_id=poll_id, user_id=user_id)
+                    await notify_error_async(e, "Discord Message Posting", poll_id=poll_id, user_id=user_id)
                     poll_id_int = int(poll_id) if poll_id is not None else None
                     await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id)
                     return {
                         "success": False,
-                        "error": f"Discord poll posting failed: {str(e)}",
+                        "error": f"Discord posting failed: {str(e)}",
                         "step": "discord_posting"
                     }
-
-            except Exception as e:
-                # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                from .error_handler import notify_error_async
-                await notify_error_async(e, "Discord Message Posting", poll_id=poll_id, user_id=user_id)
-                poll_id_int = int(poll_id) if poll_id is not None else None
-                await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id)
-                return {
-                    "success": False,
-                    "error": f"Discord posting failed: {str(e)}",
-                    "step": "discord_posting"
-                }
+            else:
+                logger.info(
+                    f"Step 5: Skipping Discord posting (poll scheduled for {open_time}, will be posted by scheduler)")
+                # Image message text is already stored in the database during poll creation
 
             # STEP 6: Final Database Update
             logger.info("Step 6: Updating database with Discord IDs")
@@ -429,7 +447,7 @@ class BulletproofPollOperations:
                 "step": "unknown"
             }
 
-    async def _post_image_message(self, channel: discord.TextChannel,
+    async def _post_image_message(self, channel,
                                   image_info: Dict[str, Any],
                                   message_text: Optional[str] = None) -> Dict[str, Any]:
         """Post image as separate message before poll."""
@@ -535,9 +553,9 @@ class BulletproofPollOperations:
                         db.rollback()
                         return {"success": False, "error": "Poll not found"}
 
-                    if str(poll.status) != "active":
+                    if str(getattr(poll, 'status', '')) != "active":
                         db.rollback()
-                        return {"success": False, "error": f"Poll is not active (status: {str(poll.status)})"}
+                        return {"success": False, "error": f"Poll is not active (status: {str(getattr(poll, 'status', ''))})"}
 
                     # Step 1b: Validate vote data using existing validator
                     try:
@@ -553,7 +571,7 @@ class BulletproofPollOperations:
                     # Step 2: Bulletproof vote recording with multiple choice support
                     from .database import Vote
 
-                    if bool(getattr(poll, 'multiple_choice', False)):
+                    if getattr(poll, 'multiple_choice', False) is True:
                         # Multiple choice: Check if user already voted for this specific option
                         existing_vote = db.query(Vote).filter(
                             Vote.poll_id == poll_id,
@@ -635,7 +653,7 @@ class BulletproofPollOperations:
                             return {"success": False, "error": "Vote removal verification failed"}
                     else:
                         # For added/updated votes, verify the vote exists with correct option
-                        if bool(getattr(poll, 'multiple_choice', False)):
+                        if getattr(poll, 'multiple_choice', False) is True:
                             # Multiple choice: verify specific vote exists
                             verification_vote = db.query(Vote).filter(
                                 Vote.poll_id == poll_id,
@@ -717,7 +735,7 @@ class BulletproofPollOperations:
                 if not poll:
                     return {"success": False, "error": "Poll not found"}
 
-                if str(poll.status) == "closed":
+                if str(getattr(poll, 'status', '')) == "closed":
                     return {"success": False, "error": "Poll already closed"}
 
                 # Step 2: Close poll atomically
