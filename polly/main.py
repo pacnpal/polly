@@ -1427,7 +1427,10 @@ async def get_channels_htmx(server_id: str, current_user: DiscordUser = Depends(
 
     options = '<option value="">Select a channel...</option>'
     for channel in guild["channels"]:
-        options += f'<option value="{channel["id"]}">#{channel["name"]}</option>'
+        # HTML escape the channel name to prevent JavaScript syntax errors
+        from html import escape
+        escaped_channel_name = escape(channel["name"])
+        options += f'<option value="{channel["id"]}">#{escaped_channel_name}</option>'
 
     return options
 
