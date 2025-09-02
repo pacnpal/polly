@@ -541,22 +541,39 @@ async def on_reaction_add(reaction, user):
         if option_index >= len(poll.options):
             return
 
+        # CRITICAL: Vote MUST be counted FIRST, reaction removed ONLY if vote succeeds
         # Use bulletproof vote collection
         bulletproof_ops = BulletproofPollOperations(bot)
         result = await bulletproof_ops.bulletproof_vote_collection(
             poll.id, str(user.id), option_index
         )
 
-        if not result["success"]:
-            # Handle vote error with bot owner notification
+        if result["success"]:
+            # Vote was successfully recorded - NOW remove the reaction
+            try:
+                await reaction.remove(user)
+                logger.debug(
+                    f"✅ Vote recorded and reaction removed for user {user.id} on poll {poll.id}")
+            except Exception as remove_error:
+                logger.warning(
+                    f"⚠️ Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
+                # Vote is still counted even if reaction removal fails
+
+            # Always update poll embed for live updates (key requirement)
+            try:
+                await update_poll_message(bot, poll)
+                logger.debug(f"✅ Poll message updated for poll {poll.id}")
+            except Exception as update_error:
+                logger.error(
+                    f"❌ Failed to update poll message for poll {poll.id}: {update_error}")
+        else:
+            # Vote failed - do NOT remove reaction, log the error
             error_msg = await PollErrorHandler.handle_vote_error(
                 Exception(result["error"]), poll.id, str(user.id), bot
             )
-            logger.warning(
-                f"Vote failed for user {user.id} on poll {poll.id}: {error_msg}")
-        else:
-            # Always update poll embed for live updates (key requirement)
-            await update_poll_message(bot, poll)
+            logger.error(
+                f"❌ Vote FAILED for user {user.id} on poll {poll.id}: {error_msg}")
+            # Reaction stays so user can try again
 
     except Exception as e:
         # Handle unexpected voting errors with bot owner notification
@@ -1296,12 +1313,23 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         image_message_text = safe_get_form_data(
             form_data, "image_message_text", "")
 
-        # Get options
+        # Get options and emojis
         options = []
+        emojis = []
         for i in range(1, 11):
             option = form_data.get(f"option{i}")
             if option:
                 options.append(str(option).strip())
+                # Extract emoji from form data, fallback to default if not provided
+                emoji = safe_get_form_data(form_data, f"emoji{i}")
+                if emoji:
+                    emojis.append(emoji)
+                else:
+                    # Fallback to default emojis if not provided
+                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
+                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                    emojis.append(default_emojis[len(emojis)] if len(
+                        emojis) < 10 else "⭐")
 
         if len(options) < 2:
             logger.warning(f"Insufficient options provided: {len(options)}")
@@ -1676,17 +1704,23 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             if poll.image_path:
                 await cleanup_image(str(poll.image_path))
 
-        # Get options
+        # Get options and emojis
         options = []
         emojis = []
         for i in range(1, 11):
             option = form_data.get(f"option{i}")
             if option:
                 options.append(str(option).strip())
-                default_emojis = ["🇦", "🇧", "🇨", "🇩",
-                                  "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                emojis.append(default_emojis[len(emojis)] if len(
-                    emojis) < 10 else "⭐")
+                # Extract emoji from form data, fallback to default if not provided
+                emoji = safe_get_form_data(form_data, f"emoji{i}")
+                if emoji:
+                    emojis.append(emoji)
+                else:
+                    # Fallback to default emojis if not provided
+                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
+                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                    emojis.append(default_emojis[len(emojis)] if len(
+                        emojis) < 10 else "⭐")
 
         if len(options) < 2:
             logger.warning(

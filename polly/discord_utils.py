@@ -180,6 +180,17 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
 
 async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Embed:
     """Create Discord embed for a poll"""
+    # Refresh poll data from database to ensure we have latest votes
+    db = get_db_session()
+    try:
+        fresh_poll = db.query(Poll).filter(Poll.id == poll.id).first()
+        if fresh_poll:
+            poll = fresh_poll
+    except Exception as e:
+        logger.warning(f"Could not refresh poll data: {e}")
+    finally:
+        db.close()
+
     # Determine embed color based on status
     if poll.status == "scheduled":
         color = 0xffaa00  # Orange
@@ -201,7 +212,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     # Add poll options
     option_text = ""
     if show_results and poll.should_show_results():
-        # Show results
+        # Show results with enhanced progress bars and percentages
         results = poll.get_results()
         total_votes = poll.get_total_votes()
 
@@ -210,57 +221,133 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             votes = results.get(i, 0)
             percentage = (votes / total_votes * 100) if total_votes > 0 else 0
 
-            # Create a simple progress bar
-            bar_length = 10
+            # Create enhanced progress bar with better visual representation
+            bar_length = 15  # Longer bar for better granularity
             filled = int((percentage / 100) * bar_length)
-            bar = "█" * filled + "░" * (bar_length - filled)
 
+            # Use different characters for better visual appeal
+            if filled == 0:
+                bar = "░" * bar_length
+            else:
+                # Use gradient-like characters for better visual appeal
+                full_blocks = filled
+                bar = "█" * full_blocks + "░" * (bar_length - full_blocks)
+
+            # Format the option with enhanced styling
             option_text += f"{emoji} **{option}**\n"
-            option_text += f"   {bar} {votes} votes ({percentage:.1f}%)\n\n"
+            option_text += f"`{bar}` **{votes}** votes (**{percentage:.1f}%**)\n\n"
 
         embed.add_field(
-            name="Results" if poll.status == "closed" else "Current Results",
+            name="📊 Results" if poll.status == "closed" else "📈 Live Results",
             value=option_text or "No votes yet",
             inline=False
         )
 
+        # Enhanced total votes display
         if total_votes > 0:
-            embed.add_field(name="Total Votes", value=str(
-                total_votes), inline=True)
+            embed.add_field(
+                name="🗳️ Total Votes",
+                value=f"**{total_votes}**",
+                inline=True
+            )
 
+        # Winner announcement for closed polls
         if poll.status == "closed" and total_votes > 0:
             winners = poll.get_winner()
             if winners:
-                winner_text = ", ".join(
-                    [f"{(poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i])} {poll.options[i]}" for i in winners])
-                embed.add_field(name="🏆 Winner(s)",
-                                value=winner_text, inline=True)
+                if len(winners) == 1:
+                    winner_emoji = poll.emojis[winners[0]] if winners[0] < len(
+                        poll.emojis) else POLL_EMOJIS[winners[0]]
+                    winner_option = poll.options[winners[0]]
+                    winner_votes = results.get(winners[0], 0)
+                    winner_percentage = (
+                        winner_votes / total_votes * 100) if total_votes > 0 else 0
+                    embed.add_field(
+                        name="🏆 Winner",
+                        value=f"{winner_emoji} **{winner_option}**\n{winner_votes} votes ({winner_percentage:.1f}%)",
+                        inline=True
+                    )
+                else:
+                    # Multiple winners (tie)
+                    winner_text = "**TIE!**\n"
+                    for winner_idx in winners:
+                        winner_emoji = poll.emojis[winner_idx] if winner_idx < len(
+                            poll.emojis) else POLL_EMOJIS[winner_idx]
+                        winner_option = poll.options[winner_idx]
+                        winner_votes = results.get(winner_idx, 0)
+                        winner_percentage = (
+                            winner_votes / total_votes * 100) if total_votes > 0 else 0
+                        winner_text += f"{winner_emoji} {winner_option} ({winner_votes} votes, {winner_percentage:.1f}%)\n"
+                    embed.add_field(name="🏆 Winners",
+                                    value=winner_text, inline=True)
     else:
         # Just show options without results
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
             option_text += f"{emoji} {option}\n"
 
-        embed.add_field(name="Options", value=option_text, inline=False)
+        embed.add_field(name="📝 Options", value=option_text, inline=False)
+
+        # Always show total votes for active polls
+        total_votes = poll.get_total_votes()
 
         if poll.anonymous:
-            total_votes = poll.get_total_votes()
+            # Enhanced anonymous poll display
             embed.add_field(
-                name="ℹ️ Anonymous Poll",
-                value=f"Results will be shown when the poll ends\nTotal votes so far: **{total_votes}**",
+                name="🔒 Anonymous Poll",
+                value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
                 inline=False
             )
+        else:
+            # For non-anonymous polls, ALWAYS show live results with percentages
+            if total_votes > 0:
+                # Show live vote breakdown for non-anonymous polls
+                results = poll.get_results()
+                live_results_text = ""
+
+                for i, option in enumerate(poll.options):
+                    emoji = poll.emojis[i] if i < len(
+                        poll.emojis) else POLL_EMOJIS[i]
+                    votes = results.get(i, 0)
+                    percentage = (votes / total_votes *
+                                  100) if total_votes > 0 else 0
+
+                    # Shorter progress bar for live results
+                    bar_length = 10
+                    filled = int((percentage / 100) * bar_length)
+                    bar = "█" * filled + "░" * (bar_length - filled)
+
+                    live_results_text += f"{emoji} `{bar}` **{votes}** ({percentage:.1f}%)\n"
+
+                embed.add_field(
+                    name="📈 Live Results",
+                    value=live_results_text,
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="🗳️ Total Votes",
+                    value=f"**{total_votes}**",
+                    inline=True
+                )
+            else:
+                # Even with 0 votes, show the structure for non-anonymous polls
+                results_text = ""
+                for i, option in enumerate(poll.options):
+                    emoji = poll.emojis[i] if i < len(
+                        poll.emojis) else POLL_EMOJIS[i]
+                    bar = "░" * 10  # Empty bar
+                    results_text += f"{emoji} `{bar}` **0** (0.0%)\n"
+
+                embed.add_field(
+                    name="📈 Live Results",
+                    value=results_text,
+                    inline=False
+                )
 
     # Add timing information with timezone support
     if poll.status == "scheduled":
-        # Show both Discord timestamp and timezone-specific time
-        embed.add_field(
-            name="Opens",
-            value=f"<t:{int(poll.open_time.timestamp())}:R>",
-            inline=True
-        )
-
-        # Add timezone-specific time if available
+        # Only show opens time for scheduled polls, with timezone-specific time
         if hasattr(poll, 'timezone') and poll.timezone:
             try:
                 tz = pytz.timezone(poll.timezone)
@@ -273,15 +360,15 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(
                     f"Error formatting timezone {poll.timezone}: {e}")
+                # Fallback to UTC
+                embed.add_field(
+                    name="Opens (UTC)",
+                    value=poll.open_time.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True
+                )
 
+    # Show close time for scheduled and active polls
     if poll.status in ["scheduled", "active"]:
-        embed.add_field(
-            name="Closes",
-            value=f"<t:{int(poll.close_time.timestamp())}:R>",
-            inline=True
-        )
-
-        # Add timezone-specific time if available
         if hasattr(poll, 'timezone') and poll.timezone:
             try:
                 tz = pytz.timezone(poll.timezone)
@@ -294,9 +381,15 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(
                     f"Error formatting timezone {poll.timezone}: {e}")
+                # Fallback to UTC
+                embed.add_field(
+                    name="Closes (UTC)",
+                    value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True
+                )
 
-    # Add poll info in footer
-    embed.set_footer(text=f"Poll ID: {poll.id} • Created by Polly")
+    # Add poll info in footer without Poll ID
+    embed.set_footer(text="Created by Polly")
 
     return embed
 
@@ -383,13 +476,14 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             poll = fresh_poll
             logger.debug(
                 f"✅ POSTING POLL {poll.id} - Successfully refreshed poll from database")
-            
+
             # Keep the database session open for embed creation to avoid DetachedInstanceError
             # Create embed with debugging while poll is still attached to session
             logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
             embed = await create_poll_embed(poll, show_results=poll.should_show_results())
-            logger.debug(f"✅ POSTING POLL {poll.id} - Embed created successfully")
-            
+            logger.debug(
+                f"✅ POSTING POLL {poll.id} - Embed created successfully")
+
         except Exception as refresh_error:
             logger.error(
                 f"❌ POSTING POLL {poll.id} - Failed to refresh poll from database: {refresh_error}")

@@ -469,67 +469,138 @@ class BulletproofPollOperations:
     @critical_operation("bulletproof_vote_collection")
     async def bulletproof_vote_collection(self, poll_id: int, user_id: str,
                                           option_index: int) -> Dict[str, Any]:
-        """Bulletproof vote collection with validation and integrity checks."""
-        try:
-            # Step 1: Get poll and validate
-            db = get_db_session()
+        """Ultra-bulletproof vote collection with atomic transactions and integrity checks."""
+        vote_recorded = False
+        retry_count = 0
+        max_retries = 3
+
+        while retry_count < max_retries and not vote_recorded:
             try:
-                poll = db.query(Poll).filter(Poll.id == poll_id).first()
-                if not poll:
-                    return {"success": False, "error": "Poll not found"}
+                retry_count += 1
+                logger.debug(
+                    f"Vote collection attempt {retry_count} for poll {poll_id}, user {user_id}")
 
-                if poll.status != "active":
-                    return {"success": False, "error": "Poll is not active"}
-
-                # Step 2: Validate vote data using existing validator
+                # Step 1: Atomic database transaction with isolation
+                db = get_db_session()
                 try:
-                    VoteValidator.validate_vote_data(
-                        poll, user_id, option_index)
-                except Exception as e:
+                    # Use database transaction with proper isolation
+                    db.begin()
+
+                    # Step 1a: Get poll with row-level locking to prevent race conditions
+                    poll = db.query(Poll).filter(
+                        Poll.id == poll_id).with_for_update().first()
+                    if not poll:
+                        db.rollback()
+                        return {"success": False, "error": "Poll not found"}
+
+                    if poll.status != "active":
+                        db.rollback()
+                        return {"success": False, "error": f"Poll is not active (status: {poll.status})"}
+
+                    # Step 1b: Validate vote data using existing validator
+                    try:
+                        VoteValidator.validate_vote_data(
+                            poll, user_id, option_index)
+                    except Exception as e:
+                        db.rollback()
+                        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                        from .error_handler import notify_error_async
+                        await notify_error_async(e, "Vote Data Validation", poll_id=poll_id, user_id=user_id, option_index=option_index)
+                        return {"success": False, "error": str(e)}
+
+                    # Step 2: Bulletproof vote recording with duplicate prevention
+                    from .database import Vote
+
+                    # Check for existing vote with row locking
+                    existing_vote = db.query(Vote).filter(
+                        Vote.poll_id == poll_id,
+                        Vote.user_id == user_id
+                    ).with_for_update().first()
+
+                    vote_action = "updated" if existing_vote else "created"
+
+                    if existing_vote:
+                        # Update existing vote atomically
+                        old_option = existing_vote.option_index
+                        existing_vote.option_index = option_index
+                        existing_vote.voted_at = db.func.now()  # Update timestamp
+                        logger.debug(
+                            f"Updated vote for user {user_id}: {old_option} -> {option_index}")
+                    else:
+                        # Create new vote atomically
+                        vote = Vote(
+                            poll_id=poll_id,
+                            user_id=user_id,
+                            option_index=option_index
+                        )
+                        db.add(vote)
+                        logger.debug(
+                            f"Created new vote for user {user_id}: option {option_index}")
+
+                    # Step 3: Commit transaction atomically
+                    db.commit()
+                    vote_recorded = True
+
+                    # Step 4: Verify vote was recorded correctly
+                    verification_vote = db.query(Vote).filter(
+                        Vote.poll_id == poll_id,
+                        Vote.user_id == user_id
+                    ).first()
+
+                    if not verification_vote or verification_vote.option_index != option_index:
+                        logger.error(
+                            f"Vote verification failed for poll {poll_id}, user {user_id}")
+                        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                        from .error_handler import notify_error_async
+                        await notify_error_async(
+                            Exception("Vote verification failed"),
+                            "Vote Verification",
+                            poll_id=poll_id,
+                            user_id=user_id,
+                            option_index=option_index
+                        )
+                        return {"success": False, "error": "Vote verification failed"}
+
+                    logger.info(
+                        f"Successfully {vote_action} vote for poll {poll_id}, user {user_id}, option {option_index}")
+
+                except Exception as db_error:
+                    db.rollback()
+                    logger.warning(
+                        f"Database error on attempt {retry_count}: {db_error}")
+                    if retry_count >= max_retries:
+                        raise db_error
+                    # Wait briefly before retry to avoid rapid-fire retries
+                    await asyncio.sleep(0.1 * retry_count)
+                    continue
+
+                finally:
+                    db.close()
+
+            except Exception as e:
+                logger.error(
+                    f"Vote collection attempt {retry_count} failed: {e}")
+                if retry_count >= max_retries:
                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                     from .error_handler import notify_error_async
-                    await notify_error_async(e, "Vote Data Validation", poll_id=poll_id, user_id=user_id, option_index=option_index)
-                    return {"success": False, "error": str(e)}
+                    await notify_error_async(e, "Bulletproof Vote Collection", poll_id=poll_id, user_id=user_id, option_index=option_index, retry_count=retry_count)
+                    return {
+                        "success": False,
+                        "error": f"Vote collection failed after {max_retries} attempts: {str(e)}"
+                    }
+                # Wait before retry
+                await asyncio.sleep(0.1 * retry_count)
 
-                # Step 3: Record vote using existing database operations
-                from .database import Vote
-
-                # Check for existing vote
-                existing_vote = db.query(Vote).filter(
-                    Vote.poll_id == poll_id,
-                    Vote.user_id == user_id
-                ).first()
-
-                if existing_vote:
-                    # Update existing vote
-                    existing_vote.option_index = option_index
-                else:
-                    # Create new vote
-                    vote = Vote(
-                        poll_id=poll_id,
-                        user_id=user_id,
-                        option_index=option_index
-                    )
-                    db.add(vote)
-
-                db.commit()
-
-            finally:
-                db.close()
-
+        if vote_recorded:
             return {
                 "success": True,
-                "message": "Vote recorded successfully"
+                "message": f"Vote recorded successfully after {retry_count} attempt(s)",
+                "attempts": retry_count
             }
-
-        except Exception as e:
-            logger.error(f"Vote collection failed: {e}")
-            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-            from .error_handler import notify_error_async
-            await notify_error_async(e, "Bulletproof Vote Collection", poll_id=poll_id, user_id=user_id, option_index=option_index)
+        else:
             return {
                 "success": False,
-                "error": f"Vote collection failed: {str(e)}"
+                "error": f"Failed to record vote after {max_retries} attempts"
             }
 
     @critical_operation("bulletproof_poll_closure")
