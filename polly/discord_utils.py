@@ -497,7 +497,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
         if poll_image_path is not None and str(poll_image_path).strip():
             try:
                 logger.debug(
-                    f"🖼️ POSTING POLL {poll.id} - Posting image message first")
+                    f"🖼️ POSTING POLL {getattr(poll, 'id', 'unknown')} - Posting image message first")
 
                 # Prepare image message content - ensure we get the actual string value
                 poll_image_message_text = getattr(
