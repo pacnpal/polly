@@ -1001,7 +1001,7 @@ async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser =
             logger.info(f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
             print(f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
 
-        result = {"emojis": emoji_list}
+        result = {"success": True, "emojis": emoji_list}
         logger.info(f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
         print(f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
         
