@@ -15,6 +15,12 @@ from .discord_utils import post_poll_to_channel, update_poll_message
 from .timezone_scheduler_fix import TimezoneAwareScheduler
 from .error_handler import PollErrorHandler, notify_error_async
 
+# Track failed message fetch attempts for polls during runtime
+# Format: {poll_id: {"count": int, "first_failure": datetime, "last_attempt": datetime}}
+message_fetch_failures = {}
+MAX_FETCH_RETRIES = 5  # Number of consecutive failures before deleting poll
+RETRY_WINDOW_MINUTES = 30  # Time window to track failures
+
 logger = logging.getLogger(__name__)
 
 # Scheduler for poll timing
@@ -426,30 +432,135 @@ async def reaction_safeguard_task():
                         try:
                             if isinstance(channel, discord.TextChannel):
                                 message = await channel.fetch_message(int(poll_message_id))
+                                # Message found successfully - clear any failure tracking
+                                poll_id = TypeSafeColumn.get_int(poll, 'id')
+                                if poll_id in message_fetch_failures:
+                                    del message_fetch_failures[poll_id]
+                                    logger.debug(
+                                        f"✅ Safeguard: Message {poll_message_id} found for poll {poll_id}, cleared failure tracking")
                             else:
                                 # Skip non-text channels
                                 continue
                         except discord.NotFound:
-                            # Message was deleted - delete the poll
+                            # Message not found - implement retry logic with multiple methods
                             poll_id = TypeSafeColumn.get_int(poll, 'id')
-                            poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown')
-                            logger.warning(
-                                f"🗑️ Safeguard: Message {poll_message_id} not found for poll {poll_id}, deleting poll")
-                            
-                            try:
-                                # Delete associated votes first
-                                db.query(Vote).filter(Vote.poll_id == poll_id).delete()
-                                # Delete the poll
-                                db.delete(poll)
-                                db.commit()
-                                logger.info(
-                                    f"✅ Safeguard: Deleted poll {poll_id}: '{poll_name}' due to missing message")
-                            except Exception as delete_error:
-                                logger.error(
-                                    f"❌ Safeguard: Error deleting poll {poll_id}: {delete_error}")
-                                db.rollback()
-                                await notify_error_async(delete_error, "Safeguard Poll Deletion",
-                                                         poll_id=poll_id, poll_name=poll_name)
+                            poll_name = TypeSafeColumn.get_string(
+                                poll, 'name', 'Unknown')
+                            current_time = datetime.now(pytz.UTC)
+
+                            # Initialize or update failure tracking
+                            if poll_id not in message_fetch_failures:
+                                message_fetch_failures[poll_id] = {
+                                    "count": 1,
+                                    "first_failure": current_time,
+                                    "last_attempt": current_time,
+                                    "methods_tried": ["fetch_message"]
+                                }
+                                logger.warning(
+                                    f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES})")
+                            else:
+                                failure_info = message_fetch_failures[poll_id]
+                                failure_info["count"] += 1
+                                failure_info["last_attempt"] = current_time
+
+                                # Check if we're within the retry window
+                                time_since_first_failure = (
+                                    current_time - failure_info["first_failure"]).total_seconds() / 60
+
+                                if time_since_first_failure > RETRY_WINDOW_MINUTES:
+                                    # Reset the failure tracking if too much time has passed
+                                    message_fetch_failures[poll_id] = {
+                                        "count": 1,
+                                        "first_failure": current_time,
+                                        "last_attempt": current_time,
+                                        "methods_tried": ["fetch_message"]
+                                    }
+                                    logger.warning(
+                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES}, reset after {time_since_first_failure:.1f} minutes)")
+                                else:
+                                    logger.warning(
+                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt {failure_info['count']}/{MAX_FETCH_RETRIES})")
+
+                                # Try alternative methods before giving up
+                                if failure_info["count"] <= MAX_FETCH_RETRIES:
+                                    # Try different approaches to find the message
+                                    message_found = False
+
+                                    # Method 2: Try to get message from channel history
+                                    if "history_search" not in failure_info["methods_tried"] and failure_info["count"] >= 2:
+                                        try:
+                                            logger.debug(
+                                                f"🔍 Safeguard: Trying history search for message {poll_message_id} in poll {poll_id}")
+                                            async for hist_message in channel.history(limit=100):
+                                                if str(hist_message.id) == poll_message_id:
+                                                    message = hist_message
+                                                    message_found = True
+                                                    logger.info(
+                                                        f"✅ Safeguard: Found message {poll_message_id} via history search for poll {poll_id}")
+                                                    break
+                                            failure_info["methods_tried"].append(
+                                                "history_search")
+                                        except Exception as history_error:
+                                            logger.debug(
+                                                f"❌ Safeguard: History search failed for poll {poll_id}: {history_error}")
+
+                                    # Method 3: Try with a small delay and retry fetch
+                                    if not message_found and "delayed_fetch" not in failure_info["methods_tried"] and failure_info["count"] >= 3:
+                                        try:
+                                            logger.debug(
+                                                f"🔍 Safeguard: Trying delayed fetch for message {poll_message_id} in poll {poll_id}")
+                                            # Small delay
+                                            await asyncio.sleep(2)
+                                            message = await channel.fetch_message(int(poll_message_id))
+                                            message_found = True
+                                            logger.info(
+                                                f"✅ Safeguard: Found message {poll_message_id} via delayed fetch for poll {poll_id}")
+                                            failure_info["methods_tried"].append(
+                                                "delayed_fetch")
+                                        except discord.NotFound:
+                                            logger.debug(
+                                                f"❌ Safeguard: Delayed fetch still failed for poll {poll_id}")
+                                            failure_info["methods_tried"].append(
+                                                "delayed_fetch")
+                                        except Exception as delayed_error:
+                                            logger.debug(
+                                                f"❌ Safeguard: Delayed fetch error for poll {poll_id}: {delayed_error}")
+
+                                    if message_found:
+                                        # Clear failure tracking since we found the message
+                                        del message_fetch_failures[poll_id]
+                                        logger.info(
+                                            f"✅ Safeguard: Message {poll_message_id} recovered for poll {poll_id}, cleared failure tracking")
+                                        # Continue processing the message normally
+                                    elif failure_info["count"] >= MAX_FETCH_RETRIES:
+                                        # All retry attempts exhausted - delete the poll
+                                        logger.error(
+                                            f"🗑️ Safeguard: Message {poll_message_id} not found after {MAX_FETCH_RETRIES} attempts over {time_since_first_failure:.1f} minutes for poll {poll_id}, deleting poll")
+
+                                        try:
+                                            # Delete associated votes first
+                                            db.query(Vote).filter(
+                                                Vote.poll_id == poll_id).delete()
+                                            # Delete the poll
+                                            db.delete(poll)
+                                            db.commit()
+
+                                            # Clear failure tracking
+                                            del message_fetch_failures[poll_id]
+
+                                            logger.info(
+                                                f"✅ Safeguard: Deleted poll {poll_id}: '{poll_name}' after {MAX_FETCH_RETRIES} failed message fetch attempts")
+                                        except Exception as delete_error:
+                                            logger.error(
+                                                f"❌ Safeguard: Error deleting poll {poll_id}: {delete_error}")
+                                            db.rollback()
+                                            await notify_error_async(delete_error, "Safeguard Poll Deletion After Retries",
+                                                                     poll_id=poll_id, poll_name=poll_name, attempts=MAX_FETCH_RETRIES)
+                                        continue
+                                    else:
+                                        # Still within retry limit, continue to next poll
+                                        continue
+
                             continue
                         except Exception as fetch_error:
                             poll_id = TypeSafeColumn.get_int(poll, 'id')
