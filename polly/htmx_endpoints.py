@@ -737,7 +737,7 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
     })
 
 
-async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth)):
+async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth), preselect_last_channel: bool = True):
     """Get channels for a server as HTML options for HTMX"""
     if not server_id:
         return '<option value="">Select a server first...</option>'
@@ -748,14 +748,25 @@ async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Dep
     if not guild:
         return '<option value="">Server not found...</option>'
 
-    # Always start with no channel selected when switching servers
-    # This ensures users must explicitly choose a channel for the new server
+    # Get user preferences to potentially pre-select last used channel
+    user_prefs = get_user_preferences(current_user.id)
+    last_channel_id = user_prefs.get("last_channel_id") if preselect_last_channel else None
+    last_server_id = user_prefs.get("last_server_id")
+
+    # Only pre-select the last channel if we're loading the same server as last time
+    # This prevents pre-selecting channels from different servers when switching
+    should_preselect = (preselect_last_channel and
+                        last_channel_id and
+                        last_server_id and
+                        str(server_id) == str(last_server_id))
+
     options = '<option value="">Select a channel...</option>'
     for channel in guild["channels"]:
         # HTML escape the channel name to prevent JavaScript syntax errors
         escaped_channel_name = escape(channel["name"])
-        # Don't pre-select any channel - user must choose explicitly
-        options += f'<option value="{channel["id"]}">#{escaped_channel_name}</option>'
+        # Pre-select the last used channel only if it's from the same server
+        selected = 'selected' if should_preselect and channel["id"] == last_channel_id else ''
+        options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
 
     return options
 

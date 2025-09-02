@@ -645,6 +645,25 @@
             }
         });
 
+        // Handle intelligent channel pre-selection for edit form
+        let isInitialLoad = true;
+        const serverSelect = document.getElementById('server-select');
+        
+        if (serverSelect) {
+            // Intercept HTMX requests to add the preselect_last_channel parameter
+            document.addEventListener('htmx:configRequest', function(event) {
+                if (event.detail.elt === serverSelect) {
+                    // Add the preselect_last_channel parameter based on whether this is initial load or server switch
+                    const url = new URL(event.detail.path, window.location.origin);
+                    url.searchParams.set('preselect_last_channel', isInitialLoad ? 'true' : 'false');
+                    event.detail.path = url.pathname + url.search;
+                    
+                    // After the first request, all subsequent requests are server switches
+                    isInitialLoad = false;
+                }
+            });
+        }
+
         // Time validation
         const openTimeInput = document.getElementById('open-time');
         const closeTimeInput = document.getElementById('close-time');
