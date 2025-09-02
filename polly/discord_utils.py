@@ -180,36 +180,8 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
 
 async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Embed:
     """Create Discord embed for a poll"""
-    # CRITICAL FIX: Always refresh poll data from database to ensure we have latest votes
-    # This prevents DetachedInstanceError and ensures vote counts are current
-    db = get_db_session()
-    try:
-        # Get poll ID safely
-        poll_id = getattr(poll, 'id')
-        if poll_id is None:
-            logger.error("Poll object has no ID, cannot refresh from database")
-            raise Exception("Invalid poll object - no ID")
-
-        # Refresh poll with all relationships loaded
-        fresh_poll = db.query(Poll).filter(Poll.id == poll_id).first()
-        if not fresh_poll:
-            logger.error(
-                f"Poll {poll_id} not found in database during embed creation")
-            raise Exception(f"Poll {poll_id} not found in database")
-
-        # Use the fresh poll object for all operations
-        poll = fresh_poll
-        logger.debug(
-            f"Successfully refreshed poll {poll_id} data for embed creation")
-
-    except Exception as e:
-        logger.error(f"Critical error refreshing poll data for embed: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Embed Data Refresh", poll_id=getattr(poll, 'id', 'unknown'))
-        # Continue with original poll object as fallback, but this may cause issues
-    finally:
-        db.close()
+    # Note: Poll object should already be attached to a database session with votes eagerly loaded
+    # to prevent DetachedInstanceError. This is handled by the calling function.
 
     # Determine embed color based on status
     poll_status = str(getattr(poll, 'status', 'unknown'))
@@ -232,7 +204,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
     # Add poll options
     option_text = ""
-    if show_results and poll.should_show_results():
+    if show_results and bool(poll.should_show_results()):
         # Show results with enhanced progress bars and percentages
         results = poll.get_results()
         total_votes = poll.get_total_votes()
@@ -418,33 +390,35 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     return embed
 
 
-async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
+async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
     """Post a poll to its designated Discord channel with comprehensive debugging"""
-    logger.info(f"🚀 POSTING POLL {poll.id} - Starting post_poll_to_channel")
+    poll_id = getattr(poll, 'id', 'unknown')
+    logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel")
     logger.debug(
-        f"Poll details: name='{poll.name}', server_id={poll.server_id}, channel_id={poll.channel_id}")
+        f"Poll details: name='{getattr(poll, 'name', '')}', server_id={getattr(poll, 'server_id', '')}, channel_id={getattr(poll, 'channel_id', '')}")
 
     try:
         # Debug bot status
         if not bot:
-            logger.error(f"❌ POSTING POLL {poll.id} - Bot instance is None")
+            logger.error(f"❌ POSTING POLL {poll_id} - Bot instance is None")
             return False
 
         if not bot.is_ready():
-            logger.error(f"❌ POSTING POLL {poll.id} - Bot is not ready")
+            logger.error(f"❌ POSTING POLL {poll_id} - Bot is not ready")
             return False
 
         logger.debug(
-            f"✅ POSTING POLL {poll.id} - Bot is ready, user: {bot.user}")
+            f"✅ POSTING POLL {poll_id} - Bot is ready, user: {bot.user}")
 
         # Debug channel retrieval
+        poll_channel_id = getattr(poll, 'channel_id', None)
         logger.debug(
-            f"🔍 POSTING POLL {poll.id} - Looking for channel {poll.channel_id}")
-        channel = bot.get_channel(int(str(poll.channel_id)))
+            f"🔍 POSTING POLL {poll_id} - Looking for channel {poll_channel_id}")
+        channel = bot.get_channel(int(str(poll_channel_id)))
 
         if not channel:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Channel {poll.channel_id} not found")
+                f"❌ POSTING POLL {poll_id} - Channel {poll_channel_id} not found")
             logger.debug(
                 f"Available channels: {[c.id for c in bot.get_all_channels()]}")
             return False
@@ -452,36 +426,36 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
         # Ensure we have a text channel
         if not isinstance(channel, discord.TextChannel):
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Channel {poll.channel_id} is not a text channel")
+                f"❌ POSTING POLL {poll_id} - Channel {poll_channel_id} is not a text channel")
             return False
 
         logger.info(
-            f"✅ POSTING POLL {poll.id} - Found channel: {channel.name} ({channel.id})")
+            f"✅ POSTING POLL {poll_id} - Found channel: {channel.name} ({channel.id})")
 
         # Debug bot permissions in channel
         bot_member = channel.guild.get_member(bot.user.id)
         if not bot_member:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Bot not found as member in guild {channel.guild.name}")
+                f"❌ POSTING POLL {poll_id} - Bot not found as member in guild {channel.guild.name}")
             return False
 
         permissions = channel.permissions_for(bot_member)
         logger.debug(
-            f"🔐 POSTING POLL {poll.id} - Bot permissions: send_messages={permissions.send_messages}, embed_links={permissions.embed_links}, add_reactions={permissions.add_reactions}")
+            f"🔐 POSTING POLL {poll_id} - Bot permissions: send_messages={permissions.send_messages}, embed_links={permissions.embed_links}, add_reactions={permissions.add_reactions}")
 
         if not permissions.send_messages:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Bot lacks send_messages permission in {channel.name}")
+                f"❌ POSTING POLL {poll_id} - Bot lacks send_messages permission in {channel.name}")
             return False
 
         if not permissions.embed_links:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Bot lacks embed_links permission in {channel.name}")
+                f"❌ POSTING POLL {poll_id} - Bot lacks embed_links permission in {channel.name}")
             return False
 
         if not permissions.add_reactions:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Bot lacks add_reactions permission in {channel.name}")
+                f"❌ POSTING POLL {poll_id} - Bot lacks add_reactions permission in {channel.name}")
             return False
 
         # CRITICAL FIX: Refresh poll object from database to avoid DetachedInstanceError
@@ -490,7 +464,9 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             f"🔄 POSTING POLL {getattr(poll, 'id', 'unknown')} - Refreshing poll from database to avoid DetachedInstanceError")
         db = get_db_session()
         try:
-            fresh_poll = db.query(Poll).filter(
+            # Eagerly load the votes relationship to avoid DetachedInstanceError
+            from sqlalchemy.orm import joinedload
+            fresh_poll = db.query(Poll).options(joinedload(Poll.votes)).filter(
                 Poll.id == getattr(poll, 'id')).first()
             if not fresh_poll:
                 logger.error(
@@ -502,7 +478,6 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             logger.debug(
                 f"✅ POSTING POLL {getattr(poll, 'id', 'unknown')} - Successfully refreshed poll from database")
 
-            # Keep the database session open for embed creation to avoid DetachedInstanceError
             # Create embed with debugging while poll is still attached to session
             logger.debug(
                 f"📝 POSTING POLL {getattr(poll, 'id', 'unknown')} - Creating embed")
@@ -522,7 +497,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
         if poll_image_path is not None and str(poll_image_path).strip():
             try:
                 logger.debug(
-                    f"🖼️ POSTING POLL {poll.id} - Posting image message first")
+                    f"🖼️ POSTING POLL {getattr(poll, 'id', 'unknown')} - Posting image message first")
 
                 # Prepare image message content - ensure we get the actual string value
                 poll_image_message_text = getattr(
