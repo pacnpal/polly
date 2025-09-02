@@ -83,13 +83,15 @@
         }
     }
 
-    function validateField(fieldId, value) {
+    function validateField(fieldId, value, showErrors = true) {
         const rules = validationRules[fieldId];
         if (!rules) return true;
 
         // Required validation
         if (rules.required && (!value || value.trim() === '')) {
-            showFieldError(fieldId, rules.message || 'This field is required');
+            if (showErrors) {
+                showFieldError(fieldId, rules.message || 'This field is required');
+            }
             validationState[fieldId] = false;
             return false;
         }
@@ -105,19 +107,25 @@
 
         // Length validations
         if (rules.minLength && trimmedValue.length < rules.minLength) {
-            showFieldError(fieldId, rules.message || `Minimum ${rules.minLength} characters required`);
+            if (showErrors) {
+                showFieldError(fieldId, rules.message || `Minimum ${rules.minLength} characters required`);
+            }
             validationState[fieldId] = false;
             return false;
         }
 
         if (rules.maxLength && trimmedValue.length > rules.maxLength) {
-            showFieldError(fieldId, rules.message || `Maximum ${rules.maxLength} characters allowed`);
+            if (showErrors) {
+                showFieldError(fieldId, rules.message || `Maximum ${rules.maxLength} characters allowed`);
+            }
             validationState[fieldId] = false;
             return false;
         }
 
         // Field passed validation
-        showFieldSuccess(fieldId);
+        if (showErrors) {
+            showFieldSuccess(fieldId);
+        }
         validationState[fieldId] = true;
         return true;
     }
@@ -207,24 +215,24 @@
         return true;
     }
 
-    function validateForm() {
+    function validateForm(showErrors = true) {
         let isValid = true;
 
         // Validate individual fields
         Object.keys(validationRules).forEach(fieldId => {
             const field = document.getElementById(fieldId);
             if (field) {
-                const fieldValid = validateField(fieldId, field.value);
+                const fieldValid = validateField(fieldId, field.value, showErrors);
                 isValid = isValid && fieldValid;
             }
         });
 
-        // Validate options
-        const optionsValid = validateOptions();
+        // Validate options (only show errors if requested)
+        const optionsValid = showErrors ? validateOptions() : validateOptionsQuiet();
         isValid = isValid && optionsValid;
 
-        // Validate times
-        const timesValid = validateTimes();
+        // Validate times (only show errors if requested)
+        const timesValid = showErrors ? validateTimes() : validateTimesQuiet();
         isValid = isValid && timesValid;
 
         // Update submit button state
@@ -233,18 +241,66 @@
         return isValid;
     }
 
+    function validateOptionsQuiet() {
+        const optionInputs = document.querySelectorAll('input[name^="option"]');
+        const validOptions = [];
+        
+        optionInputs.forEach(input => {
+            const value = input.value.trim();
+            if (value) {
+                validOptions.push(value);
+            }
+        });
+
+        const isValid = validOptions.length >= 2;
+        validationState['options'] = isValid;
+        return isValid;
+    }
+
+    function validateTimesQuiet() {
+        const openTimeInput = document.getElementById('open-time');
+        const closeTimeInput = document.getElementById('close-time');
+        
+        if (!openTimeInput || !closeTimeInput) return true;
+
+        const openTime = openTimeInput.value;
+        const closeTime = closeTimeInput.value;
+
+        if (!openTime || !closeTime) {
+            validationState['open-time'] = !!openTime;
+            validationState['close-time'] = !!closeTime;
+            return !!openTime && !!closeTime;
+        }
+
+        const openDate = new Date(openTime);
+        const closeDate = new Date(closeTime);
+        const now = new Date();
+
+        // Check if open time is in the future (at least 1 minute from now)
+        const minOpenTime = new Date(now.getTime() + 60000);
+        if (openDate < minOpenTime) {
+            validationState['open-time'] = false;
+            return false;
+        }
+
+        // Check if close time is after open time
+        if (closeDate <= openDate) {
+            validationState['close-time'] = false;
+            return false;
+        }
+
+        validationState['open-time'] = true;
+        validationState['close-time'] = true;
+        return true;
+    }
+
     function updateSubmitButtonState(isValid) {
         const submitButton = document.querySelector('button[type="submit"]');
         if (submitButton && !isSubmitting) {
-            // Don't disable the button - let HTMX handle that
-            // Just provide visual feedback
-            if (isValid) {
-                submitButton.classList.remove('btn-secondary');
-                submitButton.classList.add('btn-primary');
-            } else {
-                submitButton.classList.remove('btn-primary');
-                submitButton.classList.add('btn-secondary');
-            }
+            // Always keep the button enabled and primary
+            submitButton.disabled = false;
+            submitButton.classList.remove('btn-secondary');
+            submitButton.classList.add('btn-primary');
         }
     }
 
@@ -298,50 +354,7 @@
     }
 
     function initializeValidation() {
-        // Add event listeners for real-time validation
-        Object.keys(validationRules).forEach(fieldId => {
-            const field = document.getElementById(fieldId);
-            if (field) {
-                // Validate on blur (when user leaves field)
-                field.addEventListener('blur', function() {
-                    validateField(fieldId, this.value);
-                });
-
-                // Clear validation on focus (when user starts typing)
-                field.addEventListener('focus', function() {
-                    clearFieldValidation(fieldId);
-                });
-
-                // For select fields, validate on change
-                if (field.tagName === 'SELECT') {
-                    field.addEventListener('change', function() {
-                        validateField(fieldId, this.value);
-                    });
-                }
-            }
-        });
-
-        // Validate options when they change
-        document.addEventListener('input', function(e) {
-            if (e.target.name && e.target.name.startsWith('option')) {
-                // Debounce option validation
-                clearTimeout(window.optionValidationTimeout);
-                window.optionValidationTimeout = setTimeout(validateOptions, 300);
-            }
-        });
-
-        // Validate times when they change
-        const openTimeInput = document.getElementById('open-time');
-        const closeTimeInput = document.getElementById('close-time');
-        
-        if (openTimeInput) {
-            openTimeInput.addEventListener('change', validateTimes);
-        }
-        if (closeTimeInput) {
-            closeTimeInput.addEventListener('change', validateTimes);
-        }
-
-        // Handle form submission
+        // Handle form submission - ONLY validate on submit
         const forms = document.querySelectorAll('form[hx-post]');
         forms.forEach(form => {
             form.addEventListener('submit', function(e) {
@@ -351,8 +364,11 @@
                     return false;
                 }
 
-                // Validate form before submission
-                const formIsValid = validateForm();
+                // Clear any previous validation styling
+                clearAllValidation();
+
+                // Validate form before submission - show all errors
+                const formIsValid = validateForm(true);
                 if (!formIsValid) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -366,24 +382,7 @@
                     return false;
                 }
 
-                // Let HTMX handle the loading state
-            });
-
-            // Also validate on form changes to update submit button state
-            form.addEventListener('input', function() {
-                // Debounce validation
-                clearTimeout(window.formValidationTimeout);
-                window.formValidationTimeout = setTimeout(() => {
-                    if (!isSubmitting) {
-                        validateForm();
-                    }
-                }, 300);
-            });
-
-            form.addEventListener('change', function() {
-                if (!isSubmitting) {
-                    setTimeout(() => validateForm(), 100);
-                }
+                // Form is valid, let HTMX handle the submission
             });
         });
 
@@ -399,14 +398,6 @@
         document.addEventListener('htmx:afterRequest', function(e) {
             try {
                 isSubmitting = false;
-                // Re-validate form after request to update button state
-                setTimeout(() => {
-                    try {
-                        validateForm();
-                    } catch (error) {
-                        console.warn('Error in delayed validation:', error);
-                    }
-                }, 100);
             } catch (error) {
                 console.warn('Error in htmx:afterRequest handler:', error);
             }
@@ -416,18 +407,27 @@
         document.addEventListener('htmx:responseError', function(e) {
             try {
                 isSubmitting = false;
-                // Re-validate form after error to update button state
-                setTimeout(() => {
-                    try {
-                        validateForm();
-                    } catch (error) {
-                        console.warn('Error in delayed validation after error:', error);
-                    }
-                }, 100);
             } catch (error) {
                 console.warn('Error in htmx:responseError handler:', error);
             }
         });
+    }
+
+    function clearAllValidation() {
+        // Clear validation styling from all fields
+        Object.keys(validationRules).forEach(fieldId => {
+            clearFieldValidation(fieldId);
+        });
+
+        // Clear options validation
+        const optionsContainer = document.getElementById('options-container');
+        if (optionsContainer) {
+            optionsContainer.classList.remove('is-invalid');
+            const errorElement = optionsContainer.parentNode.querySelector('.options-error');
+            if (errorElement) {
+                errorElement.style.display = 'none';
+            }
+        }
     }
 
     // Initialize when DOM is ready
