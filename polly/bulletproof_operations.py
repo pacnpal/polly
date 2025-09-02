@@ -316,11 +316,17 @@ class BulletproofPollOperations:
                         poll = db.query(Poll).filter(
                             Poll.id == poll_id).first()
                         if poll:
-                            message = await post_poll_to_channel(self.bot, poll)
-                            if message:
-                                discord_poll_message_id = message.id
-                                poll.message_id = str(message.id)
-                                db.commit()
+                            success = await post_poll_to_channel(self.bot, poll)
+                            if success:
+                                # Get the updated poll to get the message ID
+                                updated_poll = db.query(Poll).filter(
+                                    Poll.id == poll_id).first()
+                                if updated_poll and getattr(updated_poll, 'message_id', None):
+                                    discord_poll_message_id = int(
+                                        str(getattr(updated_poll, 'message_id')))
+                                else:
+                                    raise Exception(
+                                        "Failed to get message ID after posting")
                             else:
                                 raise Exception("Failed to post poll message")
                         else:

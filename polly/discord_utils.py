@@ -418,7 +418,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     return embed
 
 
-async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
+async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
     """Post a poll to its designated Discord channel with comprehensive debugging"""
     logger.info(f"🚀 POSTING POLL {poll.id} - Starting post_poll_to_channel")
     logger.debug(
@@ -490,7 +490,9 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             f"🔄 POSTING POLL {getattr(poll, 'id', 'unknown')} - Refreshing poll from database to avoid DetachedInstanceError")
         db = get_db_session()
         try:
-            fresh_poll = db.query(Poll).filter(
+            # Eagerly load the votes relationship to avoid DetachedInstanceError
+            from sqlalchemy.orm import joinedload
+            fresh_poll = db.query(Poll).options(joinedload(Poll.votes)).filter(
                 Poll.id == getattr(poll, 'id')).first()
             if not fresh_poll:
                 logger.error(
@@ -502,7 +504,6 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             logger.debug(
                 f"✅ POSTING POLL {getattr(poll, 'id', 'unknown')} - Successfully refreshed poll from database")
 
-            # Keep the database session open for embed creation to avoid DetachedInstanceError
             # Create embed with debugging while poll is still attached to session
             logger.debug(
                 f"📝 POSTING POLL {getattr(poll, 'id', 'unknown')} - Creating embed")
