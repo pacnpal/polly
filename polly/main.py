@@ -1354,8 +1354,18 @@ async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(r
 @app.get("/htmx/create-form", response_class=HTMLResponse)
 async def get_create_form_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
     """Get create poll form as HTML for HTMX"""
-    # Get user's guilds with channels
-    user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+    # Get user's guilds with channels with error handling
+    try:
+        user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+        # Ensure user_guilds is always a valid list
+        if user_guilds is None:
+            user_guilds = []
+    except Exception as e:
+        logger.error(
+            f"Error getting user guilds for create form for {current_user.id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Create Form Guild Retrieval", user_id=current_user.id)
+        user_guilds = []
 
     # Get user preferences
     user_prefs = get_user_preferences(current_user.id)
@@ -1963,9 +1973,9 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             """
 
         # Save new image if provided
-        new_image_path = poll.image_path
-        if content and hasattr(image_file, 'filename') and image_file.filename:
-            new_image_path = await save_image_file(content, str(image_file.filename))
+        new_image_path = getattr(poll, 'image_path', None)
+        if content and hasattr(image_file, 'filename') and getattr(image_file, 'filename', None):
+            new_image_path = await save_image_file(content, str(getattr(image_file, 'filename', '')))
             if not new_image_path:
                 logger.error(f"Failed to save new image for poll {poll_id}")
                 return """
@@ -1974,8 +1984,9 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 </div>
                 """
             # Clean up old image
-            if poll.image_path:
-                await cleanup_image(str(poll.image_path))
+            old_image_path = getattr(poll, 'image_path', None)
+            if old_image_path:
+                await cleanup_image(str(old_image_path))
 
         # Get options and emojis
         options = []
