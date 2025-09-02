@@ -180,22 +180,43 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
 
 async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Embed:
     """Create Discord embed for a poll"""
-    # Refresh poll data from database to ensure we have latest votes
+    # CRITICAL FIX: Always refresh poll data from database to ensure we have latest votes
+    # This prevents DetachedInstanceError and ensures vote counts are current
     db = get_db_session()
     try:
-        fresh_poll = db.query(Poll).filter(Poll.id == poll.id).first()
-        if fresh_poll:
-            poll = fresh_poll
+        # Get poll ID safely
+        poll_id = getattr(poll, 'id')
+        if poll_id is None:
+            logger.error("Poll object has no ID, cannot refresh from database")
+            raise Exception("Invalid poll object - no ID")
+
+        # Refresh poll with all relationships loaded
+        fresh_poll = db.query(Poll).filter(Poll.id == poll_id).first()
+        if not fresh_poll:
+            logger.error(
+                f"Poll {poll_id} not found in database during embed creation")
+            raise Exception(f"Poll {poll_id} not found in database")
+
+        # Use the fresh poll object for all operations
+        poll = fresh_poll
+        logger.debug(
+            f"Successfully refreshed poll {poll_id} data for embed creation")
+
     except Exception as e:
-        logger.warning(f"Could not refresh poll data: {e}")
+        logger.error(f"Critical error refreshing poll data for embed: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Embed Data Refresh", poll_id=getattr(poll, 'id', 'unknown'))
+        # Continue with original poll object as fallback, but this may cause issues
     finally:
         db.close()
 
     # Determine embed color based on status
-    if poll.status == "scheduled":
+    poll_status = str(getattr(poll, 'status', 'unknown'))
+    if poll_status == "scheduled":
         color = 0xffaa00  # Orange
         status_emoji = "⏰"
-    elif poll.status == "active":
+    elif poll_status == "active":
         color = 0x00ff00  # Green
         status_emoji = "📊"
     else:  # closed
@@ -203,8 +224,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         status_emoji = "🏁"
 
     embed = discord.Embed(
-        title=f"{status_emoji} {poll.name}",
-        description=poll.question,
+        title=f"{status_emoji} {str(getattr(poll, 'name', ''))}",
+        description=str(getattr(poll, 'question', '')),
         color=color,
         timestamp=datetime.now(pytz.UTC)
     )
@@ -238,7 +259,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             option_text += f"`{bar}` **{votes}** votes (**{percentage:.1f}%**)\n\n"
 
         embed.add_field(
-            name="📊 Results" if poll.status == "closed" else "📈 Live Results",
+            name="📊 Results" if poll_status == "closed" else "📈 Live Results",
             value=option_text or "No votes yet",
             inline=False
         )
@@ -252,7 +273,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             )
 
         # Winner announcement for closed polls
-        if poll.status == "closed" and total_votes > 0:
+        if poll_status == "closed" and total_votes > 0:
             winners = poll.get_winner()
             if winners:
                 if len(winners) == 1:
@@ -291,7 +312,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         # Always show total votes for active polls
         total_votes = poll.get_total_votes()
 
-        if poll.anonymous:
+        poll_anonymous = bool(getattr(poll, 'anonymous', False))
+        if poll_anonymous:
             # Enhanced anonymous poll display
             embed.add_field(
                 name="🔒 Anonymous Poll",
@@ -346,20 +368,21 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                 )
 
     # Add timing information with timezone support
-    if poll.status == "scheduled":
+    if poll_status == "scheduled":
         # Only show opens time for scheduled polls, with timezone-specific time
-        if hasattr(poll, 'timezone') and poll.timezone:
+        poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
+        if poll_timezone and poll_timezone != 'UTC':
             try:
-                tz = pytz.timezone(poll.timezone)
+                tz = pytz.timezone(poll_timezone)
                 local_open = poll.open_time.astimezone(tz)
                 embed.add_field(
-                    name=f"Opens ({poll.timezone})",
+                    name=f"Opens ({poll_timezone})",
                     value=local_open.strftime("%Y-%m-%d %I:%M %p"),
                     inline=True
                 )
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(
-                    f"Error formatting timezone {poll.timezone}: {e}")
+                    f"Error formatting timezone {poll_timezone}: {e}")
                 # Fallback to UTC
                 embed.add_field(
                     name="Opens (UTC)",
@@ -368,19 +391,20 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                 )
 
     # Show close time for scheduled and active polls
-    if poll.status in ["scheduled", "active"]:
-        if hasattr(poll, 'timezone') and poll.timezone:
+    if poll_status in ["scheduled", "active"]:
+        poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
+        if poll_timezone and poll_timezone != 'UTC':
             try:
-                tz = pytz.timezone(poll.timezone)
+                tz = pytz.timezone(poll_timezone)
                 local_close = poll.close_time.astimezone(tz)
                 embed.add_field(
-                    name=f"Closes ({poll.timezone})",
+                    name=f"Closes ({poll_timezone})",
                     value=local_close.strftime("%Y-%m-%d %I:%M %p"),
                     inline=True
                 )
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(
-                    f"Error formatting timezone {poll.timezone}: {e}")
+                    f"Error formatting timezone {poll_timezone}: {e}")
                 # Fallback to UTC
                 embed.add_field(
                     name="Closes (UTC)",
