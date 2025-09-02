@@ -18,8 +18,12 @@ from .validators import ValidationError
 
 logger = logging.getLogger(__name__)
 
-# Get bot owner ID from environment
-BOT_OWNER_ID = os.getenv("BOT_OWNER_ID")
+# Get bot owner ID from environment (loaded dynamically to ensure .env is loaded)
+
+
+def get_bot_owner_id():
+    """Get BOT_OWNER_ID from environment, ensuring .env is loaded"""
+    return os.getenv("BOT_OWNER_ID")
 
 
 class BotOwnerNotifier:
@@ -28,13 +32,14 @@ class BotOwnerNotifier:
     @staticmethod
     async def send_error_dm(bot: commands.Bot, error: Exception, operation: str, context: Optional[Dict[str, Any]] = None):
         """Send DM to bot owner about critical errors"""
-        if not BOT_OWNER_ID or not bot or not bot.is_ready():
+        bot_owner_id = get_bot_owner_id()
+        if not bot_owner_id or not bot or not bot.is_ready():
             logger.warning(
                 "Cannot send bot owner DM: BOT_OWNER_ID not set or bot not ready")
             return False
 
         try:
-            owner_id = int(BOT_OWNER_ID)
+            owner_id = int(bot_owner_id)
             owner = await bot.fetch_user(owner_id)
 
             if not owner:
@@ -86,7 +91,7 @@ class BotOwnerNotifier:
                     await asyncio.sleep(2 ** attempt)
 
         except ValueError:
-            logger.error(f"Invalid BOT_OWNER_ID format: {BOT_OWNER_ID}")
+            logger.error(f"Invalid BOT_OWNER_ID format: {bot_owner_id}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending bot owner DM: {e}")
@@ -97,11 +102,12 @@ class BotOwnerNotifier:
     @staticmethod
     async def send_system_status_dm(bot: commands.Bot, status: str, details: Optional[Dict[str, Any]] = None):
         """Send system status updates to bot owner"""
-        if not BOT_OWNER_ID or not bot or not bot.is_ready():
+        bot_owner_id = get_bot_owner_id()
+        if not bot_owner_id or not bot or not bot.is_ready():
             return False
 
         try:
-            owner_id = int(BOT_OWNER_ID)
+            owner_id = int(bot_owner_id)
             owner = await bot.fetch_user(owner_id)
 
             if not owner:

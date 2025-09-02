@@ -317,7 +317,19 @@ class VoteValidator:
 
         # Check if poll has expired
         now = datetime.now(pytz.UTC)
-        if poll.close_time <= now:
+
+        # Ensure poll.close_time is timezone-aware for comparison
+        poll_close_time = poll.close_time
+        if poll_close_time and poll_close_time.tzinfo is None:
+            # If poll close time is naive, assume it's in UTC
+            poll_close_time = pytz.UTC.localize(poll_close_time)
+        elif poll_close_time:
+            # Already timezone-aware, use as-is
+            pass
+        else:
+            raise ValidationError("Poll close time not set")
+
+        if poll_close_time <= now:
             raise ValidationError("Poll has expired")
 
         return user_id, option_index
