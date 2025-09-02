@@ -1142,8 +1142,17 @@ async def dashboard(request: Request, current_user: DiscordUser = Depends(requir
     # Check if user has timezone preference set
     user_prefs = get_user_preferences(current_user.id)
 
-    # Get user's guilds with channels
-    user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+    # Get user's guilds with channels with error handling
+    try:
+        user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+        # Ensure user_guilds is always a valid list
+        if user_guilds is None:
+            user_guilds = []
+    except Exception as e:
+        logger.error(f"Error getting user guilds for {current_user.id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Dashboard Guild Retrieval", user_id=current_user.id)
+        user_guilds = []
 
     return templates.TemplateResponse("dashboard_htmx.html", {
         "request": request,
