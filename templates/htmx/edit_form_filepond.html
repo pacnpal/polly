@@ -37,7 +37,7 @@
                         <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
                         <select class="form-select" id="server-select" name="server_id" required
                                 hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
-                                hx-trigger="load, change">
+                                hx-trigger="change, load">
                             <option value="">Select a server...</option>
                             {% for guild in guilds %}
                             <option value="{{ guild.id }}" {% if guild.id|string == poll.server_id|string %}selected{% endif %}>{{ guild.name }}</option>

@@ -748,17 +748,14 @@ async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Dep
     if not guild:
         return '<option value="">Server not found...</option>'
 
-    # Get user preferences to pre-select last used channel
-    user_prefs = get_user_preferences(current_user.id)
-    last_channel_id = user_prefs.get("last_channel_id")
-
+    # Always start with no channel selected when switching servers
+    # This ensures users must explicitly choose a channel for the new server
     options = '<option value="">Select a channel...</option>'
     for channel in guild["channels"]:
         # HTML escape the channel name to prevent JavaScript syntax errors
         escaped_channel_name = escape(channel["name"])
-        # Pre-select the last used channel if it matches
-        selected = 'selected' if channel["id"] == last_channel_id else ''
-        options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
+        # Don't pre-select any channel - user must choose explicitly
+        options += f'<option value="{channel["id"]}">#{escaped_channel_name}</option>'
 
     return options
 
@@ -1053,7 +1050,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     """Validate poll form data and return validation results"""
     validation_errors = []
     validated_data = {}
-    
+
     # Extract form data
     name = safe_get_form_data(form_data, "name")
     question = safe_get_form_data(form_data, "question")
@@ -1062,7 +1059,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     open_time = safe_get_form_data(form_data, "open_time")
     close_time = safe_get_form_data(form_data, "close_time")
     timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
-    
+
     # Validate poll name
     if not name or len(name.strip()) < 3:
         validation_errors.append({
@@ -1078,7 +1075,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
         })
     else:
         validated_data['name'] = name.strip()
-    
+
     # Validate question
     if not question or len(question.strip()) < 5:
         validation_errors.append({
@@ -1094,7 +1091,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
         })
     else:
         validated_data['question'] = question.strip()
-    
+
     # Validate server selection
     if not server_id:
         validation_errors.append({
@@ -1104,7 +1101,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
         })
     else:
         validated_data['server_id'] = server_id
-    
+
     # Validate channel selection
     if not channel_id:
         validation_errors.append({
@@ -1114,7 +1111,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
         })
     else:
         validated_data['channel_id'] = channel_id
-    
+
     # Validate options
     options = []
     for i in range(1, 11):
@@ -1123,7 +1120,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
             option_text = str(option).strip()
             if option_text:
                 options.append(option_text)
-    
+
     if len(options) < 2:
         validation_errors.append({
             "field_name": "Poll Options",
@@ -1138,7 +1135,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
         })
     else:
         validated_data['options'] = options
-    
+
     # Validate times
     if not open_time:
         validation_errors.append({
@@ -1155,15 +1152,19 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     else:
         try:
             # Parse times with timezone
-            open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
-            close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-            
+            open_dt = safe_parse_datetime_with_timezone(
+                open_time, timezone_str)
+            close_dt = safe_parse_datetime_with_timezone(
+                close_time, timezone_str)
+
             # Validate times
             now = datetime.now(pytz.UTC)
-            next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            
+            next_minute = now.replace(
+                second=0, microsecond=0) + timedelta(minutes=1)
+
             if open_dt < next_minute:
-                user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                user_tz = pytz.timezone(
+                    validate_and_normalize_timezone(timezone_str))
                 next_minute_local = next_minute.astimezone(user_tz)
                 suggested_time = next_minute_local.strftime('%I:%M %p')
                 validation_errors.append({
@@ -1201,14 +1202,16 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
                 "message": "Invalid date/time format",
                 "suggestion": "Please check your date and time selections"
             })
-    
+
     # Add other validated data
     validated_data['timezone'] = validate_and_normalize_timezone(timezone_str)
     validated_data['anonymous'] = form_data.get("anonymous") == "true"
-    validated_data['multiple_choice'] = form_data.get("multiple_choice") == "true"
+    validated_data['multiple_choice'] = form_data.get(
+        "multiple_choice") == "true"
     validated_data['creator_id'] = current_user_id
-    validated_data['image_message_text'] = safe_get_form_data(form_data, "image_message_text", "")
-    
+    validated_data['image_message_text'] = safe_get_form_data(
+        form_data, "image_message_text", "")
+
     is_valid = len(validation_errors) == 0
     return is_valid, validation_errors, validated_data
 
@@ -1219,12 +1222,14 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
 
     try:
         form_data = await request.form()
-        
+
         # Validate form data
-        is_valid, validation_errors, validated_data = validate_poll_form_data(form_data, current_user.id)
-        
+        is_valid, validation_errors, validated_data = validate_poll_form_data(
+            form_data, current_user.id)
+
         if not is_valid:
-            logger.info(f"Poll creation validation failed for user {current_user.id}: {len(validation_errors)} errors")
+            logger.info(
+                f"Poll creation validation failed for user {current_user.id}: {len(validation_errors)} errors")
             return templates.TemplateResponse("htmx/components/validation_error.html", {
                 "request": request,
                 "validation_errors": validation_errors
@@ -1236,15 +1241,19 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         # Get options and emojis using Discord native processing
         options = validated_data['options']
         emoji_inputs = []
-        
-        print(f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
-        logger.info(f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
+
+        print(
+            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
+        logger.info(
+            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
 
         for i in range(1, len(options) + 1):
             emoji_input = safe_get_form_data(form_data, f"emoji{i}")
             emoji_inputs.append(emoji_input)
-            print(f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
-            logger.info(f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
+            print(
+                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
+            logger.info(
+                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
 
         # Process all emojis using Discord native handler
         server_id = validated_data['server_id']
@@ -1708,12 +1717,14 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
             })
 
         form_data = await request.form()
-        
+
         # Validate form data using the same validation function
-        is_valid, validation_errors, validated_data = validate_poll_form_data(form_data, current_user.id)
-        
+        is_valid, validation_errors, validated_data = validate_poll_form_data(
+            form_data, current_user.id)
+
         if not is_valid:
-            logger.info(f"Poll update validation failed for poll {poll_id}: {len(validation_errors)} errors")
+            logger.info(
+                f"Poll update validation failed for poll {poll_id}: {len(validation_errors)} errors")
             return templates.TemplateResponse("htmx/components/validation_error.html", {
                 "request": request,
                 "validation_errors": validation_errors
