@@ -316,28 +316,59 @@ class BulletproofPollOperations:
                         poll = db.query(Poll).filter(
                             Poll.id == poll_id).first()
                         if poll:
-                            success = await post_poll_to_channel(self.bot, poll)
-                            if success:
-                                # Get the updated poll to get the message ID
+                            result = await post_poll_to_channel(self.bot, poll)
+
+                            # Handle new dictionary return format
+                            if isinstance(result, dict):
+                                if result.get("success"):
+                                    discord_poll_message_id = result.get(
+                                        "message_id")
+                                    if discord_poll_message_id:
+                                        logger.info(
+                                            f"Successfully posted poll {poll_id} with message ID {discord_poll_message_id}")
+                                    else:
+                                        raise Exception(
+                                            "Message ID not returned from post_poll_to_channel")
+                                else:
+                                    error_msg = result.get(
+                                        "error", "Unknown error")
+                                    raise Exception(
+                                        f"Failed to post poll: {error_msg}")
+                            elif result is True:
+                                # Handle legacy boolean return for backward compatibility
+                                # Try to get message ID from database
+                                db.commit()
+                                db.close()
+                                db = get_db_session()
                                 updated_poll = db.query(Poll).filter(
                                     Poll.id == poll_id).first()
-                                if updated_poll and getattr(updated_poll, 'message_id', None):
-                                    discord_poll_message_id = int(
-                                        str(getattr(updated_poll, 'message_id')))
+                                if updated_poll:
+                                    message_id = getattr(
+                                        updated_poll, 'message_id', None)
+                                    if message_id and str(message_id).strip():
+                                        discord_poll_message_id = int(
+                                            str(message_id))
+                                        logger.info(
+                                            f"Retrieved message ID {discord_poll_message_id} for poll {poll_id} (legacy mode)")
+                                    else:
+                                        raise Exception(
+                                            "Failed to get message ID after posting")
                                 else:
                                     raise Exception(
-                                        "Failed to get message ID after posting")
+                                        "Poll not found after posting")
                             else:
                                 raise Exception("Failed to post poll message")
                         else:
                             raise Exception("Poll not found after creation")
                     finally:
-                        db.close()
+                        if db:
+                            db.close()
                 except Exception as e:
                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                     from .error_handler import notify_error_async
                     await notify_error_async(e, "Discord Poll Posting", poll_id=poll_id, user_id=user_id)
-                    await self._cleanup_on_failure(poll_id, image_info, discord_image_message_id)
+                    poll_id_int = int(poll_id) if poll_id is not None else None
+                    await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id)
                     return {
                         "success": False,
                         "error": f"Discord poll posting failed: {str(e)}",
@@ -348,7 +379,8 @@ class BulletproofPollOperations:
                 # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                 from .error_handler import notify_error_async
                 await notify_error_async(e, "Discord Message Posting", poll_id=poll_id, user_id=user_id)
-                await self._cleanup_on_failure(poll_id, image_info, discord_image_message_id)
+                poll_id_int = int(poll_id) if poll_id is not None else None
+                await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id)
                 return {
                     "success": False,
                     "error": f"Discord posting failed: {str(e)}",
@@ -389,7 +421,8 @@ class BulletproofPollOperations:
             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
             from .error_handler import notify_error_async
             await notify_error_async(e, "Bulletproof Poll Creation", user_id=user_id, poll_data=poll_data)
-            await self._cleanup_on_failure(poll_id, image_info, discord_image_message_id, discord_poll_message_id)
+            poll_id_int = int(poll_id) if poll_id is not None else None
+            await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id, discord_poll_message_id)
             return {
                 "success": False,
                 "error": f"Unexpected error: {str(e)}",
@@ -557,9 +590,10 @@ class BulletproofPollOperations:
                         if existing_vote:
                             # Update existing vote atomically
                             old_option = existing_vote.option_index
-                            existing_vote.option_index = option_index
-                            existing_vote.voted_at = datetime.now(
-                                timezone.utc)  # Update timestamp
+                            setattr(existing_vote,
+                                    'option_index', option_index)
+                            setattr(existing_vote, 'voted_at',
+                                    datetime.now(timezone.utc))
                             logger.debug(
                                 f"Updated vote for user {user_id}: {old_option} -> {option_index}")
                         else:
@@ -601,7 +635,7 @@ class BulletproofPollOperations:
                             return {"success": False, "error": "Vote removal verification failed"}
                     else:
                         # For added/updated votes, verify the vote exists with correct option
-                        if getattr(poll, 'multiple_choice', False):
+                        if bool(getattr(poll, 'multiple_choice', False)):
                             # Multiple choice: verify specific vote exists
                             verification_vote = db.query(Vote).filter(
                                 Vote.poll_id == poll_id,

@@ -391,7 +391,11 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
 
 async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
-    """Post a poll to its designated Discord channel with comprehensive debugging"""
+    """Post a poll to its designated Discord channel with comprehensive debugging
+
+    Returns:
+        Dict with success status and message_id if successful, or error details if failed
+    """
     poll_id = getattr(poll, 'id', 'unknown')
     logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel")
     logger.debug(
@@ -570,22 +574,32 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
                     f"✅ POSTING POLL {poll_id} - Database updated, poll is now ACTIVE")
                 logger.info(
                     f"🎉 POSTING POLL {poll_id} - Successfully posted to channel {channel.name}")
-                return True
+                return {
+                    "success": True,
+                    "message_id": message.id,
+                    "message": "Poll posted successfully"
+                }
             else:
                 logger.error(
                     f"❌ POSTING POLL {poll_id} - Poll not found for update")
-                return False
+                return {
+                    "success": False,
+                    "error": "Poll not found for update"
+                }
         except Exception as db_error:
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Database update failed: {db_error}")
             db.rollback()
-            return False
+            return {
+                "success": False,
+                "error": f"Database update failed: {str(db_error)}"
+            }
         finally:
             db.close()
 
     except discord.Forbidden as e:
         logger.error(
-            f"❌ POSTING POLL {poll.id} - Discord Forbidden error: {e}")
+            f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Discord Forbidden error: {e}")
         # Send DM notification to bot owner about permission error
         try:
             from .error_handler import BotOwnerNotifier
@@ -600,9 +614,13 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
             )
         except Exception as dm_error:
             logger.error(f"Failed to send DM notification: {dm_error}")
-        return False
+        return {
+            "success": False,
+            "error": f"Discord permission error: {str(e)}"
+        }
     except discord.HTTPException as e:
-        logger.error(f"❌ POSTING POLL {poll.id} - Discord HTTP error: {e}")
+        logger.error(
+            f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Discord HTTP error: {e}")
         # Send DM notification to bot owner about HTTP error
         try:
             from .error_handler import BotOwnerNotifier
@@ -617,10 +635,15 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
             )
         except Exception as dm_error:
             logger.error(f"Failed to send DM notification: {dm_error}")
-        return False
+        return {
+            "success": False,
+            "error": f"Discord HTTP error: {str(e)}"
+        }
     except Exception as e:
-        logger.error(f"❌ POSTING POLL {poll.id} - Unexpected error: {e}")
-        logger.exception(f"Full traceback for poll {poll.id} posting error:")
+        logger.error(
+            f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Unexpected error: {e}")
+        logger.exception(
+            f"Full traceback for poll {getattr(poll, 'id', 'unknown')} posting error:")
         # Send DM notification to bot owner about unexpected error
         try:
             from .error_handler import BotOwnerNotifier
@@ -636,7 +659,10 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
             )
         except Exception as dm_error:
             logger.error(f"Failed to send DM notification: {dm_error}")
-        return False
+        return {
+            "success": False,
+            "error": f"Unexpected error: {str(e)}"
+        }
 
 
 async def update_poll_message(bot: commands.Bot, poll: Poll):
