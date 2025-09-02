@@ -37,7 +37,7 @@ class PollValidator:
     MAX_IMAGE_SIZE = 8 * 1024 * 1024  # 8MB
     ALLOWED_IMAGE_TYPES = ['image/jpeg',
                            'image/png', 'image/gif', 'image/webp']
-    MIN_POLL_DURATION_MINUTES = 5
+    MIN_POLL_DURATION_MINUTES = 1
     MAX_POLL_DURATION_DAYS = 30
 
     @staticmethod
