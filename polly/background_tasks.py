@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import discord
 
 from .database import get_db_session, Poll, Vote, TypeSafeColumn
 from .discord_utils import post_poll_to_channel, update_poll_message
@@ -52,6 +53,144 @@ async def close_poll(poll_id: int):
         logger.error(f"Error in close_poll function: {error_msg}")
 
 
+async def cleanup_polls_with_deleted_messages():
+    """
+    Check for polls whose Discord messages have been deleted and remove them from the database.
+
+    This function checks all active and scheduled polls to see if their Discord messages still exist.
+    If a message has been deleted, the poll is removed from the database to maintain consistency.
+    """
+    logger.info(
+        "🧹 MESSAGE CLEANUP - Starting cleanup of polls with deleted messages")
+
+    from .discord_bot import get_bot_instance
+    bot = get_bot_instance()
+
+    if not bot or not bot.is_ready():
+        logger.warning(
+            "⚠️ MESSAGE CLEANUP - Bot not ready, skipping message cleanup")
+        return
+
+    db = get_db_session()
+    try:
+        # Get all polls that have message IDs (active and scheduled polls that were posted)
+        polls_with_messages = db.query(Poll).filter(
+            Poll.message_id.isnot(None),
+            Poll.status.in_(["active", "scheduled"])
+        ).all()
+
+        logger.info(
+            f"📊 MESSAGE CLEANUP - Found {len(polls_with_messages)} polls with message IDs to check")
+
+        deleted_polls = []
+
+        for poll in polls_with_messages:
+            try:
+                poll_id = TypeSafeColumn.get_int(poll, 'id')
+                poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown')
+                message_id = TypeSafeColumn.get_string(poll, 'message_id')
+                channel_id = TypeSafeColumn.get_string(poll, 'channel_id')
+
+                logger.debug(
+                    f"🔍 MESSAGE CLEANUP - Checking poll {poll_id}: '{poll_name}' (message: {message_id})")
+
+                # Get the channel
+                try:
+                    channel = bot.get_channel(int(channel_id))
+                    if not channel:
+                        logger.warning(
+                            f"⚠️ MESSAGE CLEANUP - Channel {channel_id} not found for poll {poll_id}, marking for deletion")
+                        deleted_polls.append(poll)
+                        continue
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        f"❌ MESSAGE CLEANUP - Invalid channel ID {channel_id} for poll {poll_id}: {e}")
+                    deleted_polls.append(poll)
+                    continue
+
+                # Try to fetch the message (only for text channels)
+                try:
+                    if isinstance(channel, discord.TextChannel):
+                        await channel.fetch_message(int(message_id))
+                        logger.debug(
+                            f"✅ MESSAGE CLEANUP - Message {message_id} exists for poll {poll_id}")
+                    else:
+                        logger.warning(
+                            f"⚠️ MESSAGE CLEANUP - Channel {channel_id} is not a text channel for poll {poll_id}, marking for deletion")
+                        deleted_polls.append(poll)
+                        continue
+                except discord.NotFound:
+                    logger.warning(
+                        f"🗑️ MESSAGE CLEANUP - Message {message_id} not found for poll {poll_id}, marking for deletion")
+                    deleted_polls.append(poll)
+                except discord.Forbidden:
+                    logger.warning(
+                        f"🔒 MESSAGE CLEANUP - No permission to access message {message_id} for poll {poll_id}, keeping poll")
+                except discord.HTTPException as e:
+                    logger.error(
+                        f"❌ MESSAGE CLEANUP - HTTP error checking message {message_id} for poll {poll_id}: {e}")
+                    # Don't delete on HTTP errors, might be temporary
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        f"❌ MESSAGE CLEANUP - Invalid message ID {message_id} for poll {poll_id}: {e}")
+                    deleted_polls.append(poll)
+                except Exception as e:
+                    logger.error(
+                        f"❌ MESSAGE CLEANUP - Unexpected error checking message {message_id} for poll {poll_id}: {e}")
+                    # Don't delete on unexpected errors
+
+            except Exception as e:
+                poll_id = TypeSafeColumn.get_int(poll, 'id', 0) if poll else 0
+                logger.error(
+                    f"❌ MESSAGE CLEANUP - Error processing poll {poll_id}: {e}")
+                continue
+
+        # Delete polls whose messages were not found
+        if deleted_polls:
+            logger.info(
+                f"🗑️ MESSAGE CLEANUP - Deleting {len(deleted_polls)} polls with missing messages")
+
+            for poll in deleted_polls:
+                try:
+                    poll_id = TypeSafeColumn.get_int(poll, 'id')
+                    poll_name = TypeSafeColumn.get_string(
+                        poll, 'name', 'Unknown')
+
+                    # Delete associated votes first (cascade should handle this, but be explicit)
+                    db.query(Vote).filter(Vote.poll_id == poll_id).delete()
+
+                    # Delete the poll
+                    db.delete(poll)
+
+                    logger.info(
+                        f"✅ MESSAGE CLEANUP - Deleted poll {poll_id}: '{poll_name}'")
+
+                except Exception as e:
+                    poll_id = TypeSafeColumn.get_int(
+                        poll, 'id', 0) if poll else 0
+                    logger.error(
+                        f"❌ MESSAGE CLEANUP - Error deleting poll {poll_id}: {e}")
+                    continue
+
+            # Commit all deletions
+            db.commit()
+            logger.info(
+                f"✅ MESSAGE CLEANUP - Successfully deleted {len(deleted_polls)} polls with missing messages")
+        else:
+            logger.info(
+                "✅ MESSAGE CLEANUP - No polls with missing messages found")
+
+    except Exception as e:
+        logger.error(
+            f"❌ MESSAGE CLEANUP - Critical error during message cleanup: {e}")
+        logger.exception("Full traceback for message cleanup error:")
+        db.rollback()
+        await notify_error_async(e, "Message Cleanup Critical Error")
+    finally:
+        db.close()
+        logger.debug("🔄 MESSAGE CLEANUP - Database connection closed")
+
+
 async def restore_scheduled_jobs():
     """
     Restore scheduled jobs from database on startup with comprehensive debugging.
@@ -67,6 +206,9 @@ async def restore_scheduled_jobs():
     - Errors during restoration are logged but do not halt the restoration process for other polls.
     """
     logger.info("🔄 SCHEDULER RESTORE - Starting restore_scheduled_jobs")
+
+    # First, clean up polls whose messages have been deleted
+    await cleanup_polls_with_deleted_messages()
 
     # Debug scheduler status
     if not scheduler:
@@ -282,7 +424,11 @@ async def reaction_safeguard_task():
                             continue
 
                         try:
-                            message = await channel.fetch_message(int(poll_message_id))
+                            if isinstance(channel, discord.TextChannel):
+                                message = await channel.fetch_message(int(poll_message_id))
+                            else:
+                                # Skip non-text channels
+                                continue
                         except Exception as fetch_error:
                             poll_id = TypeSafeColumn.get_int(poll, 'id')
                             logger.error(
