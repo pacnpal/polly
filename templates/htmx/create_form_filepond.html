@@ -429,8 +429,8 @@
 
         // Discord emoji functionality
         function loadDiscordEmojis() {
-            const serverSelect = document.getElementById('server-select');
-            const serverId = serverSelect ? serverSelect.value : null;
+            const serverSelectElement = document.getElementById('server-select');
+            const serverId = serverSelectElement ? serverSelectElement.value : null;
             
             if (!serverId) {
                 // Clear all Discord emoji dropdowns if no server selected
@@ -550,9 +550,9 @@
         }
 
         // Load Discord emojis when server changes
-        const serverSelect = document.getElementById('server-select');
-        if (serverSelect) {
-            serverSelect.addEventListener('change', function() {
+        const serverSelectElement = document.getElementById('server-select');
+        if (serverSelectElement) {
+            serverSelectElement.addEventListener('change', function() {
                 // Clear custom Discord emojis when changing servers
                 resetEmojiButtonsToDefault();
                 // Then load new server's emojis
@@ -560,7 +560,7 @@
             });
             
             // Load emojis on initial page load if server is already selected
-            if (serverSelect.value) {
+            if (serverSelectElement.value) {
                 loadDiscordEmojis();
             }
         }
@@ -575,12 +575,11 @@
 
         // Handle intelligent channel pre-selection
         let isInitialLoad = true;
-        const serverSelect = document.getElementById('server-select');
         
-        if (serverSelect) {
+        if (serverSelectElement) {
             // Intercept HTMX requests to add the preselect_last_channel parameter
             document.addEventListener('htmx:configRequest', function(event) {
-                if (event.detail.elt === serverSelect) {
+                if (event.detail.elt === serverSelectElement) {
                     // Add the preselect_last_channel parameter based on whether this is initial load or server switch
                     const url = new URL(event.detail.path, window.location.origin);
                     url.searchParams.set('preselect_last_channel', isInitialLoad ? 'true' : 'false');
