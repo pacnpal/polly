@@ -268,17 +268,23 @@
     <script>
         // Show timezone prompt modal on page load for first-time users
         document.addEventListener('DOMContentLoaded', function() {
-            var timezoneModal = new bootstrap.Modal(document.getElementById('timezonePromptModal'));
-            timezoneModal.show();
+            var timezoneModalElement = document.getElementById('timezonePromptModal');
+            if (timezoneModalElement) {
+                var timezoneModal = new bootstrap.Modal(timezoneModalElement);
+                timezoneModal.show();
+            }
         });
         
         // Handle successful timezone save
         document.body.addEventListener('htmx:afterRequest', function(event) {
             if (event.detail.xhr.responseText.includes('Settings saved successfully')) {
                 setTimeout(function() {
-                    var timezoneModal = bootstrap.Modal.getInstance(document.getElementById('timezonePromptModal'));
-                    if (timezoneModal) {
-                        timezoneModal.hide();
+                    var timezoneModalElement = document.getElementById('timezonePromptModal');
+                    if (timezoneModalElement) {
+                        var timezoneModal = bootstrap.Modal.getInstance(timezoneModalElement);
+                        if (timezoneModal) {
+                            timezoneModal.hide();
+                        }
                     }
                 }, 1500);
             }
