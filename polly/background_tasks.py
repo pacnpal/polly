@@ -429,6 +429,28 @@ async def reaction_safeguard_task():
                             else:
                                 # Skip non-text channels
                                 continue
+                        except discord.NotFound:
+                            # Message was deleted - delete the poll
+                            poll_id = TypeSafeColumn.get_int(poll, 'id')
+                            poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown')
+                            logger.warning(
+                                f"🗑️ Safeguard: Message {poll_message_id} not found for poll {poll_id}, deleting poll")
+                            
+                            try:
+                                # Delete associated votes first
+                                db.query(Vote).filter(Vote.poll_id == poll_id).delete()
+                                # Delete the poll
+                                db.delete(poll)
+                                db.commit()
+                                logger.info(
+                                    f"✅ Safeguard: Deleted poll {poll_id}: '{poll_name}' due to missing message")
+                            except Exception as delete_error:
+                                logger.error(
+                                    f"❌ Safeguard: Error deleting poll {poll_id}: {delete_error}")
+                                db.rollback()
+                                await notify_error_async(delete_error, "Safeguard Poll Deletion",
+                                                         poll_id=poll_id, poll_name=poll_name)
+                            continue
                         except Exception as fetch_error:
                             poll_id = TypeSafeColumn.get_int(poll, 'id')
                             logger.error(
