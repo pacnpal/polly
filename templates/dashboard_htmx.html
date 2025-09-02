@@ -139,19 +139,19 @@
                     </div>
                     <div class="list-group list-group-flush">
                         <button class="list-group-item list-group-item-action active" 
-                                hx-get="/htmx/polls" hx-target="#main-content" hx-indicator="#loading-overlay">
+                                hx-get="/htmx/polls" hx-target="#main-content">
                             <i class="fas fa-poll me-2"></i>My Polls
                         </button>
                         <button class="list-group-item list-group-item-action" 
-                                hx-get="/htmx/create-form" hx-target="#main-content" hx-indicator="#loading-overlay">
+                                hx-get="/htmx/create-form" hx-target="#main-content">
                             <i class="fas fa-plus me-2"></i>Create Poll
                         </button>
                         <button class="list-group-item list-group-item-action" 
-                                hx-get="/htmx/servers" hx-target="#main-content" hx-indicator="#loading-overlay">
+                                hx-get="/htmx/servers" hx-target="#main-content">
                             <i class="fas fa-server me-2"></i>Servers
                         </button>
                         <button class="list-group-item list-group-item-action" 
-                                hx-get="/htmx/settings" hx-target="#main-content" hx-indicator="#loading-overlay">
+                                hx-get="/htmx/settings" hx-target="#main-content">
                             <i class="fas fa-cog me-2"></i>Settings
                         </button>
                     </div>
@@ -188,7 +188,7 @@
 
             <div class="col-md-9">
                 <!-- Main content area -->
-                <div id="main-content" hx-get="/htmx/polls" hx-trigger="load" hx-indicator="#loading-overlay">
+                <div id="main-content" hx-get="/htmx/polls" hx-trigger="load">
                     <!-- Content will be loaded here -->
                 </div>
             </div>
