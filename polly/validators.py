@@ -108,8 +108,9 @@ class PollValidator:
                 raise ValidationError(
                     f"Option {i+1} is too long (max {PollValidator.MAX_OPTION_LENGTH} characters)", "options")
 
-            # Remove potentially harmful characters
-            valid_options[i] = re.sub(r'[<>"\']', '', option)
+            # Remove potentially harmful characters but preserve Discord emoji format
+            # Discord emojis use <:name:id> or <a:name:id> format, so we need to preserve < and >
+            valid_options[i] = re.sub(r'["\']', '', option)
 
         # Check for duplicate options
         if len(set(valid_options)) != len(valid_options):
@@ -117,6 +118,47 @@ class PollValidator:
                 "Duplicate options are not allowed", "options")
 
         return valid_options
+
+    @staticmethod
+    def validate_poll_emojis(emojis: List[str]) -> List[str]:
+        """Validate and sanitize poll emojis (supports both Unicode and Discord custom emojis)"""
+        if not emojis or not isinstance(emojis, list):
+            return []  # Empty emojis list is valid, will use defaults
+
+        valid_emojis = []
+        for i, emoji in enumerate(emojis):
+            if not emoji or not isinstance(emoji, str):
+                continue  # Skip empty/invalid emojis
+
+            emoji = emoji.strip()
+            if not emoji:
+                continue
+
+            # Validate Discord custom emoji format: <:name:id> or <a:name:id>
+            discord_emoji_pattern = r'^<a?:[a-zA-Z0-9_]+:\d+>$'
+
+            # Check if it's a Discord custom emoji
+            if re.match(discord_emoji_pattern, emoji):
+                valid_emojis.append(emoji)
+                logger.debug(
+                    f"✅ EMOJI VALIDATION - Discord custom emoji validated: {emoji}")
+            else:
+                # Check if it's a valid Unicode emoji (basic check for Unicode characters)
+                try:
+                    # Unicode emojis are typically in specific ranges
+                    # This is a basic validation - more sophisticated validation could be added
+                    if len(emoji) <= 10 and any(ord(char) > 127 for char in emoji):
+                        valid_emojis.append(emoji)
+                        logger.debug(
+                            f"✅ EMOJI VALIDATION - Unicode emoji validated: {emoji}")
+                    else:
+                        logger.warning(
+                            f"⚠️ EMOJI VALIDATION - Invalid emoji format, skipping: {emoji}")
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️ EMOJI VALIDATION - Error validating emoji '{emoji}': {e}")
+
+        return valid_emojis
 
     @staticmethod
     def validate_server_and_channel(server_id: str, channel_id: str) -> Tuple[str, str]:
@@ -215,7 +257,7 @@ class PollValidator:
         return open_utc, close_utc
 
     @staticmethod
-    def validate_image_file(image_file, content: bytes = None) -> Tuple[bool, str]:
+    def validate_image_file(image_file, content: Optional[bytes] = None) -> Tuple[bool, str]:
         """Validate uploaded image file"""
         if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
             return True, ""  # No image is valid
@@ -264,9 +306,16 @@ class PollValidator:
                 poll_data.get('timezone', 'UTC'))
 
             # Validate timing
+            open_time_raw = poll_data.get('open_time')
+            close_time_raw = poll_data.get('close_time')
+
+            if not open_time_raw or not close_time_raw:
+                raise ValidationError(
+                    "Open time and close time are required", "timing")
+
             open_time, close_time = PollValidator.validate_poll_timing(
-                poll_data.get('open_time'),
-                poll_data.get('close_time'),
+                open_time_raw,
+                close_time_raw,
                 validated_data['timezone']
             )
             validated_data['open_time'] = open_time
@@ -418,7 +467,7 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         return default
 
 
-def validate_discord_permissions(member, required_permissions: List[str] = None) -> bool:
+def validate_discord_permissions(member, required_permissions: Optional[List[str]] = None) -> bool:
     """Validate Discord member permissions"""
     if not member:
         return False

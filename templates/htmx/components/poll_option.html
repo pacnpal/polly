@@ -1,6 +1,7 @@
 <div class="input-group mb-2">
-    <span class="input-group-text">{{ emoji }}</span>
+    <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ option_num }}">{{ emoji }}</button>
     <input type="text" class="form-control" name="option{{ option_num }}" placeholder="Option {{ option_num }}">
+    <input type="hidden" name="emoji{{ option_num }}" value="{{ emoji }}">
     <button type="button" class="btn btn-outline-danger"
             hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
         <i class="fas fa-times"></i>

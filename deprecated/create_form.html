@@ -58,12 +58,30 @@
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
                     <div class="input-group mb-2">
-                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                    data-bs-toggle="dropdown" data-option="1" aria-expanded="false">
+                                <span class="visually-hidden">Discord Emojis</span>
+                            </button>
+                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="1">
+                                <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                            </ul>
+                        </div>
                         <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
                         <input type="hidden" name="emoji1" value="🇦">
                     </div>
                     <div class="input-group mb-2">
-                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                    data-bs-toggle="dropdown" data-option="2" aria-expanded="false">
+                                <span class="visually-hidden">Discord Emojis</span>
+                            </button>
+                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="2">
+                                <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                            </ul>
+                        </div>
                         <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
                         <input type="hidden" name="emoji2" value="🇧">
                     </div>

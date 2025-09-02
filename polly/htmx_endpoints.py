@@ -22,6 +22,7 @@ from .discord_utils import get_user_guilds_with_channels
 from .poll_operations import BulletproofPollOperations
 from .error_handler import PollErrorHandler
 from .timezone_scheduler_fix import TimezoneAwareScheduler
+from .discord_emoji_handler import DiscordEmojiHandler
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,140 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         from .error_handler import notify_error
         notify_error(e, "Form Data Extraction", key=key, default=default)
         return default
+
+
+def process_custom_emoji_with_fallbacks(emoji_text: str) -> tuple[bool, str]:
+    """Process custom emoji with multiple fallback attempts before using default emojis
+
+    Args:
+        emoji_text: The text to process as an emoji
+
+    Returns:
+        Tuple of (is_valid, processed_emoji_or_error_message)
+    """
+    if not emoji_text or not emoji_text.strip():
+        return False, "Empty emoji"
+
+    import unicodedata
+    import re
+
+    # FALLBACK 1: Basic cleanup - remove extra whitespace and common issues
+    cleaned_emoji = emoji_text.strip()
+
+    # FALLBACK 2: Remove common text artifacts that might be mixed with emojis
+    # Remove things like ":smile:" or "smile" if they're mixed with actual emojis
+    emoji_pattern = re.compile(
+        r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U0002600-\U0002B55\U0001F900-\U0001F9FF]+')
+    emoji_matches = emoji_pattern.findall(cleaned_emoji)
+
+    if emoji_matches:
+        # If we found actual emoji characters, use the first one
+        cleaned_emoji = emoji_matches[0]
+        print(
+            f"🔧 EMOJI FALLBACK 2 - Extracted emoji '{cleaned_emoji}' from text '{emoji_text.strip()}'")
+        logger.info(
+            f"🔧 EMOJI FALLBACK 2 - Extracted emoji '{cleaned_emoji}' from text '{emoji_text.strip()}'")
+
+    # FALLBACK 3: Handle common emoji shortcodes and convert them
+    emoji_shortcodes = {
+        'smile': '😀', 'smiley': '😀', 'grinning': '😀',
+        'heart': '❤️', 'love': '❤️',
+        'thumbsup': '👍', '+1': '👍', 'like': '👍',
+        'thumbsdown': '👎', '-1': '👎', 'dislike': '👎',
+        'fire': '🔥', 'flame': '🔥',
+        'star': '⭐', 'star2': '⭐',
+        'check': '✅', 'checkmark': '✅', 'tick': '✅',
+        'x': '❌', 'cross': '❌', 'no': '❌',
+        'warning': '⚠️', 'warn': '⚠️',
+        'question': '❓', '?': '❓',
+        'exclamation': '❗', '!': '❗',
+        'pizza': '🍕',
+        'burger': '🍔', 'hamburger': '🍔',
+        'beer': '🍺', 'drink': '🍺',
+        'coffee': '☕',
+        'cake': '🎂',
+        'party': '🎉', 'celebration': '🎉',
+        'music': '🎵', 'musical_note': '🎵',
+        'car': '🚗', 'automobile': '🚗',
+        'house': '🏠', 'home': '🏠',
+        'sun': '☀️', 'sunny': '☀️',
+        'moon': '🌙',
+        'tree': '🌳',
+        'flower': '🌸',
+        'dog': '🐶', 'puppy': '🐶',
+        'cat': '🐱', 'kitty': '🐱',
+    }
+
+    # Check if the cleaned text matches any shortcode
+    lower_cleaned = cleaned_emoji.lower().strip(':')
+    if lower_cleaned in emoji_shortcodes:
+        emoji = emoji_shortcodes[lower_cleaned]
+        print(
+            f"🔧 EMOJI FALLBACK 3 - Converted shortcode '{cleaned_emoji}' to emoji '{emoji}'")
+        logger.info(
+            f"🔧 EMOJI FALLBACK 3 - Converted shortcode '{cleaned_emoji}' to emoji '{emoji}'")
+        cleaned_emoji = emoji
+
+    # FALLBACK 4: Try to extract single emoji character if mixed with text
+    if len(cleaned_emoji) > 1:
+        for char in cleaned_emoji:
+            if _is_emoji_character(char):
+                print(
+                    f"🔧 EMOJI FALLBACK 4 - Extracted single emoji '{char}' from '{cleaned_emoji}'")
+                logger.info(
+                    f"🔧 EMOJI FALLBACK 4 - Extracted single emoji '{char}' from '{cleaned_emoji}'")
+                cleaned_emoji = char
+                break
+
+    # FALLBACK 5: Final validation
+    if _validate_emoji_strict(cleaned_emoji):
+        return True, cleaned_emoji
+    else:
+        return False, f"Could not process '{emoji_text.strip()}' into valid emoji after all fallback attempts"
+
+
+def _is_emoji_character(char: str) -> bool:
+    """Check if a single character is an emoji"""
+    import unicodedata
+
+    category = unicodedata.category(char)
+    return (category.startswith('So') or  # Other symbols (most emojis)
+            category.startswith('Sm') or  # Math symbols (some emojis)
+            category.startswith('Mn') or  # Nonspacing marks (emoji modifiers)
+            category.startswith('Sk') or  # Modifier symbols
+            ord(char) in range(0x1F000, 0x1FAFF) or  # Emoji blocks
+            ord(char) in range(0x2600, 0x27BF) or   # Miscellaneous symbols
+            ord(char) in range(0x1F300, 0x1F9FF) or  # Emoji ranges
+            ord(char) in range(0x1F600, 0x1F64F) or  # Emoticons
+            ord(char) in range(0x1F680, 0x1F6FF) or  # Transport symbols
+            ord(char) in range(0x2700, 0x27BF) or   # Dingbats
+            ord(char) in range(0xFE00, 0xFE0F))     # Variation selectors
+
+
+def _validate_emoji_strict(emoji_text: str) -> bool:
+    """Strict validation for final emoji"""
+    import unicodedata
+
+    if not emoji_text or len(emoji_text) > 10:
+        return False
+
+    # Check if all characters are emoji-related
+    for char in emoji_text:
+        if not _is_emoji_character(char):
+            return False
+
+    # Additional check: try to encode/decode to ensure it's valid Unicode
+    try:
+        emoji_text.encode('utf-8').decode('utf-8')
+    except UnicodeError:
+        return False
+
+    return True
+
+
+def validate_emoji(emoji_text: str) -> tuple[bool, str]:
+    """Legacy function for backward compatibility - now uses the enhanced processor"""
+    return process_custom_emoji_with_fallbacks(emoji_text)
 
 
 def validate_and_normalize_timezone(timezone_str: str) -> str:
@@ -807,8 +942,27 @@ async def get_polls_realtime_htmx(request: Request, filter: str = None, current_
             logger.error(f"Error closing database connection in realtime: {e}")
 
 
+async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get custom emojis for a guild as JSON for HTMX"""
+    try:
+        if not server_id:
+            return {"emojis": []}
+
+        # Create emoji handler
+        emoji_handler = DiscordEmojiHandler(bot)
+
+        # Get guild emojis
+        emoji_list = await emoji_handler.get_guild_emoji_list(int(server_id))
+
+        return {"emojis": emoji_list}
+
+    except Exception as e:
+        logger.error(f"Error getting guild emojis for server {server_id}: {e}")
+        return {"emojis": [], "error": str(e)}
+
+
 async def create_poll_htmx(request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)):
-    """Create a new poll via HTMX using bulletproof operations"""
+    """Create a new poll via HTMX using bulletproof operations with Discord native emoji handling"""
     logger.info(f"User {current_user.id} creating new poll")
 
     try:
@@ -827,24 +981,37 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         image_message_text = safe_get_form_data(
             form_data, "image_message_text", "")
 
-        # Get options and emojis
+        # Create Discord emoji handler
+        emoji_handler = DiscordEmojiHandler(bot)
+
+        # Get options and emojis using Discord native processing
         options = []
-        emojis = []
+        emoji_inputs = []
+        print(
+            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
+        logger.info(
+            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
+
         for i in range(1, 11):
             option = form_data.get(f"option{i}")
             if option:
-                options.append(str(option).strip())
-                # Extract emoji from form data, fallback to default if not provided
-                emoji = safe_get_form_data(form_data, f"emoji{i}")
-                if emoji and emoji.strip():
-                    emojis.append(emoji.strip())
-                else:
-                    # Fallback to default emojis if not provided
-                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
-                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                    fallback_emoji = default_emojis[len(
-                        emojis)] if len(emojis) < 10 else "⭐"
-                    emojis.append(fallback_emoji)
+                option_text = str(option).strip()
+                options.append(option_text)
+                # Extract emoji from form data
+                emoji_input = safe_get_form_data(form_data, f"emoji{i}")
+                emoji_inputs.append(emoji_input)
+                print(
+                    f"🔍 POLL CREATION DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
+                logger.info(
+                    f"🔍 POLL CREATION DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
+
+        # Process all emojis using Discord native handler
+        emojis = await emoji_handler.process_poll_emojis(emoji_inputs, int(server_id) if server_id else 0)
+
+        print(f"📊 POLL CREATION DEBUG - Final options: {options}")
+        print(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
+        logger.info(f"📊 POLL CREATION DEBUG - Final options: {options}")
+        logger.info(f" POLL CREATION DEBUG - Final emojis: {emojis}")
 
         if len(options) < 2:
             logger.warning(f"Insufficient options provided: {len(options)}")
@@ -1369,24 +1536,37 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
             if old_image_path:
                 await cleanup_image(str(old_image_path))
 
-        # Get options and emojis
+        # Create Discord emoji handler
+        emoji_handler = DiscordEmojiHandler(bot)
+
+        # Get options and emojis using Discord native processing
         options = []
-        emojis = []
+        emoji_inputs = []
+        print(
+            f"🔍 POLL EDIT DEBUG - Processing poll options for poll {poll_id} update by user {current_user.id}")
+        logger.info(
+            f"🔍 POLL EDIT DEBUG - Processing poll options for poll {poll_id} update by user {current_user.id}")
+
         for i in range(1, 11):
             option = form_data.get(f"option{i}")
             if option:
-                options.append(str(option).strip())
-                # Extract emoji from form data, fallback to default if not provided
-                emoji = safe_get_form_data(form_data, f"emoji{i}")
-                if emoji and emoji.strip():
-                    emojis.append(emoji.strip())
-                else:
-                    # Fallback to default emojis if not provided
-                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
-                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                    fallback_emoji = default_emojis[len(emojis)] if len(
-                        emojis) < 10 else "⭐"
-                    emojis.append(fallback_emoji)
+                option_text = str(option).strip()
+                options.append(option_text)
+                # Extract emoji from form data
+                emoji_input = safe_get_form_data(form_data, f"emoji{i}")
+                emoji_inputs.append(emoji_input)
+                print(
+                    f"🔍 POLL EDIT DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
+                logger.info(
+                    f"🔍 POLL EDIT DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
+
+        # Process all emojis using Discord native handler
+        emojis = await emoji_handler.process_poll_emojis(emoji_inputs, int(server_id) if server_id else 0)
+
+        print(f"📊 POLL EDIT DEBUG - Final options: {options}")
+        print(f"😀 POLL EDIT DEBUG - Final emojis: {emojis}")
+        logger.info(f"📊 POLL EDIT DEBUG - Final options: {options}")
+        logger.info(f"😀 POLL EDIT DEBUG - Final emojis: {emojis}")
 
         if len(options) < 2:
             logger.warning(

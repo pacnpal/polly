@@ -391,8 +391,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
 
 async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
-    """Post a poll to its designated Discord channel with comprehensive debugging
-    
+    """Post a poll to its designated Discord channel with comprehensive debugging and validation
+
     Args:
         bot: Discord bot instance
         poll_or_id: Either a Poll object or poll_id (int)
@@ -403,27 +403,74 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
     # Handle both Poll object and poll_id
     if isinstance(poll_or_id, int):
         poll_id = poll_or_id
-        logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from poll_id)")
-        
+        logger.info(
+            f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from poll_id)")
+
         # Fetch poll from database
         db = get_db_session()
         try:
             from sqlalchemy.orm import joinedload
-            poll = db.query(Poll).options(joinedload(Poll.votes)).filter(Poll.id == poll_id).first()
+            poll = db.query(Poll).options(joinedload(Poll.votes)
+                                          ).filter(Poll.id == poll_id).first()
             if not poll:
-                logger.error(f"❌ POSTING POLL {poll_id} - Poll not found in database")
-                return False
+                logger.error(
+                    f"❌ POSTING POLL {poll_id} - Poll not found in database")
+                return {"success": False, "error": "Poll not found in database"}
         except Exception as e:
-            logger.error(f"❌ POSTING POLL {poll_id} - Error fetching poll from database: {e}")
-            return False
+            logger.error(
+                f"❌ POSTING POLL {poll_id} - Error fetching poll from database: {e}")
+            return {"success": False, "error": f"Database error: {str(e)}"}
         finally:
             db.close()
     else:
         # Assume it's a Poll object
         poll = poll_or_id
         poll_id = getattr(poll, 'id', 'unknown')
-        logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from Poll object)")
-    
+        logger.info(
+            f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from Poll object)")
+
+    # STEP 1: Comprehensive Field Validation
+    logger.info(
+        f"🔍 POSTING POLL {poll_id} - Running comprehensive field validation")
+    try:
+        from .poll_field_validator import PollFieldValidator
+        # Ensure poll_id is an integer for validation
+        if isinstance(poll_id, str) and poll_id != 'unknown':
+            try:
+                poll_id_int = int(poll_id)
+            except ValueError:
+                poll_id_int = getattr(poll, 'id', 0)
+        else:
+            poll_id_int = poll_id if isinstance(
+                poll_id, int) else getattr(poll, 'id', 0)
+
+        validation_result = await PollFieldValidator.validate_poll_fields_before_posting(poll_id_int, bot)
+
+        if not validation_result["success"]:
+            error_msg = f"Poll validation failed: {'; '.join(validation_result['errors'][:3])}"
+            logger.error(f"❌ POSTING POLL {poll_id} - {error_msg}")
+            return {
+                "success": False,
+                "error": error_msg,
+                "validation_details": validation_result
+            }
+        else:
+            logger.info(
+                f"✅ POSTING POLL {poll_id} - Field validation passed with {len(validation_result['validated_fields'])} fields validated")
+            if validation_result["warnings"]:
+                logger.warning(
+                    f"⚠️ POSTING POLL {poll_id} - Validation warnings: {'; '.join(validation_result['warnings'][:3])}")
+            if validation_result["fallback_applied"]:
+                logger.info(
+                    f"🔧 POSTING POLL {poll_id} - Applied {len(validation_result['fallback_applied'])} fallback mechanisms")
+
+    except Exception as validation_error:
+        logger.error(
+            f"❌ POSTING POLL {poll_id} - Validation system error: {validation_error}")
+        # Continue with posting but log the validation failure
+        from .error_handler import notify_error_async
+        await notify_error_async(validation_error, "Poll Validation System Error", poll_id=poll_id)
+
     logger.debug(
         f"Poll details: name='{getattr(poll, 'name', '')}', server_id={getattr(poll, 'server_id', '')}, channel_id={getattr(poll, 'channel_id', '')}")
 
@@ -431,11 +478,11 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         # Debug bot status
         if not bot:
             logger.error(f"❌ POSTING POLL {poll_id} - Bot instance is None")
-            return False
+            return {"success": False, "error": "Bot instance is None"}
 
         if not bot.is_ready():
             logger.error(f"❌ POSTING POLL {poll_id} - Bot is not ready")
-            return False
+            return {"success": False, "error": "Bot is not ready"}
 
         logger.debug(
             f"✅ POSTING POLL {poll_id} - Bot is ready, user: {bot.user}")
@@ -451,13 +498,13 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
                 f"❌ POSTING POLL {poll_id} - Channel {poll_channel_id} not found")
             logger.debug(
                 f"Available channels: {[c.id for c in bot.get_all_channels()]}")
-            return False
+            return {"success": False, "error": f"Channel {poll_channel_id} not found"}
 
         # Ensure we have a text channel
         if not isinstance(channel, discord.TextChannel):
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Channel {poll_channel_id} is not a text channel")
-            return False
+            return {"success": False, "error": "Channel is not a text channel"}
 
         logger.info(
             f"✅ POSTING POLL {poll_id} - Found channel: {channel.name} ({channel.id})")
@@ -467,7 +514,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         if not bot_member:
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Bot not found as member in guild {channel.guild.name}")
-            return False
+            return {"success": False, "error": "Bot not found as member in guild"}
 
         permissions = channel.permissions_for(bot_member)
         logger.debug(
@@ -476,17 +523,17 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         if not permissions.send_messages:
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Bot lacks send_messages permission in {channel.name}")
-            return False
+            return {"success": False, "error": "Bot lacks send_messages permission"}
 
         if not permissions.embed_links:
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Bot lacks embed_links permission in {channel.name}")
-            return False
+            return {"success": False, "error": "Bot lacks embed_links permission"}
 
         if not permissions.add_reactions:
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Bot lacks add_reactions permission in {channel.name}")
-            return False
+            return {"success": False, "error": "Bot lacks add_reactions permission"}
 
         # CRITICAL FIX: Refresh poll object from database to avoid DetachedInstanceError
         # The poll object passed to this function may be detached from the database session
@@ -501,7 +548,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             if not fresh_poll:
                 logger.error(
                     f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Poll not found in database during refresh")
-                return False
+                return {"success": False, "error": "Poll not found in database during refresh"}
 
             # Use the fresh poll object for all operations
             poll = fresh_poll
@@ -518,7 +565,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         except Exception as refresh_error:
             logger.error(
                 f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Failed to refresh poll from database: {refresh_error}")
-            return False
+            return {"success": False, "error": f"Failed to refresh poll from database: {str(refresh_error)}"}
         finally:
             db.close()
 
@@ -571,6 +618,16 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             f"✅ POSTING POLL {poll.id} - Message sent successfully, ID: {message.id}")
 
         # Add reactions for voting with debugging
+        poll_emojis = poll.emojis
+        poll_options = poll.options
+        print(
+            f"😀 POSTING POLL {poll.id} - Retrieved emojis from database: {poll_emojis}")
+        print(
+            f"📝 POSTING POLL {poll.id} - Retrieved options from database: {poll_options}")
+        logger.info(
+            f"😀 POSTING POLL {poll.id} - Retrieved emojis from database: {poll_emojis}")
+        logger.info(
+            f"📝 POSTING POLL {poll.id} - Retrieved options from database: {poll_options}")
         logger.debug(
             f"😀 POSTING POLL {poll.id} - Adding {len(poll.options)} reactions")
         for i in range(len(poll.options)):
@@ -578,9 +635,15 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
                 poll.emojis or []) else POLL_EMOJIS[i]
             try:
                 await message.add_reaction(emoji)
+                print(
+                    f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}: '{poll.options[i]}'")
+                logger.info(
+                    f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}: '{poll.options[i]}'")
                 logger.debug(
                     f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}")
             except Exception as reaction_error:
+                print(
+                    f"❌ POSTING POLL {poll.id} - Failed to add reaction {emoji}: {reaction_error}")
                 logger.error(
                     f"❌ POSTING POLL {poll.id} - Failed to add reaction {emoji}: {reaction_error}")
 

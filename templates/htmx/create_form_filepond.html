@@ -58,12 +58,30 @@
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
                     <div class="input-group mb-2">
-                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                    data-bs-toggle="dropdown" data-option="1" aria-expanded="false">
+                                <span class="visually-hidden">Discord Emojis</span>
+                            </button>
+                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="1">
+                                <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                            </ul>
+                        </div>
                         <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
                         <input type="hidden" name="emoji1" value="🇦">
                     </div>
                     <div class="input-group mb-2">
-                        <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                    data-bs-toggle="dropdown" data-option="2" aria-expanded="false">
+                                <span class="visually-hidden">Discord Emojis</span>
+                            </button>
+                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="2">
+                                <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                            </ul>
+                        </div>
                         <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
                         <input type="hidden" name="emoji2" value="🇧">
                     </div>
@@ -387,6 +405,113 @@
                     currentEmojiButton = null;
                 }
             });
+        });
+
+        // Discord emoji functionality
+        function loadDiscordEmojis() {
+            const serverSelect = document.getElementById('server-select');
+            const serverId = serverSelect ? serverSelect.value : null;
+            
+            if (!serverId) {
+                // Clear all Discord emoji dropdowns if no server selected
+                document.querySelectorAll('.discord-emoji-dropdown').forEach(dropdown => {
+                    dropdown.innerHTML = '<li><h6 class="dropdown-header">Select a server first</h6></li>';
+                });
+                return;
+            }
+
+            // Load Discord emojis for the selected server
+            fetch(`/htmx/guild-emojis/${serverId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.emojis) {
+                        updateDiscordEmojiDropdowns(data.emojis);
+                    } else {
+                        updateDiscordEmojiDropdowns([]);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading Discord emojis:', error);
+                    updateDiscordEmojiDropdowns([]);
+                });
+        }
+
+        function updateDiscordEmojiDropdowns(emojis) {
+            document.querySelectorAll('.discord-emoji-dropdown').forEach(dropdown => {
+                if (emojis.length === 0) {
+                    dropdown.innerHTML = '<li><h6 class="dropdown-header">No custom emojis found</h6></li>';
+                    return;
+                }
+
+                let html = '<li><h6 class="dropdown-header">Discord Custom Emojis</h6></li>';
+                html += '<li><hr class="dropdown-divider"></li>';
+                
+                emojis.forEach(emoji => {
+                    // Handle both animated and static emojis
+                    const emojiFormat = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
+                    const displayUrl = `https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? 'gif' : 'png'}?size=32`;
+                    
+                    html += `
+                        <li>
+                            <a class="dropdown-item discord-emoji-item" href="#" data-emoji="${emojiFormat}" data-option="${dropdown.dataset.option}">
+                                <img src="${displayUrl}" alt="${emoji.name}" style="width: 20px; height: 20px; margin-right: 8px;">
+                                :${emoji.name}:
+                            </a>
+                        </li>
+                    `;
+                });
+
+                dropdown.innerHTML = html;
+            });
+
+            // Add click handlers for Discord emoji items
+            document.querySelectorAll('.discord-emoji-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const emoji = this.dataset.emoji;
+                    const optionNumber = this.dataset.option;
+                    
+                    // Find the corresponding emoji button and hidden input
+                    const emojiButton = document.querySelector(`.emoji-picker-btn[data-option="${optionNumber}"]`);
+                    const hiddenInput = document.querySelector(`input[name="emoji${optionNumber}"]`);
+                    
+                    if (emojiButton && hiddenInput) {
+                        // For Discord custom emojis, show the emoji name in the button since we can't display custom emojis directly
+                        const emojiName = emoji.match(/:([^:]+):/)[1];
+                        emojiButton.textContent = `:${emojiName}:`;
+                        emojiButton.title = emoji; // Store full emoji format in title for reference
+                        hiddenInput.value = emoji;
+                        
+                        // Close the dropdown
+                        const dropdown = this.closest('.dropdown-menu');
+                        if (dropdown) {
+                            const bsDropdown = bootstrap.Dropdown.getInstance(dropdown.previousElementSibling);
+                            if (bsDropdown) {
+                                bsDropdown.hide();
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        // Load Discord emojis when server changes
+        const serverSelect = document.getElementById('server-select');
+        if (serverSelect) {
+            serverSelect.addEventListener('change', loadDiscordEmojis);
+            
+            // Load emojis on initial page load if server is already selected
+            if (serverSelect.value) {
+                loadDiscordEmojis();
+            }
+        }
+
+        // Also load Discord emojis when HTMX updates the server selection
+        document.addEventListener('htmx:afterSwap', function(event) {
+            if (event.detail.target.id === 'channel-select') {
+                // Server was changed, reload Discord emojis
+                loadDiscordEmojis();
+            }
         });
 
     // Time validation

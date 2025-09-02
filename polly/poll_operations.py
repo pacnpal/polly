@@ -261,12 +261,17 @@ class BulletproofPollOperations:
                 db = get_db_session()
                 try:
                     # Create poll using SQLAlchemy ORM with server and channel names
+                    emojis_to_save = validated_data.get("emojis", [])
+                    print(
+                        f"💾 DATABASE SAVE DEBUG - Saving poll with emojis: {emojis_to_save}")
+                    logger.info(
+                        f"💾 DATABASE SAVE DEBUG - Saving poll with emojis: {emojis_to_save}")
+
                     poll = Poll(
                         name=validated_data["name"],
                         question=validated_data["question"],
                         options=validated_data["options"],
-                        emojis=validated_data.get(
-                            "emojis", []),  # Include emojis
+                        emojis=emojis_to_save,  # Include emojis with debug
                         server_id=validated_data["server_id"],
                         server_name=guild.name,  # Add server name
                         channel_id=validated_data["channel_id"],
@@ -289,6 +294,13 @@ class BulletproofPollOperations:
 
                     if not poll_id:
                         raise Exception("Failed to create poll record")
+
+                    # Verify emojis were saved correctly
+                    saved_emojis = poll.emojis
+                    print(
+                        f"✅ DATABASE SAVE DEBUG - Poll {poll_id} saved with emojis: {saved_emojis}")
+                    logger.info(
+                        f"✅ DATABASE SAVE DEBUG - Poll {poll_id} saved with emojis: {saved_emojis}")
 
                 finally:
                     db.close()
