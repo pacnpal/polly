@@ -417,6 +417,8 @@
                 document.querySelectorAll('.discord-emoji-dropdown').forEach(dropdown => {
                     dropdown.innerHTML = '<li><h6 class="dropdown-header">Select a server first</h6></li>';
                 });
+                // Reset all emoji buttons to default when no server selected
+                resetEmojiButtonsToDefault();
                 return;
             }
 
@@ -436,6 +438,25 @@
                 });
         }
 
+        function resetEmojiButtonsToDefault() {
+            // Reset all emoji buttons that have custom Discord emojis back to default
+            const defaultEmojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'];
+            
+            document.querySelectorAll('.emoji-picker-btn').forEach((button, index) => {
+                const optionNumber = button.dataset.option;
+                const hiddenInput = document.querySelector(`input[name="emoji${optionNumber}"]`);
+                
+                // Only reset if it's currently a custom Discord emoji (contains < and >)
+                if (hiddenInput && hiddenInput.value.includes('<') && hiddenInput.value.includes('>')) {
+                    const defaultEmoji = defaultEmojis[index] || defaultEmojis[0];
+                    // Reset button display back to text emoji
+                    button.innerHTML = defaultEmoji;
+                    button.title = ''; // Clear the title
+                    hiddenInput.value = defaultEmoji;
+                }
+            });
+        }
+
         function updateDiscordEmojiDropdowns(emojis) {
             document.querySelectorAll('.discord-emoji-dropdown').forEach(dropdown => {
                 if (emojis.length === 0) {
@@ -447,14 +468,14 @@
                 html += '<li><hr class="dropdown-divider"></li>';
                 
                 emojis.forEach(emoji => {
-                    // Handle both animated and static emojis
-                    const emojiFormat = emoji.animated ? `<a:${emoji.name}:${emoji.id}>` : `<:${emoji.name}:${emoji.id}>`;
-                    const displayUrl = `https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? 'gif' : 'png'}?size=32`;
+                    // Handle both animated and static emojis using the URL from the backend
+                    const emojiFormat = emoji.format; // Use the format from backend: <:name:id> or <a:name:id>
+                    const displayUrl = emoji.url; // Use the URL from backend
                     
                     html += `
                         <li>
-                            <a class="dropdown-item discord-emoji-item" href="#" data-emoji="${emojiFormat}" data-option="${dropdown.dataset.option}">
-                                <img src="${displayUrl}" alt="${emoji.name}" style="width: 20px; height: 20px; margin-right: 8px;">
+                            <a class="dropdown-item discord-emoji-item" href="#" data-emoji="${emojiFormat}" data-option="${dropdown.dataset.option}" data-emoji-url="${displayUrl}" data-emoji-name="${emoji.name}">
+                                <img src="${displayUrl}?size=32" alt="${emoji.name}" style="width: 20px; height: 20px; margin-right: 8px; object-fit: contain;" onerror="this.style.display='none';">
                                 :${emoji.name}:
                             </a>
                         </li>
@@ -469,6 +490,8 @@
                 item.addEventListener('click', function(e) {
                     e.preventDefault();
                     const emoji = this.dataset.emoji;
+                    const emojiUrl = this.dataset.emojiUrl;
+                    const emojiName = this.dataset.emojiName;
                     const optionNumber = this.dataset.option;
                     
                     // Find the corresponding emoji button and hidden input
@@ -476,9 +499,8 @@
                     const hiddenInput = document.querySelector(`input[name="emoji${optionNumber}"]`);
                     
                     if (emojiButton && hiddenInput) {
-                        // For Discord custom emojis, show the emoji name in the button since we can't display custom emojis directly
-                        const emojiName = emoji.match(/:([^:]+):/)[1];
-                        emojiButton.textContent = `:${emojiName}:`;
+                        // Display the custom emoji using an img element in the button
+                        emojiButton.innerHTML = `<img src="${emojiUrl}?size=24" alt="${emojiName}" style="width: 20px; height: 20px; object-fit: contain;" title=":${emojiName}:">`;
                         emojiButton.title = emoji; // Store full emoji format in title for reference
                         hiddenInput.value = emoji;
                         
@@ -498,7 +520,12 @@
         // Load Discord emojis when server changes
         const serverSelect = document.getElementById('server-select');
         if (serverSelect) {
-            serverSelect.addEventListener('change', loadDiscordEmojis);
+            serverSelect.addEventListener('change', function() {
+                // Clear custom Discord emojis when changing servers
+                resetEmojiButtonsToDefault();
+                // Then load new server's emojis
+                loadDiscordEmojis();
+            });
             
             // Load emojis on initial page load if server is already selected
             if (serverSelect.value) {

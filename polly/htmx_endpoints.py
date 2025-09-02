@@ -699,8 +699,16 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
     # Set default times in user's timezone
     user_tz = pytz.timezone(user_prefs["default_timezone"])
     now = datetime.now(user_tz)
-    open_time = (now + timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M')
-    close_time = (now + timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M')
+
+    # Default start time should be next day at 12:00AM (midnight)
+    next_day = now.date() + timedelta(days=1)
+    open_time_dt = datetime.combine(next_day, datetime.min.time())
+    open_time_dt = user_tz.localize(open_time_dt)
+    open_time = open_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+    # Close time should be 24 hours after open time (not creation time)
+    close_time_dt = open_time_dt + timedelta(hours=24)
+    close_time = close_time_dt.strftime('%Y-%m-%dT%H:%M')
 
     # Prepare timezone data for template
     timezones = []
@@ -740,11 +748,17 @@ async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Dep
     if not guild:
         return '<option value="">Server not found...</option>'
 
+    # Get user preferences to pre-select last used channel
+    user_prefs = get_user_preferences(current_user.id)
+    last_channel_id = user_prefs.get("last_channel_id")
+
     options = '<option value="">Select a channel...</option>'
     for channel in guild["channels"]:
         # HTML escape the channel name to prevent JavaScript syntax errors
         escaped_channel_name = escape(channel["name"])
-        options += f'<option value="{channel["id"]}">#{escaped_channel_name}</option>'
+        # Pre-select the last used channel if it matches
+        selected = 'selected' if channel["id"] == last_channel_id else ''
+        options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
 
     return options
 
@@ -942,9 +956,11 @@ async def get_polls_realtime_htmx(request: Request, filter: str = None, current_
 
 async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth)):
     """Get custom emojis for a guild as JSON for HTMX"""
-    logger.info(f"🔍 DISCORD EMOJI DEBUG - User {current_user.id} requesting emojis for server {server_id}")
-    print(f"🔍 DISCORD EMOJI DEBUG - User {current_user.id} requesting emojis for server {server_id}")
-    
+    logger.info(
+        f"🔍 DISCORD EMOJI DEBUG - User {current_user.id} requesting emojis for server {server_id}")
+    print(
+        f"🔍 DISCORD EMOJI DEBUG - User {current_user.id} requesting emojis for server {server_id}")
+
     try:
         if not server_id:
             logger.warning("🔍 DISCORD EMOJI DEBUG - No server_id provided")
@@ -961,26 +977,35 @@ async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser =
         try:
             guild = bot.get_guild(int(server_id))
             if not guild:
-                logger.warning(f"🔍 DISCORD EMOJI DEBUG - Guild {server_id} not found or bot has no access")
-                print(f"🔍 DISCORD EMOJI DEBUG - Guild {server_id} not found or bot has no access")
+                logger.warning(
+                    f"🔍 DISCORD EMOJI DEBUG - Guild {server_id} not found or bot has no access")
+                print(
+                    f"🔍 DISCORD EMOJI DEBUG - Guild {server_id} not found or bot has no access")
                 return {"emojis": [], "error": f"Server {server_id} not found or bot has no access"}
-            
-            logger.info(f"🔍 DISCORD EMOJI DEBUG - Found guild: {guild.name} (ID: {guild.id})")
-            print(f"🔍 DISCORD EMOJI DEBUG - Found guild: {guild.name} (ID: {guild.id})")
-            
+
+            logger.info(
+                f"🔍 DISCORD EMOJI DEBUG - Found guild: {guild.name} (ID: {guild.id})")
+            print(
+                f"🔍 DISCORD EMOJI DEBUG - Found guild: {guild.name} (ID: {guild.id})")
+
             # Check guild emoji count
             emoji_count = len(guild.emojis)
-            logger.info(f"🔍 DISCORD EMOJI DEBUG - Guild has {emoji_count} emojis")
+            logger.info(
+                f"🔍 DISCORD EMOJI DEBUG - Guild has {emoji_count} emojis")
             print(f"🔍 DISCORD EMOJI DEBUG - Guild has {emoji_count} emojis")
-            
+
             # Log first few emojis for debugging
             for i, emoji in enumerate(guild.emojis[:5]):  # Show first 5 emojis
-                logger.info(f"🔍 DISCORD EMOJI DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, animated: {emoji.animated})")
-                print(f"🔍 DISCORD EMOJI DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, animated: {emoji.animated})")
-                
+                logger.info(
+                    f"🔍 DISCORD EMOJI DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, animated: {emoji.animated})")
+                print(
+                    f"🔍 DISCORD EMOJI DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, animated: {emoji.animated})")
+
         except ValueError as ve:
-            logger.error(f"🔍 DISCORD EMOJI DEBUG - Invalid server_id format: {server_id} - {ve}")
-            print(f"🔍 DISCORD EMOJI DEBUG - Invalid server_id format: {server_id} - {ve}")
+            logger.error(
+                f"🔍 DISCORD EMOJI DEBUG - Invalid server_id format: {server_id} - {ve}")
+            print(
+                f"🔍 DISCORD EMOJI DEBUG - Invalid server_id format: {server_id} - {ve}")
             return {"emojis": [], "error": f"Invalid server ID format: {server_id}"}
 
         # Create emoji handler
@@ -989,28 +1014,38 @@ async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser =
         emoji_handler = DiscordEmojiHandler(bot)
 
         # Get guild emojis
-        logger.info(f"🔍 DISCORD EMOJI DEBUG - Calling get_guild_emoji_list for server {server_id}")
-        print(f"🔍 DISCORD EMOJI DEBUG - Calling get_guild_emoji_list for server {server_id}")
+        logger.info(
+            f"🔍 DISCORD EMOJI DEBUG - Calling get_guild_emoji_list for server {server_id}")
+        print(
+            f"🔍 DISCORD EMOJI DEBUG - Calling get_guild_emoji_list for server {server_id}")
         emoji_list = await emoji_handler.get_guild_emoji_list(int(server_id))
 
-        logger.info(f"🔍 DISCORD EMOJI DEBUG - get_guild_emoji_list returned {len(emoji_list)} emojis")
-        print(f"🔍 DISCORD EMOJI DEBUG - get_guild_emoji_list returned {len(emoji_list)} emojis")
-        
+        logger.info(
+            f"🔍 DISCORD EMOJI DEBUG - get_guild_emoji_list returned {len(emoji_list)} emojis")
+        print(
+            f"🔍 DISCORD EMOJI DEBUG - get_guild_emoji_list returned {len(emoji_list)} emojis")
+
         # Log the structure of returned emojis
-        for i, emoji_data in enumerate(emoji_list[:3]):  # Show first 3 emoji data structures
-            logger.info(f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
+        # Show first 3 emoji data structures
+        for i, emoji_data in enumerate(emoji_list[:3]):
+            logger.info(
+                f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
             print(f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
 
         result = {"success": True, "emojis": emoji_list}
-        logger.info(f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
-        print(f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
-        
+        logger.info(
+            f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
+        print(
+            f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
+
         return result
 
     except Exception as e:
-        logger.error(f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}")
+        logger.error(
+            f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}")
         logger.exception("🔍 DISCORD EMOJI DEBUG - Full traceback:")
-        print(f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}")
+        print(
+            f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}")
         return {"emojis": [], "error": str(e)}
 
 
