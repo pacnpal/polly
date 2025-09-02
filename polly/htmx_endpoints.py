@@ -56,7 +56,6 @@ def process_custom_emoji_with_fallbacks(emoji_text: str) -> tuple[bool, str]:
     if not emoji_text or not emoji_text.strip():
         return False, "Empty emoji"
 
-    import unicodedata
     import re
 
     # FALLBACK 1: Basic cleanup - remove extra whitespace and common issues
@@ -154,7 +153,6 @@ def _is_emoji_character(char: str) -> bool:
 
 def _validate_emoji_strict(emoji_text: str) -> bool:
     """Strict validation for final emoji"""
-    import unicodedata
 
     if not emoji_text or len(emoji_text) > 10:
         return False
@@ -944,20 +942,75 @@ async def get_polls_realtime_htmx(request: Request, filter: str = None, current_
 
 async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth)):
     """Get custom emojis for a guild as JSON for HTMX"""
+    logger.info(f"🔍 DISCORD EMOJI DEBUG - User {current_user.id} requesting emojis for server {server_id}")
+    print(f"🔍 DISCORD EMOJI DEBUG - User {current_user.id} requesting emojis for server {server_id}")
+    
     try:
         if not server_id:
+            logger.warning("🔍 DISCORD EMOJI DEBUG - No server_id provided")
+            print("🔍 DISCORD EMOJI DEBUG - No server_id provided")
             return {"emojis": []}
 
+        # Check if bot is available
+        if not bot:
+            logger.error("🔍 DISCORD EMOJI DEBUG - Bot instance is None")
+            print("🔍 DISCORD EMOJI DEBUG - Bot instance is None")
+            return {"emojis": [], "error": "Bot not available"}
+
+        # Check if server exists and bot has access
+        try:
+            guild = bot.get_guild(int(server_id))
+            if not guild:
+                logger.warning(f"🔍 DISCORD EMOJI DEBUG - Guild {server_id} not found or bot has no access")
+                print(f"🔍 DISCORD EMOJI DEBUG - Guild {server_id} not found or bot has no access")
+                return {"emojis": [], "error": f"Server {server_id} not found or bot has no access"}
+            
+            logger.info(f"🔍 DISCORD EMOJI DEBUG - Found guild: {guild.name} (ID: {guild.id})")
+            print(f"🔍 DISCORD EMOJI DEBUG - Found guild: {guild.name} (ID: {guild.id})")
+            
+            # Check guild emoji count
+            emoji_count = len(guild.emojis)
+            logger.info(f"🔍 DISCORD EMOJI DEBUG - Guild has {emoji_count} emojis")
+            print(f"🔍 DISCORD EMOJI DEBUG - Guild has {emoji_count} emojis")
+            
+            # Log first few emojis for debugging
+            for i, emoji in enumerate(guild.emojis[:5]):  # Show first 5 emojis
+                logger.info(f"🔍 DISCORD EMOJI DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, animated: {emoji.animated})")
+                print(f"🔍 DISCORD EMOJI DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, animated: {emoji.animated})")
+                
+        except ValueError as ve:
+            logger.error(f"🔍 DISCORD EMOJI DEBUG - Invalid server_id format: {server_id} - {ve}")
+            print(f"🔍 DISCORD EMOJI DEBUG - Invalid server_id format: {server_id} - {ve}")
+            return {"emojis": [], "error": f"Invalid server ID format: {server_id}"}
+
         # Create emoji handler
+        logger.info("🔍 DISCORD EMOJI DEBUG - Creating DiscordEmojiHandler")
+        print("🔍 DISCORD EMOJI DEBUG - Creating DiscordEmojiHandler")
         emoji_handler = DiscordEmojiHandler(bot)
 
         # Get guild emojis
+        logger.info(f"🔍 DISCORD EMOJI DEBUG - Calling get_guild_emoji_list for server {server_id}")
+        print(f"🔍 DISCORD EMOJI DEBUG - Calling get_guild_emoji_list for server {server_id}")
         emoji_list = await emoji_handler.get_guild_emoji_list(int(server_id))
 
-        return {"emojis": emoji_list}
+        logger.info(f"🔍 DISCORD EMOJI DEBUG - get_guild_emoji_list returned {len(emoji_list)} emojis")
+        print(f"🔍 DISCORD EMOJI DEBUG - get_guild_emoji_list returned {len(emoji_list)} emojis")
+        
+        # Log the structure of returned emojis
+        for i, emoji_data in enumerate(emoji_list[:3]):  # Show first 3 emoji data structures
+            logger.info(f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
+            print(f"🔍 DISCORD EMOJI DEBUG - Emoji data {i+1}: {emoji_data}")
+
+        result = {"emojis": emoji_list}
+        logger.info(f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
+        print(f"🔍 DISCORD EMOJI DEBUG - Returning result with {len(emoji_list)} emojis")
+        
+        return result
 
     except Exception as e:
-        logger.error(f"Error getting guild emojis for server {server_id}: {e}")
+        logger.error(f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}")
+        logger.exception("🔍 DISCORD EMOJI DEBUG - Full traceback:")
+        print(f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}")
         return {"emojis": [], "error": str(e)}
 
 

@@ -4,8 +4,7 @@ Comprehensive validation system to ensure all poll creation fields match what wa
 """
 
 import logging
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+from typing import Dict, Any
 import json
 import pytz
 
@@ -332,7 +331,7 @@ class PollFieldValidator:
                         results["validated_fields"].append(
                             "discord_accessibility")
                         logger.debug(
-                            f"✅ FIELD VALIDATION - Discord accessibility validated")
+                            "✅ FIELD VALIDATION - Discord accessibility validated")
             except Exception as e:
                 warning_msg = f"Could not validate Discord accessibility: {str(e)}"
                 logger.warning(f"⚠️ FIELD VALIDATION - {warning_msg}")
@@ -380,7 +379,7 @@ class PollFieldValidator:
                 else:
                     results["validated_fields"].append("time_relationship")
                     logger.debug(
-                        f"✅ FIELD VALIDATION - Time relationship validated")
+                        "✅ FIELD VALIDATION - Time relationship validated")
             except (TypeError, AttributeError):
                 warning_msg = "Could not compare open and close times"
                 logger.warning(f"⚠️ FIELD VALIDATION - {warning_msg}")
@@ -433,7 +432,7 @@ class PollFieldValidator:
                 else:
                     results["validated_fields"].append("image_message_text")
                     logger.debug(
-                        f"✅ FIELD VALIDATION - Image message text validated")
+                        "✅ FIELD VALIDATION - Image message text validated")
 
     @staticmethod
     async def _apply_fallback_mechanisms(poll: Poll, results: Dict[str, Any], db):
@@ -520,7 +519,7 @@ class PollFieldValidator:
                         # Limit to first 3 warnings
                         warning_summary = "\n".join(results["warnings"][:3])
 
-                        message = f"⚠️ **Poll Validation Failed**\n\n"
+                        message = "⚠️ **Poll Validation Failed**\n\n"
                         message += f"**Poll:** {poll_name}\n"
                         message += f"**Poll ID:** {poll.id}\n\n"
 
