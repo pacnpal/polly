@@ -1049,89 +1049,223 @@ async def get_guild_emojis_htmx(server_id: str, bot, current_user: DiscordUser =
         return {"emojis": [], "error": str(e)}
 
 
+def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list, dict]:
+    """Validate poll form data and return validation results"""
+    validation_errors = []
+    validated_data = {}
+    
+    # Extract form data
+    name = safe_get_form_data(form_data, "name")
+    question = safe_get_form_data(form_data, "question")
+    server_id = safe_get_form_data(form_data, "server_id")
+    channel_id = safe_get_form_data(form_data, "channel_id")
+    open_time = safe_get_form_data(form_data, "open_time")
+    close_time = safe_get_form_data(form_data, "close_time")
+    timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
+    
+    # Validate poll name
+    if not name or len(name.strip()) < 3:
+        validation_errors.append({
+            "field_name": "Poll Name",
+            "message": "Must be at least 3 characters long",
+            "suggestion": "Try something descriptive like 'Weekend Movie Night' or 'Team Lunch Choice'"
+        })
+    elif len(name.strip()) > 255:
+        validation_errors.append({
+            "field_name": "Poll Name",
+            "message": "Must be less than 255 characters",
+            "suggestion": "Try shortening your poll name to be more concise"
+        })
+    else:
+        validated_data['name'] = name.strip()
+    
+    # Validate question
+    if not question or len(question.strip()) < 5:
+        validation_errors.append({
+            "field_name": "Question",
+            "message": "Must be at least 5 characters long",
+            "suggestion": "Be specific! Instead of 'Pick one', try 'Which movie should we watch this Friday?'"
+        })
+    elif len(question.strip()) > 2000:
+        validation_errors.append({
+            "field_name": "Question",
+            "message": "Must be less than 2000 characters",
+            "suggestion": "Try to keep your question concise and to the point"
+        })
+    else:
+        validated_data['question'] = question.strip()
+    
+    # Validate server selection
+    if not server_id:
+        validation_errors.append({
+            "field_name": "Server",
+            "message": "Please select a Discord server",
+            "suggestion": "Choose the server where you want to post this poll"
+        })
+    else:
+        validated_data['server_id'] = server_id
+    
+    # Validate channel selection
+    if not channel_id:
+        validation_errors.append({
+            "field_name": "Channel",
+            "message": "Please select a Discord channel",
+            "suggestion": "Choose the channel where you want to post this poll"
+        })
+    else:
+        validated_data['channel_id'] = channel_id
+    
+    # Validate options
+    options = []
+    for i in range(1, 11):
+        option = form_data.get(f"option{i}")
+        if option:
+            option_text = str(option).strip()
+            if option_text:
+                options.append(option_text)
+    
+    if len(options) < 2:
+        validation_errors.append({
+            "field_name": "Poll Options",
+            "message": "At least 2 options are required",
+            "suggestion": "Add more choices for people to vote on. Great polls usually have 3-5 options!"
+        })
+    elif len(options) > 10:
+        validation_errors.append({
+            "field_name": "Poll Options",
+            "message": "Maximum 10 options allowed",
+            "suggestion": "Try to keep your options focused. Too many choices can be overwhelming!"
+        })
+    else:
+        validated_data['options'] = options
+    
+    # Validate times
+    if not open_time:
+        validation_errors.append({
+            "field_name": "Open Time",
+            "message": "Please select when the poll should start",
+            "suggestion": "Choose a time when your audience will be active"
+        })
+    elif not close_time:
+        validation_errors.append({
+            "field_name": "Close Time",
+            "message": "Please select when the poll should end",
+            "suggestion": "Give people enough time to vote, but not too long that they forget"
+        })
+    else:
+        try:
+            # Parse times with timezone
+            open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
+            close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+            
+            # Validate times
+            now = datetime.now(pytz.UTC)
+            next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            
+            if open_dt < next_minute:
+                user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                next_minute_local = next_minute.astimezone(user_tz)
+                suggested_time = next_minute_local.strftime('%I:%M %p')
+                validation_errors.append({
+                    "field_name": "Open Time",
+                    "message": "Must be scheduled for at least the next minute",
+                    "suggestion": f"Try {suggested_time} or later to give the system time to process"
+                })
+            elif close_dt <= open_dt:
+                validation_errors.append({
+                    "field_name": "Close Time",
+                    "message": "Must be after the open time",
+                    "suggestion": "Make sure your poll runs for at least a few minutes so people can vote"
+                })
+            else:
+                # Check minimum duration (1 minute)
+                duration = close_dt - open_dt
+                if duration < timedelta(minutes=1):
+                    validation_errors.append({
+                        "field_name": "Poll Duration",
+                        "message": "Poll must run for at least 1 minute",
+                        "suggestion": "Give people time to see and respond to your poll"
+                    })
+                elif duration > timedelta(days=30):
+                    validation_errors.append({
+                        "field_name": "Poll Duration",
+                        "message": "Poll cannot run for more than 30 days",
+                        "suggestion": "Try a shorter duration to keep engagement high"
+                    })
+                else:
+                    validated_data['open_time'] = open_dt
+                    validated_data['close_time'] = close_dt
+        except Exception as e:
+            validation_errors.append({
+                "field_name": "Poll Times",
+                "message": "Invalid date/time format",
+                "suggestion": "Please check your date and time selections"
+            })
+    
+    # Add other validated data
+    validated_data['timezone'] = validate_and_normalize_timezone(timezone_str)
+    validated_data['anonymous'] = form_data.get("anonymous") == "true"
+    validated_data['multiple_choice'] = form_data.get("multiple_choice") == "true"
+    validated_data['creator_id'] = current_user_id
+    validated_data['image_message_text'] = safe_get_form_data(form_data, "image_message_text", "")
+    
+    is_valid = len(validation_errors) == 0
+    return is_valid, validation_errors, validated_data
+
+
 async def create_poll_htmx(request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)):
     """Create a new poll via HTMX using bulletproof operations with Discord native emoji handling"""
     logger.info(f"User {current_user.id} creating new poll")
 
     try:
         form_data = await request.form()
-
-        # Extract form data with proper error handling
-        name = safe_get_form_data(form_data, "name")
-        question = safe_get_form_data(form_data, "question")
-        server_id = safe_get_form_data(form_data, "server_id")
-        channel_id = safe_get_form_data(form_data, "channel_id")
-        open_time = safe_get_form_data(form_data, "open_time")
-        close_time = safe_get_form_data(form_data, "close_time")
-        timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
-        anonymous = form_data.get("anonymous") == "true"
-        multiple_choice = form_data.get("multiple_choice") == "true"
-        image_message_text = safe_get_form_data(
-            form_data, "image_message_text", "")
+        
+        # Validate form data
+        is_valid, validation_errors, validated_data = validate_poll_form_data(form_data, current_user.id)
+        
+        if not is_valid:
+            logger.info(f"Poll creation validation failed for user {current_user.id}: {len(validation_errors)} errors")
+            return templates.TemplateResponse("htmx/components/validation_error.html", {
+                "request": request,
+                "validation_errors": validation_errors
+            })
 
         # Create Discord emoji handler
         emoji_handler = DiscordEmojiHandler(bot)
 
         # Get options and emojis using Discord native processing
-        options = []
+        options = validated_data['options']
         emoji_inputs = []
-        print(
-            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
-        logger.info(
-            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
+        
+        print(f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
+        logger.info(f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
 
-        for i in range(1, 11):
-            option = form_data.get(f"option{i}")
-            if option:
-                option_text = str(option).strip()
-                options.append(option_text)
-                # Extract emoji from form data
-                emoji_input = safe_get_form_data(form_data, f"emoji{i}")
-                emoji_inputs.append(emoji_input)
-                print(
-                    f"🔍 POLL CREATION DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
-                logger.info(
-                    f"🔍 POLL CREATION DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
+        for i in range(1, len(options) + 1):
+            emoji_input = safe_get_form_data(form_data, f"emoji{i}")
+            emoji_inputs.append(emoji_input)
+            print(f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
+            logger.info(f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
 
         # Process all emojis using Discord native handler
+        server_id = validated_data['server_id']
         emojis = await emoji_handler.process_poll_emojis(emoji_inputs, int(server_id) if server_id else 0)
 
         print(f"📊 POLL CREATION DEBUG - Final options: {options}")
         print(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
         logger.info(f"📊 POLL CREATION DEBUG - Final options: {options}")
-        logger.info(f" POLL CREATION DEBUG - Final emojis: {emojis}")
+        logger.info(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
 
-        if len(options) < 2:
-            logger.warning(f"Insufficient options provided: {len(options)}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
-                "request": request,
-                "message": "At least 2 options required"
-            })
-
-        # Parse times with timezone using safe parsing
-        open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
-        close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-        timezone_str = validate_and_normalize_timezone(timezone_str)
-
-        # Validate times
-        now = datetime.now(pytz.UTC)
-        next_minute = now.replace(
-            second=0, microsecond=0) + timedelta(minutes=1)
-
-        if open_dt < next_minute:
-            user_tz = pytz.timezone(timezone_str)
-            next_minute_local = next_minute.astimezone(user_tz)
-            suggested_time = next_minute_local.strftime('%I:%M %p')
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
-                "request": request,
-                "message": f"Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later."
-            })
-
-        if close_dt <= open_dt:
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
-                "request": request,
-                "message": "Close time must be after open time"
-            })
+        # Extract validated data
+        name = validated_data['name']
+        question = validated_data['question']
+        server_id = validated_data['server_id']
+        channel_id = validated_data['channel_id']
+        open_dt = validated_data['open_time']
+        close_dt = validated_data['close_time']
+        timezone_str = validated_data['timezone']
+        anonymous = validated_data['anonymous']
+        multiple_choice = validated_data['multiple_choice']
+        image_message_text = validated_data['image_message_text']
 
         # Prepare poll data for bulletproof operations
         poll_data = {
@@ -1153,10 +1287,10 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         image_file_data = None
         image_filename = None
         image_file = form_data.get("image")
-        if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and getattr(image_file, 'filename', None):
+        if image_file and hasattr(image_file, 'filename') and getattr(image_file, 'filename', None):
             try:
                 # Ensure image_file has read method before calling it
-                if callable(getattr(image_file, 'read', None)):
+                if hasattr(image_file, 'read') and callable(getattr(image_file, 'read', None)):
                     image_file_data = await image_file.read()
                     image_filename = str(getattr(image_file, 'filename', ''))
                 else:
@@ -1574,28 +1708,28 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
             })
 
         form_data = await request.form()
-
-        # Extract form data
-        name = safe_get_form_data(form_data, "name")
-        question = safe_get_form_data(form_data, "question")
-        server_id = safe_get_form_data(form_data, "server_id")
-        channel_id = safe_get_form_data(form_data, "channel_id")
-        open_time = safe_get_form_data(form_data, "open_time")
-        close_time = safe_get_form_data(form_data, "close_time")
-        timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
-        anonymous = form_data.get("anonymous") == "true"
-        multiple_choice = form_data.get("multiple_choice") == "true"
-        image_message_text = safe_get_form_data(
-            form_data, "image_message_text", "")
-
-        # Validate required fields
-        if not all([name, question, server_id, channel_id, open_time, close_time]):
-            logger.warning(
-                f"Missing required fields for poll {poll_id} update")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+        
+        # Validate form data using the same validation function
+        is_valid, validation_errors, validated_data = validate_poll_form_data(form_data, current_user.id)
+        
+        if not is_valid:
+            logger.info(f"Poll update validation failed for poll {poll_id}: {len(validation_errors)} errors")
+            return templates.TemplateResponse("htmx/components/validation_error.html", {
                 "request": request,
-                "message": "All required fields must be filled"
+                "validation_errors": validation_errors
             })
+
+        # Extract validated data
+        name = validated_data['name']
+        question = validated_data['question']
+        server_id = validated_data['server_id']
+        channel_id = validated_data['channel_id']
+        open_dt = validated_data['open_time']
+        close_dt = validated_data['close_time']
+        timezone_str = validated_data['timezone']
+        anonymous = validated_data['anonymous']
+        multiple_choice = validated_data['multiple_choice']
+        image_message_text = validated_data['image_message_text']
 
         # Handle image upload
         image_file = form_data.get("image")
@@ -1664,9 +1798,8 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
                 "message": "At least 2 options required"
             })
 
-        # Parse times with timezone using safe parsing
-        open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
-        close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+        # Use the validated times from the validation function
+        # open_dt and close_dt are already set in validated_data
 
         # Normalize timezone for storage
         timezone_str = validate_and_normalize_timezone(timezone_str)

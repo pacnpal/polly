@@ -1,6 +1,7 @@
 <h2><i class="fas fa-edit me-2"></i>Edit Poll</h2>
 
-<form hx-post="/htmx/poll/{{ poll.id }}/edit" hx-target="#main-content" hx-encoding="multipart/form-data">
+<form hx-post="/htmx/poll/{{ poll.id }}/edit" hx-target="#main-content" hx-encoding="multipart/form-data" 
+      hx-indicator="#loading-indicator" hx-disabled-elt="button[type='submit']">
     <div class="card">
         <div class="card-header">
             <h5 class="mb-0">Poll Details</h5>
@@ -196,16 +197,35 @@
             </div>
         </div>
         <div class="card-footer">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save me-1"></i>Update Poll
+            <button type="submit" class="btn btn-primary" id="submit-btn">
+                <span class="submit-text">
+                    <i class="fas fa-save me-1"></i>Update Poll
+                </span>
+                <span class="loading-text d-none">
+                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    Updating Poll...
+                </span>
             </button>
             <button type="button" class="btn btn-outline-secondary ms-2"
                     hx-get="/htmx/polls" hx-target="#main-content">
                 <i class="fas fa-arrow-left me-1"></i>Back to Polls
             </button>
+            
+            <!-- Loading indicator for HTMX -->
+            <div id="loading-indicator" class="htmx-indicator mt-3">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="text-muted">Processing your changes...</span>
+                </div>
+            </div>
         </div>
     </div>
 </form>
+
+<!-- Include Form Validation Component -->
+{% include 'htmx/components/form_validation.html' %}
 
 <!-- Emoji Picker Element -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
@@ -658,6 +678,63 @@
                 }
             });
         }
+
+        // Handle loading states and form submission
+        const submitBtn = document.getElementById('submit-btn');
+        const submitText = submitBtn?.querySelector('.submit-text');
+        const loadingText = submitBtn?.querySelector('.loading-text');
+
+        // HTMX event handlers for seamless validation and loading states
+        document.addEventListener('htmx:beforeRequest', function(event) {
+            if (event.detail.elt === form) {
+                // Show loading state
+                if (submitText && loadingText) {
+                    submitText.classList.add('d-none');
+                    loadingText.classList.remove('d-none');
+                }
+                
+                // Disable form elements to prevent multiple submissions
+                const formElements = form.querySelectorAll('input, select, textarea, button');
+                formElements.forEach(el => {
+                    if (el.type !== 'submit') {
+                        el.disabled = true;
+                    }
+                });
+            }
+        });
+
+        document.addEventListener('htmx:afterRequest', function(event) {
+            if (event.detail.elt === form) {
+                // Hide loading state
+                if (submitText && loadingText) {
+                    submitText.classList.remove('d-none');
+                    loadingText.classList.add('d-none');
+                }
+                
+                // Re-enable form elements
+                const formElements = form.querySelectorAll('input, select, textarea, button');
+                formElements.forEach(el => {
+                    el.disabled = false;
+                });
+            }
+        });
+
+        // Handle validation errors - stay on page and show errors
+        document.addEventListener('htmx:responseError', function(event) {
+            if (event.detail.elt === form) {
+                // Hide loading state on error
+                if (submitText && loadingText) {
+                    submitText.classList.remove('d-none');
+                    loadingText.classList.add('d-none');
+                }
+                
+                // Re-enable form elements
+                const formElements = form.querySelectorAll('input, select, textarea, button');
+                formElements.forEach(el => {
+                    el.disabled = false;
+                });
+            }
+        });
     }
     
     // Initialize on DOM ready
@@ -841,5 +918,36 @@
 .card-footer {
     background-color: #f8f9fa;
     border-top: 1px solid #dee2e6;
+}
+
+/* HTMX Loading Indicators */
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-indicator.htmx-request {
+    display: block;
+}
+
+/* Loading button states */
+#submit-btn .loading-text {
+    display: none;
+}
+
+#submit-btn.htmx-request .submit-text {
+    display: none;
+}
+
+#submit-btn.htmx-request .loading-text {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Form disabled state during submission */
+form.htmx-request input:not([type="submit"]),
+form.htmx-request select,
+form.htmx-request textarea {
+    opacity: 0.6;
+    pointer-events: none;
 }
 </style>

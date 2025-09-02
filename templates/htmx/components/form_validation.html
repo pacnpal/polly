@@ -1,0 +1,459 @@
+<!-- Form Validation Component -->
+<script>
+// Enhanced Form Validation System
+(function() {
+    'use strict';
+
+    // Validation rules
+    const validationRules = {
+        'poll-name': {
+            required: true,
+            minLength: 3,
+            maxLength: 255,
+            message: 'Poll name must be 3-255 characters'
+        },
+        'poll-question': {
+            required: true,
+            minLength: 5,
+            maxLength: 2000,
+            message: 'Question must be 5-2000 characters'
+        },
+        'server-select': {
+            required: true,
+            message: 'Please select a server'
+        },
+        'channel-select': {
+            required: true,
+            message: 'Please select a channel'
+        },
+        'open-time': {
+            required: true,
+            message: 'Open time is required'
+        },
+        'close-time': {
+            required: true,
+            message: 'Close time is required'
+        }
+    };
+
+    // Validation state
+    let validationState = {};
+    let isSubmitting = false;
+
+    function showFieldError(fieldId, message) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+
+        field.classList.add('is-invalid');
+        field.classList.remove('is-valid');
+
+        // Find or create error message element
+        let errorElement = field.parentNode.querySelector('.invalid-feedback');
+        if (!errorElement) {
+            errorElement = document.createElement('div');
+            errorElement.className = 'invalid-feedback';
+            field.parentNode.appendChild(errorElement);
+        }
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+    }
+
+    function showFieldSuccess(fieldId) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+
+        field.classList.add('is-valid');
+        field.classList.remove('is-invalid');
+
+        // Hide error message
+        const errorElement = field.parentNode.querySelector('.invalid-feedback');
+        if (errorElement) {
+            errorElement.style.display = 'none';
+        }
+    }
+
+    function clearFieldValidation(fieldId) {
+        const field = document.getElementById(fieldId);
+        if (!field) return;
+
+        field.classList.remove('is-valid', 'is-invalid');
+        const errorElement = field.parentNode.querySelector('.invalid-feedback');
+        if (errorElement) {
+            errorElement.style.display = 'none';
+        }
+    }
+
+    function validateField(fieldId, value) {
+        const rules = validationRules[fieldId];
+        if (!rules) return true;
+
+        // Required validation
+        if (rules.required && (!value || value.trim() === '')) {
+            showFieldError(fieldId, rules.message || 'This field is required');
+            validationState[fieldId] = false;
+            return false;
+        }
+
+        // Skip other validations if field is empty and not required
+        if (!value || value.trim() === '') {
+            clearFieldValidation(fieldId);
+            validationState[fieldId] = true;
+            return true;
+        }
+
+        const trimmedValue = value.trim();
+
+        // Length validations
+        if (rules.minLength && trimmedValue.length < rules.minLength) {
+            showFieldError(fieldId, rules.message || `Minimum ${rules.minLength} characters required`);
+            validationState[fieldId] = false;
+            return false;
+        }
+
+        if (rules.maxLength && trimmedValue.length > rules.maxLength) {
+            showFieldError(fieldId, rules.message || `Maximum ${rules.maxLength} characters allowed`);
+            validationState[fieldId] = false;
+            return false;
+        }
+
+        // Field passed validation
+        showFieldSuccess(fieldId);
+        validationState[fieldId] = true;
+        return true;
+    }
+
+    function validateOptions() {
+        const optionInputs = document.querySelectorAll('input[name^="option"]');
+        const validOptions = [];
+        
+        optionInputs.forEach(input => {
+            const value = input.value.trim();
+            if (value) {
+                validOptions.push(value);
+            }
+        });
+
+        const isValid = validOptions.length >= 2;
+        
+        // Show validation on the options container
+        const optionsContainer = document.getElementById('options-container');
+        if (optionsContainer) {
+            const errorElement = optionsContainer.parentNode.querySelector('.options-error') || 
+                               (() => {
+                                   const el = document.createElement('div');
+                                   el.className = 'invalid-feedback options-error';
+                                   optionsContainer.parentNode.appendChild(el);
+                                   return el;
+                               })();
+
+            if (!isValid) {
+                errorElement.textContent = 'At least 2 options are required';
+                errorElement.style.display = 'block';
+                optionsContainer.classList.add('is-invalid');
+            } else {
+                errorElement.style.display = 'none';
+                optionsContainer.classList.remove('is-invalid');
+            }
+        }
+
+        validationState['options'] = isValid;
+        return isValid;
+    }
+
+    function validateTimes() {
+        const openTimeInput = document.getElementById('open-time');
+        const closeTimeInput = document.getElementById('close-time');
+        
+        if (!openTimeInput || !closeTimeInput) return true;
+
+        const openTime = openTimeInput.value;
+        const closeTime = closeTimeInput.value;
+
+        if (!openTime || !closeTime) return true; // Let required validation handle this
+
+        const openDate = new Date(openTime);
+        const closeDate = new Date(closeTime);
+        const now = new Date();
+
+        // Check if open time is in the future (at least 1 minute from now)
+        const minOpenTime = new Date(now.getTime() + 60000); // 1 minute from now
+        if (openDate < minOpenTime) {
+            showFieldError('open-time', 'Poll must be scheduled for at least the next minute');
+            validationState['open-time'] = false;
+            return false;
+        }
+
+        // Check if close time is after open time
+        if (closeDate <= openDate) {
+            showFieldError('close-time', 'Close time must be after open time');
+            validationState['close-time'] = false;
+            return false;
+        }
+
+        // Times are valid
+        showFieldSuccess('open-time');
+        showFieldSuccess('close-time');
+        validationState['open-time'] = true;
+        validationState['close-time'] = true;
+        return true;
+    }
+
+    function validateForm() {
+        let isValid = true;
+
+        // Validate individual fields
+        Object.keys(validationRules).forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                const fieldValid = validateField(fieldId, field.value);
+                isValid = isValid && fieldValid;
+            }
+        });
+
+        // Validate options
+        const optionsValid = validateOptions();
+        isValid = isValid && optionsValid;
+
+        // Validate times
+        const timesValid = validateTimes();
+        isValid = isValid && timesValid;
+
+        return isValid;
+    }
+
+    function showLoadingState(form) {
+        if (isSubmitting) return;
+        isSubmitting = true;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) {
+            const originalText = submitButton.innerHTML;
+            submitButton.dataset.originalText = originalText;
+            submitButton.innerHTML = `
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Processing...
+            `;
+            submitButton.disabled = true;
+        }
+
+        // Add loading overlay to form
+        const overlay = document.createElement('div');
+        overlay.className = 'form-loading-overlay';
+        overlay.innerHTML = `
+            <div class="d-flex align-items-center justify-content-center h-100">
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div class="text-muted">Processing your poll...</div>
+                </div>
+            </div>
+        `;
+        form.style.position = 'relative';
+        form.appendChild(overlay);
+    }
+
+    function hideLoadingState(form) {
+        isSubmitting = false;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton && submitButton.dataset.originalText) {
+            submitButton.innerHTML = submitButton.dataset.originalText;
+            submitButton.disabled = false;
+            delete submitButton.dataset.originalText;
+        }
+
+        // Remove loading overlay
+        const overlay = form.querySelector('.form-loading-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+
+    function initializeValidation() {
+        // Add event listeners for real-time validation
+        Object.keys(validationRules).forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                // Validate on blur (when user leaves field)
+                field.addEventListener('blur', function() {
+                    validateField(fieldId, this.value);
+                });
+
+                // Clear validation on focus (when user starts typing)
+                field.addEventListener('focus', function() {
+                    clearFieldValidation(fieldId);
+                });
+
+                // For select fields, validate on change
+                if (field.tagName === 'SELECT') {
+                    field.addEventListener('change', function() {
+                        validateField(fieldId, this.value);
+                    });
+                }
+            }
+        });
+
+        // Validate options when they change
+        document.addEventListener('input', function(e) {
+            if (e.target.name && e.target.name.startsWith('option')) {
+                // Debounce option validation
+                clearTimeout(window.optionValidationTimeout);
+                window.optionValidationTimeout = setTimeout(validateOptions, 300);
+            }
+        });
+
+        // Validate times when they change
+        const openTimeInput = document.getElementById('open-time');
+        const closeTimeInput = document.getElementById('close-time');
+        
+        if (openTimeInput) {
+            openTimeInput.addEventListener('change', validateTimes);
+        }
+        if (closeTimeInput) {
+            closeTimeInput.addEventListener('change', validateTimes);
+        }
+
+        // Handle form submission
+        const forms = document.querySelectorAll('form[hx-post]');
+        forms.forEach(form => {
+            form.addEventListener('submit', function(e) {
+                // Validate form before submission
+                if (!validateForm()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Scroll to first error
+                    const firstError = form.querySelector('.is-invalid');
+                    if (firstError) {
+                        firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        firstError.focus();
+                    }
+                    return false;
+                }
+
+                // Show loading state
+                showLoadingState(form);
+            });
+        });
+
+        // Handle HTMX events
+        document.addEventListener('htmx:beforeRequest', function(e) {
+            const form = e.target.closest('form');
+            if (form && form.querySelector('button[type="submit"]')) {
+                showLoadingState(form);
+            }
+        });
+
+        document.addEventListener('htmx:afterRequest', function(e) {
+            const form = e.target.closest('form');
+            if (form) {
+                hideLoadingState(form);
+            }
+        });
+
+        // Handle HTMX errors
+        document.addEventListener('htmx:responseError', function(e) {
+            const form = e.target.closest('form');
+            if (form) {
+                hideLoadingState(form);
+            }
+        });
+    }
+
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeValidation);
+    } else {
+        initializeValidation();
+    }
+
+    // Re-initialize when HTMX loads new content
+    document.addEventListener('htmx:afterSwap', function(event) {
+        // Only re-initialize if this content contains forms
+        if (event.detail.target.querySelector('form[hx-post]') || 
+            event.detail.target.closest('form[hx-post]')) {
+            setTimeout(initializeValidation, 100); // Small delay to ensure DOM is ready
+        }
+    });
+
+})();
+</script>
+
+<style>
+/* Loading overlay styles */
+.form-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.9);
+    z-index: 1000;
+    border-radius: 0.375rem;
+}
+
+/* Enhanced validation styles */
+.is-invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+.is-valid {
+    border-color: #198754 !important;
+    box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.25) !important;
+}
+
+.invalid-feedback {
+    display: block;
+    width: 100%;
+    margin-top: 0.25rem;
+    font-size: 0.875em;
+    color: #dc3545;
+}
+
+/* Options container validation */
+#options-container.is-invalid {
+    border: 2px dashed #dc3545;
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+/* Smooth transitions for validation states */
+.form-control, .form-select {
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+/* Loading button styles */
+button[type="submit"]:disabled {
+    opacity: 0.8;
+    cursor: not-allowed;
+}
+
+/* Spinner styles */
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Focus styles for better accessibility */
+.form-control:focus,
+.form-select:focus {
+    outline: none;
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.form-control:focus.is-invalid,
+.form-select:focus.is-invalid {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+}
+
+.form-control:focus.is-valid,
+.form-select:focus.is-valid {
+    border-color: #198754;
+    box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.25);
+}
+</style>
