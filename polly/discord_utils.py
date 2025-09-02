@@ -463,47 +463,52 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
         # CRITICAL FIX: Refresh poll object from database to avoid DetachedInstanceError
         # The poll object passed to this function may be detached from the database session
         logger.debug(
-            f"🔄 POSTING POLL {poll.id} - Refreshing poll from database to avoid DetachedInstanceError")
+            f"🔄 POSTING POLL {getattr(poll, 'id', 'unknown')} - Refreshing poll from database to avoid DetachedInstanceError")
         db = get_db_session()
         try:
-            fresh_poll = db.query(Poll).filter(Poll.id == poll.id).first()
+            fresh_poll = db.query(Poll).filter(
+                Poll.id == getattr(poll, 'id')).first()
             if not fresh_poll:
                 logger.error(
-                    f"❌ POSTING POLL {poll.id} - Poll not found in database during refresh")
+                    f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Poll not found in database during refresh")
                 return False
 
             # Use the fresh poll object for all operations
             poll = fresh_poll
             logger.debug(
-                f"✅ POSTING POLL {poll.id} - Successfully refreshed poll from database")
+                f"✅ POSTING POLL {getattr(poll, 'id', 'unknown')} - Successfully refreshed poll from database")
 
             # Keep the database session open for embed creation to avoid DetachedInstanceError
             # Create embed with debugging while poll is still attached to session
-            logger.debug(f"📝 POSTING POLL {poll.id} - Creating embed")
-            embed = await create_poll_embed(poll, show_results=poll.should_show_results())
             logger.debug(
-                f"✅ POSTING POLL {poll.id} - Embed created successfully")
+                f"📝 POSTING POLL {getattr(poll, 'id', 'unknown')} - Creating embed")
+            embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
+            logger.debug(
+                f"✅ POSTING POLL {getattr(poll, 'id', 'unknown')} - Embed created successfully")
 
         except Exception as refresh_error:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Failed to refresh poll from database: {refresh_error}")
+                f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Failed to refresh poll from database: {refresh_error}")
             return False
         finally:
             db.close()
 
         # Post image message first if poll has an image
-        if poll.image_path is not None and str(poll.image_path).strip():
+        poll_image_path = getattr(poll, 'image_path', None)
+        if poll_image_path is not None and str(poll_image_path).strip():
             try:
                 logger.debug(
                     f"🖼️ POSTING POLL {poll.id} - Posting image message first")
 
                 # Prepare image message content - ensure we get the actual string value
+                poll_image_message_text = getattr(
+                    poll, 'image_message_text', None)
                 image_content = str(
-                    poll.image_message_text) if poll.image_message_text else ""
+                    poll_image_message_text) if poll_image_message_text else ""
 
                 # Create file object for Discord
                 import os
-                image_path_str = str(poll.image_path)
+                image_path_str = str(poll_image_path)
                 if os.path.exists(image_path_str):
                     with open(image_path_str, 'rb') as f:
                         file = discord.File(
@@ -551,24 +556,29 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
                     f"❌ POSTING POLL {poll.id} - Failed to add reaction {emoji}: {reaction_error}")
 
         # Update poll with message ID
+        poll_id = getattr(poll, 'id')
         logger.debug(
-            f"💾 POSTING POLL {poll.id} - Updating database with message ID")
+            f"💾 POSTING POLL {poll_id} - Updating database with message ID")
         db = get_db_session()
         try:
             # Update poll in database
-            db.query(Poll).filter(Poll.id == poll.id).update({
-                Poll.message_id: str(message.id),
-                Poll.status: "active"
-            })
-            db.commit()
-            logger.info(
-                f"✅ POSTING POLL {poll.id} - Database updated, poll is now ACTIVE")
-            logger.info(
-                f"🎉 POSTING POLL {poll.id} - Successfully posted to channel {channel.name}")
-            return True
+            poll_to_update = db.query(Poll).filter(Poll.id == poll_id).first()
+            if poll_to_update:
+                setattr(poll_to_update, 'message_id', str(message.id))
+                setattr(poll_to_update, 'status', "active")
+                db.commit()
+                logger.info(
+                    f"✅ POSTING POLL {poll_id} - Database updated, poll is now ACTIVE")
+                logger.info(
+                    f"🎉 POSTING POLL {poll_id} - Successfully posted to channel {channel.name}")
+                return True
+            else:
+                logger.error(
+                    f"❌ POSTING POLL {poll_id} - Poll not found for update")
+                return False
         except Exception as db_error:
             logger.error(
-                f"❌ POSTING POLL {poll.id} - Database update failed: {db_error}")
+                f"❌ POSTING POLL {poll_id} - Database update failed: {db_error}")
             db.rollback()
             return False
         finally:
@@ -583,10 +593,10 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             await BotOwnerNotifier.send_error_dm(
                 bot, e, "Poll Posting - Permission Error",
                 {
-                    "poll_id": poll.id,
-                    "poll_name": poll.name,
-                    "server_id": str(poll.server_id),
-                    "channel_id": str(poll.channel_id)
+                    "poll_id": getattr(poll, 'id'),
+                    "poll_name": str(getattr(poll, 'name', '')),
+                    "server_id": str(getattr(poll, 'server_id', '')),
+                    "channel_id": str(getattr(poll, 'channel_id', ''))
                 }
             )
         except Exception as dm_error:
@@ -600,10 +610,10 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             await BotOwnerNotifier.send_error_dm(
                 bot, e, "Poll Posting - Discord API Error",
                 {
-                    "poll_id": poll.id,
-                    "poll_name": poll.name,
-                    "server_id": str(poll.server_id),
-                    "channel_id": str(poll.channel_id)
+                    "poll_id": getattr(poll, 'id'),
+                    "poll_name": str(getattr(poll, 'name', '')),
+                    "server_id": str(getattr(poll, 'server_id', '')),
+                    "channel_id": str(getattr(poll, 'channel_id', ''))
                 }
             )
         except Exception as dm_error:
@@ -618,10 +628,10 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
             await BotOwnerNotifier.send_error_dm(
                 bot, e, "Poll Posting - Unexpected Error",
                 {
-                    "poll_id": poll.id,
-                    "poll_name": poll.name,
-                    "server_id": str(poll.server_id),
-                    "channel_id": str(poll.channel_id),
+                    "poll_id": getattr(poll, 'id'),
+                    "poll_name": str(getattr(poll, 'name', '')),
+                    "server_id": str(getattr(poll, 'server_id', '')),
+                    "channel_id": str(getattr(poll, 'channel_id', '')),
                     "error_type": type(e).__name__
                 }
             )
@@ -633,10 +643,12 @@ async def post_poll_to_channel(bot: commands.Bot, poll: Poll) -> bool:
 async def update_poll_message(bot: commands.Bot, poll: Poll):
     """Update poll message with current results"""
     try:
-        if not poll.message_id:
+        poll_message_id = getattr(poll, 'message_id', None)
+        if not poll_message_id:
             return False
 
-        channel = bot.get_channel(int(str(poll.channel_id)))
+        poll_channel_id = getattr(poll, 'channel_id', None)
+        channel = bot.get_channel(int(str(poll_channel_id)))
         if not channel:
             return False
 
@@ -645,30 +657,31 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
             return False
 
         try:
-            message = await channel.fetch_message(int(str(poll.message_id)))
+            message = await channel.fetch_message(int(str(poll_message_id)))
         except discord.NotFound:
-            logger.warning(f"Poll message {poll.message_id} not found")
+            logger.warning(f"Poll message {poll_message_id} not found")
             return False
 
         # Update embed
-        embed = await create_poll_embed(poll, show_results=poll.should_show_results())
+        embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
         await message.edit(embed=embed)
 
-        logger.debug(f"Updated poll message for poll {poll.id}")
+        logger.debug(f"Updated poll message for poll {getattr(poll, 'id')}")
         return True
 
     except Exception as e:
         logger.error(f"Error updating poll message {poll.id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Message Update", poll_id=poll.id)
+        await notify_error_async(e, "Poll Message Update", poll_id=getattr(poll, 'id'))
         return False
 
 
 async def post_poll_results(bot: commands.Bot, poll: Poll):
     """Post final results when poll closes"""
     try:
-        channel = bot.get_channel(int(str(poll.channel_id)))
+        poll_channel_id = getattr(poll, 'channel_id', None)
+        channel = bot.get_channel(int(str(poll_channel_id)))
         if not channel:
             return False
 
@@ -678,20 +691,21 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
 
         # Create results embed
         embed = await create_poll_embed(poll, show_results=True)
-        embed.title = f"🏁 Poll Results: {poll.name}"
+        poll_name = str(getattr(poll, 'name', ''))
+        embed.title = f"🏁 Poll Results: {poll_name}"
         embed.color = 0xff0000  # Red for closed
 
         # Post results message
-        await channel.send(f"📊 **Poll '{poll.name}' has ended!**", embed=embed)
+        await channel.send(f"📊 **Poll '{poll_name}' has ended!**", embed=embed)
 
-        logger.info(f"Posted final results for poll {poll.id}")
+        logger.info(f"Posted final results for poll {getattr(poll, 'id')}")
         return True
 
     except Exception as e:
         logger.error(f"Error posting poll results {poll.id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Results Posting", poll_id=poll.id)
+        await notify_error_async(e, "Poll Results Posting", poll_id=getattr(poll, 'id'))
         return False
 
 

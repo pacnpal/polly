@@ -303,7 +303,7 @@ class VoteValidator:
         if not poll:
             raise ValidationError("Poll not found")
 
-        if poll.status != "active":
+        if str(poll.status) != "active":
             raise ValidationError("Poll is not active for voting")
 
         if not user_id or not isinstance(user_id, str):
@@ -319,7 +319,7 @@ class VoteValidator:
         now = datetime.now(pytz.UTC)
 
         # Ensure poll.close_time is timezone-aware for comparison
-        poll_close_time = poll.close_time
+        poll_close_time = getattr(poll, 'close_time', None)
         if poll_close_time and poll_close_time.tzinfo is None:
             # If poll close time is naive, assume it's in UTC
             poll_close_time = pytz.UTC.localize(poll_close_time)
@@ -376,17 +376,21 @@ class SchedulerValidator:
         if not poll:
             raise ValidationError("Poll not found")
 
-        if not poll.server_id or not poll.channel_id:
+        if not str(poll.server_id) or not str(poll.channel_id):
             raise ValidationError("Poll missing server or channel information")
 
         if not poll.options or len(poll.options) < 2:
             raise ValidationError("Poll must have at least 2 options")
 
         now = datetime.now(pytz.UTC)
-        if poll.open_time <= now and poll.status == "scheduled":
+        poll_open_time = getattr(poll, 'open_time', None)
+        poll_close_time = getattr(poll, 'close_time', None)
+        poll_status = str(poll.status)
+
+        if poll_open_time and poll_open_time <= now and poll_status == "scheduled":
             raise ValidationError("Poll open time has passed")
 
-        if poll.close_time <= poll.open_time:
+        if poll_close_time and poll_open_time and poll_close_time <= poll_open_time:
             raise ValidationError("Poll close time must be after open time")
 
         return True
@@ -425,7 +429,8 @@ def validate_discord_permissions(member, required_permissions: List[str] = None)
 
     try:
         permissions = member.guild_permissions
-        return any(getattr(permissions, perm, False) for perm in required_permissions)
+        safe_permissions = required_permissions if required_permissions is not None else []
+        return any(getattr(permissions, perm, False) for perm in safe_permissions)
     except Exception as e:
         logger.error(f"Error checking Discord permissions: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!

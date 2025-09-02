@@ -122,15 +122,25 @@
                         </div>
 
                         <!-- Anonymous Option -->
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="anonymous" name="anonymous" value="true" 
-                                       {% if poll.anonymous %}checked{% endif %}>
-                                <label class="form-check-label" for="anonymous">
-                                    Anonymous Poll (hide voter names)
-                                </label>
-                            </div>
-                        </div>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true" {% if poll.anonymous %}checked{% endif %}>
+                    <label class="form-check-label" for="anonymous-poll">
+                        <i class="fas fa-eye-slash me-1"></i>Anonymous Poll
+                        <small class="text-muted d-block">Hide results until poll ends</small>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="multiple-choice-poll" name="multiple_choice" value="true" {% if poll.multiple_choice %}checked{% endif %}>
+                    <label class="form-check-label" for="multiple-choice-poll">
+                        <i class="fas fa-list-check me-1"></i>Multiple Choice
+                        <small class="text-muted d-block">Allow users to select multiple options</small>
+                    </label>
+                </div>
+            </div>
 
                         <!-- Action Buttons -->
                         <div class="d-flex gap-2">

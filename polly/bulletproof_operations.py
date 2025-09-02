@@ -267,6 +267,8 @@ class BulletproofPollOperations:
                         close_time=validated_data["close_time"],
                         timezone=validated_data["timezone"],
                         anonymous=validated_data["anonymous"],
+                        multiple_choice=validated_data.get(
+                            "multiple_choice", False),
                         image_path=image_info["file_path"] if image_info else None
                     )
 
@@ -473,6 +475,7 @@ class BulletproofPollOperations:
         vote_recorded = False
         retry_count = 0
         max_retries = 3
+        vote_action = "unknown"  # Initialize vote_action
 
         while retry_count < max_retries and not vote_recorded:
             try:
@@ -493,9 +496,9 @@ class BulletproofPollOperations:
                         db.rollback()
                         return {"success": False, "error": "Poll not found"}
 
-                    if poll.status != "active":
+                    if str(poll.status) != "active":
                         db.rollback()
-                        return {"success": False, "error": f"Poll is not active (status: {poll.status})"}
+                        return {"success": False, "error": f"Poll is not active (status: {str(poll.status)})"}
 
                     # Step 1b: Validate vote data using existing validator
                     try:
@@ -508,58 +511,117 @@ class BulletproofPollOperations:
                         await notify_error_async(e, "Vote Data Validation", poll_id=poll_id, user_id=user_id, option_index=option_index)
                         return {"success": False, "error": str(e)}
 
-                    # Step 2: Bulletproof vote recording with duplicate prevention
+                    # Step 2: Bulletproof vote recording with multiple choice support
                     from .database import Vote
 
-                    # Check for existing vote with row locking
-                    existing_vote = db.query(Vote).filter(
-                        Vote.poll_id == poll_id,
-                        Vote.user_id == user_id
-                    ).with_for_update().first()
+                    if bool(getattr(poll, 'multiple_choice', False)):
+                        # Multiple choice: Check if user already voted for this specific option
+                        existing_vote = db.query(Vote).filter(
+                            Vote.poll_id == poll_id,
+                            Vote.user_id == user_id,
+                            Vote.option_index == option_index
+                        ).with_for_update().first()
 
-                    vote_action = "updated" if existing_vote else "created"
-
-                    if existing_vote:
-                        # Update existing vote atomically
-                        old_option = existing_vote.option_index
-                        existing_vote.option_index = option_index
-                        existing_vote.voted_at = db.func.now()  # Update timestamp
-                        logger.debug(
-                            f"Updated vote for user {user_id}: {old_option} -> {option_index}")
+                        if existing_vote:
+                            # User already voted for this option - remove the vote (toggle off)
+                            db.delete(existing_vote)
+                            vote_action = "removed"
+                            logger.debug(
+                                f"Removed vote for user {user_id}: option {option_index}")
+                        else:
+                            # User hasn't voted for this option - add the vote
+                            vote = Vote(
+                                poll_id=poll_id,
+                                user_id=user_id,
+                                option_index=option_index
+                            )
+                            db.add(vote)
+                            vote_action = "added"
+                            logger.debug(
+                                f"Added vote for user {user_id}: option {option_index}")
                     else:
-                        # Create new vote atomically
-                        vote = Vote(
-                            poll_id=poll_id,
-                            user_id=user_id,
-                            option_index=option_index
-                        )
-                        db.add(vote)
-                        logger.debug(
-                            f"Created new vote for user {user_id}: option {option_index}")
+                        # Single choice: Replace any existing vote
+                        existing_vote = db.query(Vote).filter(
+                            Vote.poll_id == poll_id,
+                            Vote.user_id == user_id
+                        ).with_for_update().first()
+
+                        vote_action = "updated" if existing_vote else "created"
+
+                        if existing_vote:
+                            # Update existing vote atomically
+                            old_option = existing_vote.option_index
+                            existing_vote.option_index = option_index
+                            existing_vote.voted_at = datetime.now(
+                                timezone.utc)  # Update timestamp
+                            logger.debug(
+                                f"Updated vote for user {user_id}: {old_option} -> {option_index}")
+                        else:
+                            # Create new vote atomically
+                            vote = Vote(
+                                poll_id=poll_id,
+                                user_id=user_id,
+                                option_index=option_index
+                            )
+                            db.add(vote)
+                            logger.debug(
+                                f"Created new vote for user {user_id}: option {option_index}")
 
                     # Step 3: Commit transaction atomically
                     db.commit()
                     vote_recorded = True
 
                     # Step 4: Verify vote was recorded correctly
-                    verification_vote = db.query(Vote).filter(
-                        Vote.poll_id == poll_id,
-                        Vote.user_id == user_id
-                    ).first()
+                    if vote_action == "removed":
+                        # For removed votes, verify the vote no longer exists
+                        verification_vote = db.query(Vote).filter(
+                            Vote.poll_id == poll_id,
+                            Vote.user_id == user_id,
+                            Vote.option_index == option_index
+                        ).first()
 
-                    if not verification_vote or verification_vote.option_index != option_index:
-                        logger.error(
-                            f"Vote verification failed for poll {poll_id}, user {user_id}")
-                        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                        from .error_handler import notify_error_async
-                        await notify_error_async(
-                            Exception("Vote verification failed"),
-                            "Vote Verification",
-                            poll_id=poll_id,
-                            user_id=user_id,
-                            option_index=option_index
-                        )
-                        return {"success": False, "error": "Vote verification failed"}
+                        if verification_vote:
+                            logger.error(
+                                f"Vote removal verification failed for poll {poll_id}, user {user_id}")
+                            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                            from .error_handler import notify_error_async
+                            await notify_error_async(
+                                Exception("Vote removal verification failed"),
+                                "Vote Removal Verification",
+                                poll_id=poll_id,
+                                user_id=user_id,
+                                option_index=option_index
+                            )
+                            return {"success": False, "error": "Vote removal verification failed"}
+                    else:
+                        # For added/updated votes, verify the vote exists with correct option
+                        if getattr(poll, 'multiple_choice', False):
+                            # Multiple choice: verify specific vote exists
+                            verification_vote = db.query(Vote).filter(
+                                Vote.poll_id == poll_id,
+                                Vote.user_id == user_id,
+                                Vote.option_index == option_index
+                            ).first()
+                        else:
+                            # Single choice: verify user has exactly one vote with correct option
+                            verification_vote = db.query(Vote).filter(
+                                Vote.poll_id == poll_id,
+                                Vote.user_id == user_id
+                            ).first()
+
+                        if not verification_vote or verification_vote.option_index != option_index:
+                            logger.error(
+                                f"Vote verification failed for poll {poll_id}, user {user_id}")
+                            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                            from .error_handler import notify_error_async
+                            await notify_error_async(
+                                Exception("Vote verification failed"),
+                                "Vote Verification",
+                                poll_id=poll_id,
+                                user_id=user_id,
+                                option_index=option_index
+                            )
+                            return {"success": False, "error": "Vote verification failed"}
 
                     logger.info(
                         f"Successfully {vote_action} vote for poll {poll_id}, user {user_id}, option {option_index}")
@@ -594,7 +656,8 @@ class BulletproofPollOperations:
         if vote_recorded:
             return {
                 "success": True,
-                "message": f"Vote recorded successfully after {retry_count} attempt(s)",
+                "message": f"Vote {vote_action} successfully after {retry_count} attempt(s)",
+                "action": vote_action,
                 "attempts": retry_count
             }
         else:
@@ -614,11 +677,11 @@ class BulletproofPollOperations:
                 if not poll:
                     return {"success": False, "error": "Poll not found"}
 
-                if poll.status == "closed":
+                if str(poll.status) == "closed":
                     return {"success": False, "error": "Poll already closed"}
 
                 # Step 2: Close poll atomically
-                poll.status = "closed"
+                setattr(poll, 'status', "closed")
                 db.commit()
 
                 # Step 3: Generate final results
@@ -651,9 +714,9 @@ class BulletproofPollOperations:
             winners = poll.get_winner()
 
             return {
-                "poll_id": poll.id,
-                "title": poll.name,
-                "question": poll.question,
+                "poll_id": getattr(poll, 'id'),
+                "title": str(getattr(poll, 'name', '')),
+                "question": str(getattr(poll, 'question', '')),
                 "options": poll.options,
                 "vote_counts": results,
                 "total_votes": total_votes,
@@ -662,8 +725,13 @@ class BulletproofPollOperations:
             }
 
         except Exception as e:
-            logger.error(f"Failed to generate results for poll {poll.id}: {e}")
+            logger.error(
+                f"Failed to generate results for poll {getattr(poll, 'id')}: {e}")
             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
             from .error_handler import notify_error
-            notify_error(e, "Poll Results Generation", poll_id=poll.id)
-            return {"error": str(e)}
+            notify_error(e, "Poll Results Generation",
+                         poll_id=getattr(poll, 'id'))
+            return {
+                "poll_id": getattr(poll, 'id'),
+                "error": f"Failed to generate results: {str(e)}"
+            }

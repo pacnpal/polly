@@ -502,8 +502,8 @@ async def create_quick_poll_command(
         scheduler.add_job(
             close_poll,
             DateTrigger(run_date=poll.close_time),
-            args=[poll.id],
-            id=f"close_poll_{poll.id}"
+            args=[int(poll.id)],
+            id=f"close_poll_{int(poll.id)}"
         )
 
     except Exception as e:
@@ -541,46 +541,95 @@ async def on_reaction_add(reaction, user):
         if option_index >= len(poll.options):
             return
 
+        # Get poll ID as integer for use throughout
+        poll_id = int(poll.id)
+
         # CRITICAL: Vote MUST be counted FIRST, reaction removed ONLY if vote succeeds
         # Use bulletproof vote collection
         bulletproof_ops = BulletproofPollOperations(bot)
         result = await bulletproof_ops.bulletproof_vote_collection(
-            poll.id, str(user.id), option_index
+            poll_id, str(user.id), option_index
         )
 
         if result["success"]:
-            # Vote was successfully recorded - NOW remove the reaction
-            try:
-                await reaction.remove(user)
+            # Vote was successfully recorded - handle reaction based on poll type and anonymity
+            vote_action = result.get("action", "unknown")
+
+            # Check poll properties safely - handle potential None values
+            is_anonymous = getattr(poll, 'anonymous', False)
+            is_multiple_choice = getattr(poll, 'multiple_choice', False)
+
+            # Convert to boolean if needed (SQLAlchemy columns might return special types)
+            if is_anonymous is not None:
+                is_anonymous = bool(is_anonymous)
+            else:
+                is_anonymous = False
+
+            if is_multiple_choice is not None:
+                is_multiple_choice = bool(is_multiple_choice)
+            else:
+                is_multiple_choice = False
+
+            # Always remove reactions for anonymous polls (to maintain anonymity)
+            # Always remove reactions for single choice polls (traditional behavior)
+            # For multiple choice non-anonymous polls: keep reactions to show selections
+            should_remove_reaction = (
+                is_anonymous or  # Anonymous polls: always remove
+                not is_multiple_choice or  # Single choice polls: always remove
+                vote_action == "removed"  # Multiple choice: remove if vote was toggled off
+            )
+
+            if should_remove_reaction:
+                try:
+                    await reaction.remove(user)
+                    logger.debug(
+                        f"✅ Vote {vote_action} and reaction removed for user {user.id} on poll {poll_id} "
+                        f"(anonymous={is_anonymous}, multiple_choice={is_multiple_choice})")
+                except Exception as remove_error:
+                    logger.warning(
+                        f"⚠️ Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
+                    # Vote is still counted even if reaction removal fails
+            else:
+                # Multiple choice non-anonymous: keep reaction to show user's selection
                 logger.debug(
-                    f"✅ Vote recorded and reaction removed for user {user.id} on poll {poll.id}")
-            except Exception as remove_error:
-                logger.warning(
-                    f"⚠️ Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
-                # Vote is still counted even if reaction removal fails
+                    f"✅ Multiple choice non-anonymous vote {vote_action}, keeping reaction for user {user.id} on poll {poll_id}")
 
             # Always update poll embed for live updates (key requirement)
             try:
                 await update_poll_message(bot, poll)
-                logger.debug(f"✅ Poll message updated for poll {poll.id}")
+                logger.debug(f"✅ Poll message updated for poll {poll_id}")
             except Exception as update_error:
                 logger.error(
-                    f"❌ Failed to update poll message for poll {poll.id}: {update_error}")
+                    f"❌ Failed to update poll message for poll {poll_id}: {update_error}")
         else:
             # Vote failed - do NOT remove reaction, log the error
             error_msg = await PollErrorHandler.handle_vote_error(
-                Exception(result["error"]), poll.id, str(user.id), bot
+                Exception(result["error"]), poll_id, str(user.id), bot
             )
             logger.error(
-                f"❌ Vote FAILED for user {user.id} on poll {poll.id}: {error_msg}")
+                f"❌ Vote FAILED for user {user.id} on poll {poll_id}: {error_msg}")
             # Reaction stays so user can try again
 
     except Exception as e:
         # Handle unexpected voting errors with bot owner notification
-        error_msg = await PollErrorHandler.handle_vote_error(
-            e, poll.id if 'poll' in locals() else 0, str(user.id), bot
-        )
-        logger.error(f"Error handling vote: {error_msg}")
+        try:
+            poll_id_for_error = int(poll.id) if 'poll' in locals(
+            ) and poll and hasattr(poll, 'id') else 0
+            error_msg = await PollErrorHandler.handle_vote_error(
+                e, poll_id_for_error, str(user.id), bot
+            )
+            logger.error(f"Error handling vote: {error_msg}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error_async
+            await notify_error_async(e, "Reaction Vote Handling Critical Error",
+                                     poll_id=poll_id_for_error, user_id=str(user.id))
+        except Exception as error_handling_error:
+            logger.error(
+                f"Critical error in vote error handling: {error_handling_error}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error_async
+            await notify_error_async(error_handling_error, "Vote Error Handler Failure",
+                                     user_id=str(user.id))
     finally:
         db.close()
 
@@ -683,96 +732,96 @@ async def restore_scheduled_jobs():
         for poll in scheduled_polls:
             try:
                 logger.info(
-                    f"🔄 SCHEDULER RESTORE - Processing poll {poll.id}: '{poll.name}'")
+                    f"🔄 SCHEDULER RESTORE - Processing poll {int(poll.id)}: '{poll.name}'")
                 logger.debug(
-                    f"Poll {poll.id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}")
+                    f"Poll {int(poll.id)} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}")
 
                 # Check if poll should have already opened
                 if poll.open_time <= now:
                     # Poll should be active now, post it immediately
                     time_overdue = (now - poll.open_time).total_seconds()
                     logger.warning(
-                        f"⏰ SCHEDULER RESTORE - Poll {poll.id} is {time_overdue:.0f} seconds overdue, posting immediately")
+                        f"⏰ SCHEDULER RESTORE - Poll {int(poll.id)} is {time_overdue:.0f} seconds overdue, posting immediately")
 
                     try:
                         success = await post_poll_to_channel(bot, poll)
                         if success:
                             immediate_posts += 1
                             logger.info(
-                                f"✅ SCHEDULER RESTORE - Successfully posted overdue poll {poll.id}")
+                                f"✅ SCHEDULER RESTORE - Successfully posted overdue poll {int(poll.id)}")
                         else:
                             logger.error(
-                                f"❌ SCHEDULER RESTORE - Failed to post overdue poll {poll.id}")
+                                f"❌ SCHEDULER RESTORE - Failed to post overdue poll {int(poll.id)}")
                     except Exception as post_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Exception posting poll {poll.id}: {post_exc}")
+                            f"❌ SCHEDULER RESTORE - Exception posting poll {int(poll.id)}: {post_exc}")
                         logger.exception(
-                            f"Full traceback for poll {poll.id} posting:")
+                            f"Full traceback for poll {int(poll.id)} posting:")
                 else:
                     # Schedule poll to open
                     time_until_open = (poll.open_time - now).total_seconds()
                     logger.info(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll.id} to open in {time_until_open:.0f} seconds at {poll.open_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to open in {time_until_open:.0f} seconds at {poll.open_time}")
 
                     try:
                         scheduler.add_job(
                             post_poll_to_channel,
                             DateTrigger(run_date=poll.open_time),
                             args=[bot, poll],
-                            id=f"open_poll_{poll.id}",
+                            id=f"open_poll_{int(poll.id)}",
                             replace_existing=True
                         )
                         logger.debug(
-                            f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {poll.id}")
+                            f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {int(poll.id)}")
                     except Exception as schedule_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {poll.id}: {schedule_exc}")
+                            f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {int(poll.id)}: {schedule_exc}")
 
                 # Always schedule poll to close (whether it's active or scheduled)
                 if poll.close_time > now:
                     time_until_close = (poll.close_time - now).total_seconds()
                     logger.debug(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll.id} to close in {time_until_close:.0f} seconds at {poll.close_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to close in {time_until_close:.0f} seconds at {poll.close_time}")
 
                     try:
                         scheduler.add_job(
                             close_poll,
                             DateTrigger(run_date=poll.close_time),
-                            args=[poll.id],
-                            id=f"close_poll_{poll.id}",
+                            args=[int(poll.id)],
+                            id=f"close_poll_{int(poll.id)}",
                             replace_existing=True
                         )
                         logger.debug(
-                            f"✅ SCHEDULER RESTORE - Scheduled closing job for poll {poll.id}")
+                            f"✅ SCHEDULER RESTORE - Scheduled closing job for poll {int(poll.id)}")
                     except Exception as schedule_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {poll.id}: {schedule_exc}")
+                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {int(poll.id)}: {schedule_exc}")
                 else:
                     # Poll should have already closed
                     time_overdue = (now - poll.close_time).total_seconds()
                     logger.warning(
-                        f"⏰ SCHEDULER RESTORE - Poll {poll.id} close time is {time_overdue:.0f} seconds overdue, closing now")
+                        f"⏰ SCHEDULER RESTORE - Poll {int(poll.id)} close time is {time_overdue:.0f} seconds overdue, closing now")
 
                     try:
-                        await close_poll(poll.id)
+                        await close_poll(int(poll.id))
                         immediate_closes += 1
                         logger.info(
-                            f"✅ SCHEDULER RESTORE - Successfully closed overdue poll {poll.id}")
+                            f"✅ SCHEDULER RESTORE - Successfully closed overdue poll {int(poll.id)}")
                     except Exception as close_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Exception closing poll {poll.id}: {close_exc}")
+                            f"❌ SCHEDULER RESTORE - Exception closing poll {int(poll.id)}: {close_exc}")
                         logger.exception(
-                            f"Full traceback for poll {poll.id} closing:")
+                            f"Full traceback for poll {int(poll.id)} closing:")
 
                 restored_count += 1
                 logger.debug(
-                    f"✅ SCHEDULER RESTORE - Completed processing poll {poll.id}")
+                    f"✅ SCHEDULER RESTORE - Completed processing poll {int(poll.id)}")
 
             except Exception as e:
                 logger.error(
-                    f"❌ SCHEDULER RESTORE - Error processing poll {poll.id}: {e}")
+                    f"❌ SCHEDULER RESTORE - Error processing poll {int(poll.id) if poll and hasattr(poll, 'id') else 'unknown'}: {e}")
                 logger.exception(
-                    f"Full traceback for poll {poll.id} restoration error:")
+                    f"Full traceback for poll {int(poll.id) if poll and hasattr(poll, 'id') else 'unknown'} restoration error:")
 
         # Log final restoration summary
         logger.info("🎉 SCHEDULER RESTORE - Restoration complete!")
@@ -836,24 +885,27 @@ async def reaction_safeguard_task():
                             if not channel:
                                 continue
                         except Exception as channel_error:
-                            logger.error(f"❌ Safeguard: Error getting channel {poll.channel_id} for poll {poll.id}: {channel_error}")
+                            logger.error(
+                                f"❌ Safeguard: Error getting channel {str(poll.channel_id)} for poll {int(poll.id)}: {channel_error}")
                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                             from .error_handler import notify_error_async
-                            await notify_error_async(channel_error, "Safeguard Channel Access", 
-                                                    poll_id=poll.id, channel_id=poll.channel_id)
+                            await notify_error_async(channel_error, "Safeguard Channel Access",
+                                                     poll_id=int(poll.id), channel_id=str(poll.channel_id))
                             continue
 
                         try:
                             message = await channel.fetch_message(int(poll.message_id))
-                        except (discord.NotFound, discord.Forbidden) as fetch_error:
-                            logger.debug(f"🔍 Safeguard: Message {poll.message_id} not found or forbidden for poll {poll.id}")
+                        except (discord.NotFound, discord.Forbidden):
+                            logger.debug(
+                                f"🔍 Safeguard: Message {str(poll.message_id)} not found or forbidden for poll {int(poll.id)}")
                             continue
                         except Exception as fetch_error:
-                            logger.error(f"❌ Safeguard: Error fetching message {poll.message_id} for poll {poll.id}: {fetch_error}")
+                            logger.error(
+                                f"❌ Safeguard: Error fetching message {str(poll.message_id)} for poll {int(poll.id)}: {fetch_error}")
                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                             from .error_handler import notify_error_async
-                            await notify_error_async(fetch_error, "Safeguard Message Fetch", 
-                                                    poll_id=poll.id, message_id=poll.message_id)
+                            await notify_error_async(fetch_error, "Safeguard Message Fetch",
+                                                     poll_id=int(poll.id), message_id=str(poll.message_id))
                             continue
 
                         # Check each reaction on the message
@@ -876,7 +928,7 @@ async def reaction_safeguard_task():
                                         try:
                                             # Check if this user's vote is already recorded
                                             existing_vote = db.query(Vote).filter(
-                                                Vote.poll_id == poll.id,
+                                                Vote.poll_id == int(poll.id),
                                                 Vote.user_id == str(user.id)
                                             ).first()
 
@@ -885,20 +937,22 @@ async def reaction_safeguard_task():
                                                 try:
                                                     await reaction.remove(user)
                                                     logger.debug(
-                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {poll.id} (vote already recorded)")
+                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {int(poll.id)} (vote already recorded)")
                                                 except Exception as remove_error:
                                                     logger.debug(
                                                         f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}")
                                             else:
                                                 # No vote recorded, process the vote
                                                 logger.info(
-                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {poll.id}")
+                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {int(poll.id)}")
 
                                                 try:
                                                     # Use bulletproof vote collection
-                                                    bulletproof_ops = BulletproofPollOperations(bot)
+                                                    bulletproof_ops = BulletproofPollOperations(
+                                                        bot)
                                                     result = await bulletproof_ops.bulletproof_vote_collection(
-                                                        poll.id, str(user.id), option_index
+                                                        int(poll.id), str(
+                                                            user.id), option_index
                                                     )
 
                                                     if result["success"]:
@@ -915,60 +969,64 @@ async def reaction_safeguard_task():
                                                         try:
                                                             await update_poll_message(bot, poll)
                                                             logger.debug(
-                                                                f"✅ Safeguard: Poll message updated for poll {poll.id}")
+                                                                f"✅ Safeguard: Poll message updated for poll {int(poll.id)}")
                                                         except Exception as update_error:
                                                             logger.error(
-                                                                f"❌ Safeguard: Failed to update poll message for poll {poll.id}: {update_error}")
+                                                                f"❌ Safeguard: Failed to update poll message for poll {int(poll.id)}: {update_error}")
                                                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                                             from .error_handler import notify_error_async
-                                                            await notify_error_async(update_error, "Safeguard Poll Message Update", 
-                                                                                    poll_id=poll.id, user_id=str(user.id))
+                                                            await notify_error_async(update_error, "Safeguard Poll Message Update",
+                                                                                     poll_id=int(poll.id), user_id=str(user.id))
                                                     else:
                                                         # Vote failed - leave reaction for user to try again
                                                         logger.error(
-                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {poll.id}: {result['error']}")
+                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {int(poll.id)}: {result['error']}")
                                                         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                                         from .error_handler import notify_error_async
-                                                        await notify_error_async(Exception(result['error']), "Safeguard Vote Processing Failed", 
-                                                                                poll_id=poll.id, user_id=str(user.id), option_index=option_index)
+                                                        await notify_error_async(Exception(result['error']), "Safeguard Vote Processing Failed",
+                                                                                 poll_id=int(poll.id), user_id=str(user.id), option_index=option_index)
 
                                                 except Exception as vote_error:
-                                                    logger.error(f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {poll.id}: {vote_error}")
+                                                    logger.error(
+                                                        f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {int(poll.id)}: {vote_error}")
                                                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                                     from .error_handler import notify_error_async
-                                                    await notify_error_async(vote_error, "Safeguard Vote Processing Critical Error", 
-                                                                            poll_id=poll.id, user_id=str(user.id), option_index=option_index)
+                                                    await notify_error_async(vote_error, "Safeguard Vote Processing Critical Error",
+                                                                             poll_id=int(poll.id), user_id=str(user.id), option_index=option_index)
 
                                         except Exception as user_error:
-                                            logger.error(f"❌ Safeguard: Error processing user {user.id} reaction on poll {poll.id}: {user_error}")
+                                            logger.error(
+                                                f"❌ Safeguard: Error processing user {user.id} reaction on poll {int(poll.id)}: {user_error}")
                                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                             from .error_handler import notify_error_async
-                                            await notify_error_async(user_error, "Safeguard User Processing Error", 
-                                                                    poll_id=poll.id, user_id=str(user.id))
+                                            await notify_error_async(user_error, "Safeguard User Processing Error",
+                                                                     poll_id=int(poll.id), user_id=str(user.id))
                                             continue
 
                                 except Exception as users_error:
-                                    logger.error(f"❌ Safeguard: Error iterating reaction users for poll {poll.id}: {users_error}")
+                                    logger.error(
+                                        f"❌ Safeguard: Error iterating reaction users for poll {int(poll.id)}: {users_error}")
                                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                     from .error_handler import notify_error_async
-                                    await notify_error_async(users_error, "Safeguard Reaction Users Iteration", 
-                                                            poll_id=poll.id, emoji=str(reaction.emoji))
+                                    await notify_error_async(users_error, "Safeguard Reaction Users Iteration",
+                                                             poll_id=int(poll.id), emoji=str(reaction.emoji))
                                     continue
 
                             except Exception as reaction_error:
-                                logger.error(f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {poll.id}: {reaction_error}")
+                                logger.error(
+                                    f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {int(poll.id)}: {reaction_error}")
                                 # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                 from .error_handler import notify_error_async
-                                await notify_error_async(reaction_error, "Safeguard Reaction Processing", 
-                                                        poll_id=poll.id, emoji=str(reaction.emoji))
+                                await notify_error_async(reaction_error, "Safeguard Reaction Processing",
+                                                         poll_id=int(poll.id), emoji=str(reaction.emoji))
                                 continue
 
                     except Exception as poll_error:
                         logger.error(
-                            f"❌ Safeguard: Error processing poll {poll.id}: {poll_error}")
+                            f"❌ Safeguard: Error processing poll {int(poll.id)}: {poll_error}")
                         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                         from .error_handler import notify_error_async
-                        await notify_error_async(poll_error, "Safeguard Poll Processing", poll_id=poll.id)
+                        await notify_error_async(poll_error, "Safeguard Poll Processing", poll_id=int(poll.id))
                         continue
 
             except Exception as db_error:
@@ -980,7 +1038,8 @@ async def reaction_safeguard_task():
                 try:
                     db.close()
                 except Exception as close_error:
-                    logger.error(f"❌ Safeguard: Error closing database: {close_error}")
+                    logger.error(
+                        f"❌ Safeguard: Error closing database: {close_error}")
                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                     from .error_handler import notify_error_async
                     await notify_error_async(close_error, "Safeguard Database Close Error")
@@ -1513,6 +1572,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         close_time = safe_get_form_data(form_data, "close_time")
         timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
         anonymous = form_data.get("anonymous") == "true"
+        multiple_choice = form_data.get("multiple_choice") == "true"
         image_message_text = safe_get_form_data(
             form_data, "image_message_text", "")
 
@@ -1580,6 +1640,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             "close_time": close_dt,
             "timezone": timezone_str,
             "anonymous": anonymous,
+            "multiple_choice": multiple_choice,
             "creator_id": current_user.id
         }
 
@@ -2015,15 +2076,15 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
         # Update scheduled jobs
         try:
-            scheduler.remove_job(f"open_poll_{poll.id}")
+            scheduler.remove_job(f"open_poll_{int(poll.id)}")
         except Exception as e:
             logger.debug(
-                f"Job open_poll_{poll.id} not found or already removed: {e}")
+                f"Job open_poll_{int(poll.id)} not found or already removed: {e}")
         try:
-            scheduler.remove_job(f"close_poll_{poll.id}")
+            scheduler.remove_job(f"close_poll_{int(poll.id)}")
         except Exception as e:
             logger.debug(
-                f"Job close_poll_{poll.id} not found or already removed: {e}")
+                f"Job close_poll_{int(poll.id)} not found or already removed: {e}")
 
         # Reschedule jobs
         if open_dt > datetime.now(pytz.UTC):
@@ -2031,14 +2092,14 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 post_poll_to_channel,
                 DateTrigger(run_date=open_dt),
                 args=[bot, poll],
-                id=f"open_poll_{poll.id}"
+                id=f"open_poll_{int(poll.id)}"
             )
 
         scheduler.add_job(
             close_poll,
             DateTrigger(run_date=close_dt),
-            args=[poll.id],
-            id=f"close_poll_{poll.id}"
+            args=[int(poll.id)],
+            id=f"close_poll_{int(poll.id)}"
         )
 
         logger.info(f"Successfully updated poll {poll_id}")
@@ -2172,7 +2233,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         # Remove scheduled jobs with improved error handling
         jobs_removed = 0
         for job_type in ["open", "close"]:
-            job_id = f"{job_type}_poll_{poll.id}"
+            job_id = f"{job_type}_poll_{int(poll.id)}"
             try:
                 if scheduler.get_job(job_id):
                     scheduler.remove_job(job_id)
@@ -2186,7 +2247,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
 
         if jobs_removed > 0:
             logger.info(
-                f"Removed {jobs_removed} scheduled jobs for poll {poll.id}")
+                f"Removed {jobs_removed} scheduled jobs for poll {int(poll.id)}")
 
         # Delete poll and associated votes with detailed logging
         logger.info(f"Starting database deletion for poll {poll_id}")

@@ -184,9 +184,9 @@ def save_user_to_db(user: DiscordUser):
 
         if db_user:
             # Update existing user
-            db_user.username = user.username
-            db_user.avatar = user.avatar
-            db_user.updated_at = datetime.now(pytz.UTC)
+            setattr(db_user, 'username', user.username)
+            setattr(db_user, 'avatar', user.avatar)
+            setattr(db_user, 'updated_at', datetime.now(pytz.UTC))
         else:
             # Create new user
             db_user = User(

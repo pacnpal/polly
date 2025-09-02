@@ -397,7 +397,8 @@ class PollErrorHandler:
                         now = datetime.now(pytz.UTC)
 
                         # Reschedule opening if needed
-                        if poll.status == "scheduled" and poll.open_time and poll.open_time > now:
+                        poll_open_time = getattr(poll, 'open_time', None)
+                        if str(poll.status) == "scheduled" and poll_open_time and poll_open_time > now:
                             from .discord_utils import post_poll_to_channel
                             from .main import bot as main_bot
                             from apscheduler.triggers.date import DateTrigger
@@ -413,7 +414,8 @@ class PollErrorHandler:
                                 f"Rescheduled opening for poll {poll_id}")
 
                         # Reschedule closing if needed
-                        if poll.status in ["scheduled", "active"] and poll.close_time is not None and poll.close_time > now:
+                        poll_close_time = getattr(poll, 'close_time', None)
+                        if str(poll.status) in ["scheduled", "active"] and poll_close_time is not None and poll_close_time > now:
                             from .main import close_poll
                             from apscheduler.triggers.date import DateTrigger
 
@@ -432,7 +434,8 @@ class PollErrorHandler:
                             await BotOwnerNotifier.send_system_status_dm(
                                 bot,
                                 f"✅ Scheduler recovered for poll {poll_id}",
-                                {"operation": operation, "poll_status": poll.status}
+                                {"operation": operation,
+                                    "poll_status": str(poll.status)}
                             )
                         return True
                 finally:
@@ -566,18 +569,20 @@ class DatabaseHealthChecker:
         issues = []
 
         # Check required fields
-        if not poll.name or not poll.question:
+        if not str(getattr(poll, 'name', '')) or not str(getattr(poll, 'question', '')):
             issues.append("Missing name or question")
 
         if not poll.options or len(poll.options) < 2:
             issues.append("Invalid options")
 
-        if not poll.server_id or not poll.channel_id:
+        if not str(getattr(poll, 'server_id', '')) or not str(getattr(poll, 'channel_id', '')):
             issues.append("Missing server or channel ID")
 
-        if poll.open_time is None or poll.close_time is None:
+        poll_open_time = getattr(poll, 'open_time', None)
+        poll_close_time = getattr(poll, 'close_time', None)
+        if poll_open_time is None or poll_close_time is None:
             issues.append("Missing timing information")
-        elif poll.close_time <= poll.open_time:
+        elif poll_close_time <= poll_open_time:
             issues.append("Invalid time range")
 
         # Check vote integrity
@@ -587,7 +592,7 @@ class DatabaseHealthChecker:
             "valid": len(issues) == 0,
             "issues": issues,
             "vote_count": vote_count,
-            "status": poll.status
+            "status": str(poll.status)
         }
 
 

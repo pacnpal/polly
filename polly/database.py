@@ -26,17 +26,21 @@ class Poll(Base):
     options_json = Column(Text, nullable=False)  # JSON array of poll options
     emojis_json = Column(Text, nullable=True)  # JSON array of poll emojis
     image_path = Column(String(500), nullable=True)  # Path to uploaded image
-    image_message_text = Column(Text, nullable=True)  # Optional text for image message
+    # Optional text for image message
+    image_message_text = Column(Text, nullable=True)
     server_id = Column(String(50), nullable=False)  # Discord server ID
     server_name = Column(String(255), nullable=True)  # Discord server name
     channel_id = Column(String(50), nullable=False)  # Discord channel ID
     channel_name = Column(String(255), nullable=True)  # Discord channel name
     creator_id = Column(String(50), nullable=False)  # Discord user ID
-    message_id = Column(String(50), nullable=True)  # Discord message ID when posted
+    # Discord message ID when posted
+    message_id = Column(String(50), nullable=True)
     open_time = Column(DateTime, nullable=False)  # When poll opens
     close_time = Column(DateTime, nullable=False)  # When poll closes
     timezone = Column(String(50), default="UTC")  # Timezone for scheduling
     anonymous = Column(Boolean, default=False)  # Hide results until poll ends
+    # Allow multiple selections
+    multiple_choice = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     status = Column(String(20), default="scheduled")  # scheduled/active/closed
 
@@ -79,7 +83,17 @@ class Poll(Base):
         return results
 
     def get_total_votes(self):
-        """Get total number of votes"""
+        """Get total number of votes (unique users for multiple choice, total votes for single choice)"""
+        if bool(self.multiple_choice):
+            # For multiple choice, count unique users who voted
+            unique_users = set(vote.user_id for vote in self.votes)
+            return len(unique_users)
+        else:
+            # For single choice, count total votes
+            return len(self.votes)
+
+    def get_total_vote_count(self):
+        """Get total number of individual votes cast (regardless of poll type)"""
         return len(self.votes)
 
     def get_winner(self):
@@ -87,14 +101,14 @@ class Poll(Base):
         results = self.get_results()
         if not results:
             return None
-        
+
         max_votes = max(results.values())
         winners = [i for i, votes in results.items() if votes == max_votes]
         return winners
 
     def should_show_results(self):
         """Determine if results should be shown based on anonymous setting and status"""
-        if not self.anonymous:
+        if not bool(self.anonymous):
             return True
         return self.status == "closed"
 
@@ -131,8 +145,10 @@ class UserPreference(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(50), ForeignKey("users.id"), nullable=False)
     last_server_id = Column(String(50), nullable=True)  # Last selected server
-    last_channel_id = Column(String(50), nullable=True)  # Last selected channel
-    default_timezone = Column(String(50), default="US/Eastern")  # Default timezone
+    # Last selected channel
+    last_channel_id = Column(String(50), nullable=True)
+    default_timezone = Column(
+        String(50), default="US/Eastern")  # Default timezone
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationship to user
@@ -196,8 +212,3 @@ def get_poll_emoji(option_index):
     if 0 <= option_index < len(POLL_EMOJIS):
         return POLL_EMOJIS[option_index]
     return "❓"
-
-
-if __name__ == "__main__":
-    # Initialize database when run directly
-    init_database()
