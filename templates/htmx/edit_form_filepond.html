@@ -49,6 +49,10 @@
                         <label for="channel-select" class="form-label">Channel <span class="text-danger">*</span></label>
                         <select class="form-select" id="channel-select" name="channel_id" required>
                             <option value="">Loading channels...</option>
+                            <!-- Pre-populate with current channel if available -->
+                            {% if poll.channel_id %}
+                            <option value="{{ poll.channel_id }}" selected>{{ poll.channel_name }}</option>
+                            {% endif %}
                         </select>
                     </div>
                 </div>

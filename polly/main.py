@@ -807,12 +807,215 @@ async def start_scheduler():
     await restore_scheduled_jobs()
 
 
+async def reaction_safeguard_task():
+    """
+    Safeguard task that runs every 5 seconds to check for unprocessed reactions
+    on active polls and handle them to ensure no votes are lost.
+    """
+    while True:
+        try:
+            await asyncio.sleep(5)  # Run every 5 seconds
+
+            if not bot or not bot.is_ready():
+                continue
+
+            # Get all active polls
+            db = get_db_session()
+            try:
+                active_polls = db.query(Poll).filter(
+                    Poll.status == "active").all()
+
+                for poll in active_polls:
+                    try:
+                        if not poll.message_id:
+                            continue
+
+                        # Get the Discord message
+                        try:
+                            channel = bot.get_channel(int(poll.channel_id))
+                            if not channel:
+                                continue
+                        except Exception as channel_error:
+                            logger.error(f"❌ Safeguard: Error getting channel {poll.channel_id} for poll {poll.id}: {channel_error}")
+                            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                            from .error_handler import notify_error_async
+                            await notify_error_async(channel_error, "Safeguard Channel Access", 
+                                                    poll_id=poll.id, channel_id=poll.channel_id)
+                            continue
+
+                        try:
+                            message = await channel.fetch_message(int(poll.message_id))
+                        except (discord.NotFound, discord.Forbidden) as fetch_error:
+                            logger.debug(f"🔍 Safeguard: Message {poll.message_id} not found or forbidden for poll {poll.id}")
+                            continue
+                        except Exception as fetch_error:
+                            logger.error(f"❌ Safeguard: Error fetching message {poll.message_id} for poll {poll.id}: {fetch_error}")
+                            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                            from .error_handler import notify_error_async
+                            await notify_error_async(fetch_error, "Safeguard Message Fetch", 
+                                                    poll_id=poll.id, message_id=poll.message_id)
+                            continue
+
+                        # Check each reaction on the message
+                        for reaction in message.reactions:
+                            try:
+                                if str(reaction.emoji) not in POLL_EMOJIS:
+                                    continue
+
+                                option_index = POLL_EMOJIS.index(
+                                    str(reaction.emoji))
+                                if option_index >= len(poll.options):
+                                    continue
+
+                                # Get users who reacted (excluding the bot)
+                                try:
+                                    async for user in reaction.users():
+                                        if user.bot:
+                                            continue
+
+                                        try:
+                                            # Check if this user's vote is already recorded
+                                            existing_vote = db.query(Vote).filter(
+                                                Vote.poll_id == poll.id,
+                                                Vote.user_id == str(user.id)
+                                            ).first()
+
+                                            if existing_vote:
+                                                # Vote exists, remove the reaction (cleanup)
+                                                try:
+                                                    await reaction.remove(user)
+                                                    logger.debug(
+                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {poll.id} (vote already recorded)")
+                                                except Exception as remove_error:
+                                                    logger.debug(
+                                                        f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}")
+                                            else:
+                                                # No vote recorded, process the vote
+                                                logger.info(
+                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {poll.id}")
+
+                                                try:
+                                                    # Use bulletproof vote collection
+                                                    bulletproof_ops = BulletproofPollOperations(bot)
+                                                    result = await bulletproof_ops.bulletproof_vote_collection(
+                                                        poll.id, str(user.id), option_index
+                                                    )
+
+                                                    if result["success"]:
+                                                        # Vote was successfully recorded - NOW remove the reaction
+                                                        try:
+                                                            await reaction.remove(user)
+                                                            logger.info(
+                                                                f"✅ Safeguard: Vote recorded and reaction removed for user {user.id} on poll {poll.id}")
+                                                        except Exception as remove_error:
+                                                            logger.warning(
+                                                                f"⚠️ Safeguard: Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
+
+                                                        # Update poll embed for live updates
+                                                        try:
+                                                            await update_poll_message(bot, poll)
+                                                            logger.debug(
+                                                                f"✅ Safeguard: Poll message updated for poll {poll.id}")
+                                                        except Exception as update_error:
+                                                            logger.error(
+                                                                f"❌ Safeguard: Failed to update poll message for poll {poll.id}: {update_error}")
+                                                            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                                            from .error_handler import notify_error_async
+                                                            await notify_error_async(update_error, "Safeguard Poll Message Update", 
+                                                                                    poll_id=poll.id, user_id=str(user.id))
+                                                    else:
+                                                        # Vote failed - leave reaction for user to try again
+                                                        logger.error(
+                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {poll.id}: {result['error']}")
+                                                        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                                        from .error_handler import notify_error_async
+                                                        await notify_error_async(Exception(result['error']), "Safeguard Vote Processing Failed", 
+                                                                                poll_id=poll.id, user_id=str(user.id), option_index=option_index)
+
+                                                except Exception as vote_error:
+                                                    logger.error(f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {poll.id}: {vote_error}")
+                                                    # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                                    from .error_handler import notify_error_async
+                                                    await notify_error_async(vote_error, "Safeguard Vote Processing Critical Error", 
+                                                                            poll_id=poll.id, user_id=str(user.id), option_index=option_index)
+
+                                        except Exception as user_error:
+                                            logger.error(f"❌ Safeguard: Error processing user {user.id} reaction on poll {poll.id}: {user_error}")
+                                            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                            from .error_handler import notify_error_async
+                                            await notify_error_async(user_error, "Safeguard User Processing Error", 
+                                                                    poll_id=poll.id, user_id=str(user.id))
+                                            continue
+
+                                except Exception as users_error:
+                                    logger.error(f"❌ Safeguard: Error iterating reaction users for poll {poll.id}: {users_error}")
+                                    # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                    from .error_handler import notify_error_async
+                                    await notify_error_async(users_error, "Safeguard Reaction Users Iteration", 
+                                                            poll_id=poll.id, emoji=str(reaction.emoji))
+                                    continue
+
+                            except Exception as reaction_error:
+                                logger.error(f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {poll.id}: {reaction_error}")
+                                # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                                from .error_handler import notify_error_async
+                                await notify_error_async(reaction_error, "Safeguard Reaction Processing", 
+                                                        poll_id=poll.id, emoji=str(reaction.emoji))
+                                continue
+
+                    except Exception as poll_error:
+                        logger.error(
+                            f"❌ Safeguard: Error processing poll {poll.id}: {poll_error}")
+                        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                        from .error_handler import notify_error_async
+                        await notify_error_async(poll_error, "Safeguard Poll Processing", poll_id=poll.id)
+                        continue
+
+            except Exception as db_error:
+                logger.error(f"❌ Safeguard: Database error: {db_error}")
+                # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                from .error_handler import notify_error_async
+                await notify_error_async(db_error, "Safeguard Database Error")
+            finally:
+                try:
+                    db.close()
+                except Exception as close_error:
+                    logger.error(f"❌ Safeguard: Error closing database: {close_error}")
+                    # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+                    from .error_handler import notify_error_async
+                    await notify_error_async(close_error, "Safeguard Database Close Error")
+
+        except Exception as e:
+            logger.error(
+                f"❌ Safeguard: Critical error in reaction safeguard task: {e}")
+            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+            from .error_handler import notify_error_async
+            await notify_error_async(e, "Safeguard Task Critical Error")
+            # Continue running even if there's an error
+            continue
+
+
+async def start_reaction_safeguard():
+    """Start the reaction safeguard background task"""
+    try:
+        logger.info("🛡️ Starting reaction safeguard task")
+        asyncio.create_task(reaction_safeguard_task())
+        logger.info("✅ Reaction safeguard task started successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to start reaction safeguard task: {e}")
+        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Safeguard Task Startup Error")
+        raise e  # Re-raise to ensure the application knows the safeguard failed to start
+
+
 # Lifespan manager for background tasks
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     asyncio.create_task(start_scheduler())
     asyncio.create_task(start_bot())
+    asyncio.create_task(start_reaction_safeguard())
     yield
     # Shutdown
     scheduler.shutdown()
