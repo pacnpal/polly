@@ -234,8 +234,26 @@ class BulletproofPollOperations:
                     "step": "discord_validation"
                 }
 
+            # Get guild for server name extraction
+            guild = getattr(channel, 'guild', None)
+            if not guild:
+                await self._cleanup_on_failure(poll_id, image_info)
+                return {
+                    "success": False,
+                    "error": "Guild not found for channel",
+                    "step": "discord_validation"
+                }
+
             # Check bot permissions
-            permissions = channel.permissions_for(channel.guild.me)
+            permissions = getattr(
+                channel, 'permissions_for', lambda x: None)(guild.me)
+            if not permissions:
+                await self._cleanup_on_failure(poll_id, image_info)
+                return {
+                    "success": False,
+                    "error": "Could not get channel permissions",
+                    "step": "discord_validation"
+                }
             required_perms = ["send_messages", "embed_links", "add_reactions"]
             if image_info:
                 required_perms.append("attach_files")
@@ -255,7 +273,7 @@ class BulletproofPollOperations:
             try:
                 db = get_db_session()
                 try:
-                    # Create poll using SQLAlchemy ORM
+                    # Create poll using SQLAlchemy ORM with server and channel names
                     poll = Poll(
                         name=validated_data["name"],
                         question=validated_data["question"],
@@ -263,7 +281,10 @@ class BulletproofPollOperations:
                         emojis=validated_data.get(
                             "emojis", []),  # Include emojis
                         server_id=validated_data["server_id"],
+                        server_name=guild.name,  # Add server name
                         channel_id=validated_data["channel_id"],
+                        # Add channel name
+                        channel_name=getattr(channel, 'name', 'Unknown'),
                         creator_id=user_id,
                         open_time=validated_data["open_time"],
                         close_time=validated_data["close_time"],
@@ -468,7 +489,9 @@ class BulletproofPollOperations:
                     # Step 2: Bulletproof vote recording with multiple choice support
                     from .database import Vote
 
-                    if getattr(poll, 'multiple_choice', False) is True:
+                    multiple_choice_value = getattr(
+                        poll, 'multiple_choice', False)
+                    if multiple_choice_value is True:
                         # Multiple choice: Check if user already voted for this specific option
                         existing_vote = db.query(Vote).filter(
                             Vote.poll_id == poll_id,
@@ -550,7 +573,10 @@ class BulletproofPollOperations:
                             return {"success": False, "error": "Vote removal verification failed"}
                     else:
                         # For added/updated votes, verify the vote exists with correct option
-                        if getattr(poll, 'multiple_choice', False) is True:
+                        multiple_choice_verification = getattr(
+                            poll, 'multiple_choice', False)
+                        # Convert SQLAlchemy Column to boolean safely - avoid direct boolean conversion
+                        if multiple_choice_verification is not None and str(multiple_choice_verification).lower() in ('true', '1'):
                             # Multiple choice: verify specific vote exists
                             verification_vote = db.query(Vote).filter(
                                 Vote.poll_id == poll_id,

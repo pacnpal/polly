@@ -1582,6 +1582,19 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         image_message_text = safe_get_form_data(
             form_data, "image_message_text", "")
 
+        # DEBUG: Log all extracted form data
+        logger.debug(f"=== POLL CREATION DEBUG - User {current_user.id} ===")
+        logger.debug(f"DEBUG: Poll Name: '{name}'")
+        logger.debug(f"DEBUG: Question: '{question}'")
+        logger.debug(f"DEBUG: Server ID: '{server_id}'")
+        logger.debug(f"DEBUG: Channel ID: '{channel_id}'")
+        logger.debug(f"DEBUG: Open Time: '{open_time}'")
+        logger.debug(f"DEBUG: Close Time: '{close_time}'")
+        logger.debug(f"DEBUG: Timezone: '{timezone_str}'")
+        logger.debug(f"DEBUG: Anonymous: {anonymous}")
+        logger.debug(f"DEBUG: Multiple Choice: {multiple_choice}")
+        logger.debug(f"DEBUG: Image Message Text: '{image_message_text}'")
+
         # Get options and emojis
         options = []
         emojis = []
@@ -1591,14 +1604,24 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
                 options.append(str(option).strip())
                 # Extract emoji from form data, fallback to default if not provided
                 emoji = safe_get_form_data(form_data, f"emoji{i}")
-                if emoji:
-                    emojis.append(emoji)
+                logger.debug(
+                    f"DEBUG: Option {i}: '{str(option).strip()}' - Raw emoji: '{emoji}'")
+                if emoji and emoji.strip():  # Check for non-empty emoji
+                    emojis.append(emoji.strip())
+                    logger.debug(
+                        f"DEBUG: Using custom emoji for option {i}: '{emoji.strip()}'")
                 else:
                     # Fallback to default emojis if not provided
                     default_emojis = ["🇦", "🇧", "🇨", "🇩",
                                       "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                    emojis.append(default_emojis[len(emojis)] if len(
-                        emojis) < 10 else "⭐")
+                    fallback_emoji = default_emojis[len(
+                        emojis)] if len(emojis) < 10 else "⭐"
+                    emojis.append(fallback_emoji)
+                    logger.debug(
+                        f"DEBUG: Using fallback emoji for option {i}: '{fallback_emoji}'")
+
+        logger.debug(f"DEBUG: Final Options: {options}")
+        logger.debug(f"DEBUG: Final Emojis: {emojis}")
 
         if len(options) < 2:
             logger.warning(f"Insufficient options provided: {len(options)}")
@@ -1910,6 +1933,19 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         image_message_text = safe_get_form_data(
             form_data, "image_message_text", "")
 
+        # DEBUG: Log all extracted form data for update
+        logger.debug(
+            f"=== POLL UPDATE DEBUG - User {current_user.id}, Poll {poll_id} ===")
+        logger.debug(f"DEBUG: Poll Name: '{name}'")
+        logger.debug(f"DEBUG: Question: '{question}'")
+        logger.debug(f"DEBUG: Server ID: '{server_id}'")
+        logger.debug(f"DEBUG: Channel ID: '{channel_id}'")
+        logger.debug(f"DEBUG: Open Time: '{open_time}'")
+        logger.debug(f"DEBUG: Close Time: '{close_time}'")
+        logger.debug(f"DEBUG: Timezone: '{timezone_str}'")
+        logger.debug(f"DEBUG: Anonymous: {anonymous}")
+        logger.debug(f"DEBUG: Image Message Text: '{image_message_text}'")
+
         # Validate required fields
         if not all([name, question, server_id, channel_id, open_time, close_time]):
             logger.warning(
@@ -1958,14 +1994,24 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 options.append(str(option).strip())
                 # Extract emoji from form data, fallback to default if not provided
                 emoji = safe_get_form_data(form_data, f"emoji{i}")
-                if emoji:
-                    emojis.append(emoji)
+                logger.debug(
+                    f"DEBUG: Option {i}: '{str(option).strip()}' - Raw emoji: '{emoji}'")
+                if emoji and emoji.strip():  # Check for non-empty emoji
+                    emojis.append(emoji.strip())
+                    logger.debug(
+                        f"DEBUG: Using custom emoji for option {i}: '{emoji.strip()}'")
                 else:
                     # Fallback to default emojis if not provided
                     default_emojis = ["🇦", "🇧", "🇨", "🇩",
                                       "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                    emojis.append(default_emojis[len(emojis)] if len(
-                        emojis) < 10 else "⭐")
+                    fallback_emoji = default_emojis[len(emojis)] if len(
+                        emojis) < 10 else "⭐"
+                    emojis.append(fallback_emoji)
+                    logger.debug(
+                        f"DEBUG: Using fallback emoji for option {i}: '{fallback_emoji}'")
+
+        logger.debug(f"DEBUG: Final Options: {options}")
+        logger.debug(f"DEBUG: Final Emojis: {emojis}")
 
         if len(options) < 2:
             logger.warning(
@@ -2069,19 +2115,20 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 f"Job close_poll_{int(poll.id)} not found or already removed: {e}")
 
         # Reschedule jobs
+        poll_id_int = int(getattr(poll, 'id'))
         if open_dt > datetime.now(pytz.UTC):
             scheduler.add_job(
                 post_poll_to_channel,
                 DateTrigger(run_date=open_dt),
-                args=[bot, poll],
-                id=f"open_poll_{int(getattr(poll, 'id'))}"
+                args=[bot, poll_id_int],  # Pass poll_id instead of poll object
+                id=f"open_poll_{poll_id_int}"
             )
 
         scheduler.add_job(
             close_poll,
             DateTrigger(run_date=close_dt),
-            args=[int(getattr(poll, 'id'))],
-            id=f"close_poll_{int(getattr(poll, 'id'))}"
+            args=[poll_id_int],
+            id=f"close_poll_{poll_id_int}"
         )
 
         logger.info(f"Successfully updated poll {poll_id}")
@@ -2237,7 +2284,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         logger.info(f"Starting database deletion for poll {poll_id}")
 
         try:
-            # Delete associated votes first
+            # Delete associated votes first - use poll_id parameter instead of poll.id
             vote_count = db.query(Vote).filter(Vote.poll_id == poll_id).count()
             logger.info(
                 f"Found {vote_count} votes to delete for poll {poll_id}")
