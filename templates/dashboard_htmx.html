@@ -277,16 +277,22 @@
         
         // Handle successful timezone save
         document.body.addEventListener('htmx:afterRequest', function(event) {
-            if (event.detail.xhr.responseText.includes('Settings saved successfully')) {
-                setTimeout(function() {
-                    var timezoneModalElement = document.getElementById('timezonePromptModal');
-                    if (timezoneModalElement) {
-                        var timezoneModal = bootstrap.Modal.getInstance(timezoneModalElement);
-                        if (timezoneModal) {
-                            timezoneModal.hide();
+            try {
+                // Safely check response text without parsing it as JavaScript
+                var responseText = event.detail.xhr.responseText || '';
+                if (responseText.indexOf('Settings saved successfully') !== -1) {
+                    setTimeout(function() {
+                        var timezoneModalElement = document.getElementById('timezonePromptModal');
+                        if (timezoneModalElement) {
+                            var timezoneModal = bootstrap.Modal.getInstance(timezoneModalElement);
+                            if (timezoneModal) {
+                                timezoneModal.hide();
+                            }
                         }
-                    }
-                }, 1500);
+                    }, 1500);
+                }
+            } catch (error) {
+                console.error('Error handling timezone save response:', error);
             }
         });
     </script>
