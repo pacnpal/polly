@@ -233,7 +233,8 @@ def add_htmx_routes(app: FastAPI):
         get_polls_htmx, get_stats_htmx, get_create_form_htmx, get_channels_htmx,
         add_option_htmx, remove_option_htmx, upload_image_htmx, remove_image_htmx,
         get_servers_htmx, get_settings_htmx, save_settings_htmx, get_polls_realtime_htmx,
-        create_poll_htmx, get_poll_edit_form
+        create_poll_htmx, get_poll_edit_form, get_poll_details_htmx,
+        get_poll_results_realtime_htmx, close_poll_htmx, delete_poll_htmx
     )
     from .discord_bot import get_bot_instance
     from .background_tasks import get_scheduler
@@ -299,6 +300,22 @@ def add_htmx_routes(app: FastAPI):
     async def htmx_poll_edit(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
         bot = get_bot_instance()
         return await get_poll_edit_form(poll_id, request, bot, current_user)
+
+    @app.get("/htmx/poll/{poll_id}/details", response_class=HTMLResponse)
+    async def htmx_poll_details(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        return await get_poll_details_htmx(poll_id, request, current_user)
+
+    @app.get("/htmx/poll/{poll_id}/results-realtime", response_class=HTMLResponse)
+    async def htmx_poll_results_realtime(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        return await get_poll_results_realtime_htmx(poll_id, request, current_user)
+
+    @app.post("/htmx/poll/{poll_id}/close", response_class=HTMLResponse)
+    async def htmx_close_poll(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        return await close_poll_htmx(poll_id, request, current_user)
+
+    @app.delete("/htmx/poll/{poll_id}", response_class=HTMLResponse)
+    async def htmx_delete_poll(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        return await delete_poll_htmx(poll_id, request, current_user)
 
 
 # Create the app instance

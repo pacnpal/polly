@@ -741,7 +741,7 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
 
 
 async def get_polls_realtime_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
-    """Get real-time poll data for HTMX polling updates"""
+    """Get real-time poll data for HTMX polling updates using proper template components"""
     db = get_db_session()
     try:
         # Query polls with error handling
@@ -759,239 +759,41 @@ async def get_polls_realtime_htmx(request: Request, filter: str = None, current_
                 f"Database error in realtime polls for user {current_user.id}: {e}")
             return ""  # Return empty for real-time updates on error
 
-        # Generate HTML for poll cards with real-time data
-        html_parts = []
+        # Process polls with individual error handling (same as get_polls_htmx)
+        processed_polls = []
+        for poll in polls:
+            try:
+                # Add status_class to each poll for template
+                poll.status_class = {
+                    'active': 'bg-success',
+                    'scheduled': 'bg-warning',
+                    'closed': 'bg-danger'
+                }.get(TypeSafeColumn.get_string(poll, 'status'), 'bg-secondary')
 
-        # Group polls by status for organized display
-        active_polls = [p for p in polls if TypeSafeColumn.get_string(
-            p, 'status') == 'active']
-        scheduled_polls = [p for p in polls if TypeSafeColumn.get_string(
-            p, 'status') == 'scheduled']
-        closed_polls = [p for p in polls if TypeSafeColumn.get_string(
-            p, 'status') == 'closed']
+                processed_polls.append(poll)
 
-        # Active polls section
-        if active_polls:
-            html_parts.append(
-                '<div class="row poll-section" data-status="active">')
+            except Exception as e:
+                logger.error(
+                    f"Error processing poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
+                # Continue with other polls, skip this one
 
-            # Add section header using template rendering
-            header_template = templates.get_template(
-                "htmx/components/poll_section_header.html")
-            header_html = header_template.render({
-                "request": request,
-                "status_color": "success",
-                "icon": "play-circle",
-                "title": "Active Polls",
-                "count": len(active_polls)
-            })
-            html_parts.append(header_html)
+        # Get user's timezone preference with error handling
+        try:
+            user_prefs = get_user_preferences(current_user.id)
+            user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+        except Exception as e:
+            logger.error(
+                f"Error getting user preferences for {current_user.id}: {e}")
+            user_timezone = "US/Eastern"
 
-            for poll in active_polls:
-                try:
-                    vote_count = poll.get_total_votes()
-                    server_name = TypeSafeColumn.get_string(
-                        poll, 'server_name', f'Server {TypeSafeColumn.get_string(poll, "server_id")}')
-                    channel_name = TypeSafeColumn.get_string(
-                        poll, 'channel_name', f'Channel {TypeSafeColumn.get_string(poll, "channel_id")}')
-                    poll_timezone = TypeSafeColumn.get_string(
-                        poll, 'timezone', 'UTC')
-                    close_time_formatted = format_datetime_for_user(
-                        TypeSafeColumn.get_datetime(poll, 'close_time'), poll_timezone)
-                    poll_id = TypeSafeColumn.get_int(poll, 'id')
-                    poll_name = TypeSafeColumn.get_string(
-                        poll, 'name', 'Unknown')
-                    poll_question = TypeSafeColumn.get_string(
-                        poll, 'question', '')
-                    is_anonymous = TypeSafeColumn.get_bool(
-                        poll, 'anonymous', False)
-
-                    # Use template component for poll card
-                    card_template = templates.get_template(
-                        "htmx/components/poll_card_active.html")
-                    card_html = card_template.render({
-                        "request": request,
-                        "poll_id": poll_id,
-                        "poll_name": poll_name,
-                        "poll_question": poll_question,
-                        "server_name": server_name,
-                        "channel_name": channel_name,
-                        "vote_count": vote_count,
-                        "is_anonymous": is_anonymous,
-                        "close_time_formatted": close_time_formatted
-                    })
-                    html_parts.append(card_html)
-
-                except Exception as e:
-                    logger.error(
-                        f"Error processing active poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
-                    continue
-
-            html_parts.append('</div>')
-
-        # Scheduled polls section
-        if scheduled_polls:
-            html_parts.append(
-                '<div class="row poll-section" data-status="scheduled">')
-
-            # Add section header using template rendering
-            header_template = templates.get_template(
-                "htmx/components/poll_section_header.html")
-            header_html = header_template.render({
-                "request": request,
-                "status_color": "warning",
-                "icon": "clock",
-                "title": "Scheduled Polls",
-                "count": len(scheduled_polls)
-            })
-            html_parts.append(header_html)
-
-            for poll in scheduled_polls:
-                try:
-                    server_name = TypeSafeColumn.get_string(
-                        poll, 'server_name', f'Server {TypeSafeColumn.get_string(poll, "server_id")}')
-                    channel_name = TypeSafeColumn.get_string(
-                        poll, 'channel_name', f'Channel {TypeSafeColumn.get_string(poll, "channel_id")}')
-                    poll_timezone = TypeSafeColumn.get_string(
-                        poll, 'timezone', 'UTC')
-                    # Get datetime values with proper type checking
-                    open_time_dt = TypeSafeColumn.get_datetime(
-                        poll, 'open_time')
-                    close_time_dt = TypeSafeColumn.get_datetime(
-                        poll, 'close_time')
-
-                    # Ensure we have valid datetime objects
-                    if isinstance(open_time_dt, datetime):
-                        open_time_formatted = format_datetime_for_user(
-                            open_time_dt, poll_timezone)
-                    else:
-                        open_time_formatted = "Unknown"
-
-                    if isinstance(close_time_dt, datetime):
-                        close_time_formatted = format_datetime_for_user(
-                            close_time_dt, poll_timezone)
-                    else:
-                        close_time_formatted = "Unknown"
-                    poll_id = TypeSafeColumn.get_int(poll, 'id')
-                    poll_name = TypeSafeColumn.get_string(
-                        poll, 'name', 'Unknown')
-                    poll_question = TypeSafeColumn.get_string(
-                        poll, 'question', '')
-                    is_anonymous = TypeSafeColumn.get_bool(
-                        poll, 'anonymous', False)
-
-                    # Use template component for scheduled poll card
-                    card_response = templates.TemplateResponse("htmx/components/poll_card_scheduled.html", {
-                        "request": request,
-                        "poll_id": poll_id,
-                        "poll_name": poll_name,
-                        "poll_question": poll_question,
-                        "server_name": server_name,
-                        "channel_name": channel_name,
-                        "open_time_formatted": open_time_formatted,
-                        "close_time_formatted": close_time_formatted,
-                        "is_anonymous": is_anonymous
-                    })
-
-                    # Render the template to get HTML string
-                    from starlette.responses import Response
-
-                    # Create a mock response to capture the rendered content
-                    Response()
-                    card_html = card_response.body
-                    if hasattr(card_html, 'decode'):
-                        card_html = card_html.decode('utf-8')
-                    elif isinstance(card_html, (bytes, memoryview)):
-                        card_html = bytes(card_html).decode('utf-8')
-                    else:
-                        # Fallback: render template manually
-                        template = templates.get_template(
-                            "htmx/components/poll_card_scheduled.html")
-                        card_html = template.render({
-                            "request": request,
-                            "poll_id": poll_id,
-                            "poll_name": poll_name,
-                            "poll_question": poll_question,
-                            "server_name": server_name,
-                            "channel_name": channel_name,
-                            "open_time_formatted": open_time_formatted,
-                            "close_time_formatted": close_time_formatted,
-                            "is_anonymous": is_anonymous
-                        })
-
-                    html_parts.append(card_html)
-                except Exception as e:
-                    logger.error(
-                        f"Error processing scheduled poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
-                    continue
-
-            html_parts.append('</div>')
-
-        # Closed polls section
-        if closed_polls:
-            html_parts.append(
-                '<div class="row poll-section" data-status="closed">')
-
-            # Add section header using template rendering
-            header_template = templates.get_template(
-                "htmx/components/poll_section_header.html")
-            header_html = header_template.render({
-                "request": request,
-                "status_color": "danger",
-                "icon": "stop-circle",
-                "title": "Closed Polls",
-                "count": len(closed_polls)
-            })
-            html_parts.append(header_html)
-
-            for poll in closed_polls:
-                try:
-                    vote_count = poll.get_total_votes()
-                    server_name = TypeSafeColumn.get_string(
-                        poll, 'server_name', f'Server {TypeSafeColumn.get_string(poll, "server_id")}')
-                    channel_name = TypeSafeColumn.get_string(
-                        poll, 'channel_name', f'Channel {TypeSafeColumn.get_string(poll, "channel_id")}')
-                    poll_timezone = TypeSafeColumn.get_string(
-                        poll, 'timezone', 'UTC')
-                    # Get close time with proper type checking
-                    close_time_dt = TypeSafeColumn.get_datetime(
-                        poll, 'close_time')
-                    if isinstance(close_time_dt, datetime):
-                        close_time_formatted = format_datetime_for_user(
-                            close_time_dt, poll_timezone)
-                    else:
-                        close_time_formatted = "Unknown"
-                    poll_id = TypeSafeColumn.get_int(poll, 'id')
-                    poll_name = TypeSafeColumn.get_string(
-                        poll, 'name', 'Unknown')
-                    poll_question = TypeSafeColumn.get_string(
-                        poll, 'question', '')
-                    is_anonymous = TypeSafeColumn.get_bool(
-                        poll, 'anonymous', False)
-
-                    # Use template component for closed poll card
-                    card_template = templates.get_template(
-                        "htmx/components/poll_card_closed.html")
-                    card_html = card_template.render({
-                        "request": request,
-                        "poll_id": poll_id,
-                        "poll_name": poll_name,
-                        "poll_question": poll_question,
-                        "server_name": server_name,
-                        "channel_name": channel_name,
-                        "vote_count": vote_count,
-                        "is_anonymous": is_anonymous,
-                        "close_time_formatted": close_time_formatted
-                    })
-                    html_parts.append(card_html)
-                except Exception as e:
-                    logger.error(
-                        f"Error processing closed poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}")
-                    continue
-
-            html_parts.append('</div>')
-
-        return ''.join(html_parts)
+        # Use the same template as get_polls_htmx for consistency
+        return templates.TemplateResponse("htmx/polls.html", {
+            "request": request,
+            "polls": processed_polls,
+            "current_filter": filter,
+            "user_timezone": user_timezone,
+            "format_datetime_for_user": format_datetime_for_user
+        })
 
     except Exception as e:
         logger.error(
@@ -1200,6 +1002,198 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
             "request": request,
             "message": error_msg
         })
+
+
+async def get_poll_details_htmx(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Get poll details view as HTML for HTMX"""
+    logger.info(
+        f"User {current_user.id} requesting details for poll {poll_id}")
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            logger.warning(
+                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        return templates.TemplateResponse("htmx/poll_details.html", {
+            "request": request,
+            "poll": poll,
+            "format_datetime_for_user": format_datetime_for_user
+        })
+    except Exception as e:
+        logger.error(f"Error getting poll details for poll {poll_id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Details Retrieval", poll_id=poll_id, user_id=current_user.id)
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error loading poll details: {str(e)}"
+        })
+    finally:
+        db.close()
+
+
+async def get_poll_results_realtime_htmx(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Get real-time poll results as HTML for HTMX"""
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            return '<div class="alert alert-danger">Poll not found or access denied</div>'
+
+        # Get poll results
+        total_votes = poll.get_total_votes()
+        results = poll.get_results()
+
+        # Get poll data safely
+        options = poll.options  # Use the property method from Poll model
+        emojis = poll.emojis    # Use the property method from Poll model
+        is_anonymous = TypeSafeColumn.get_bool(poll, 'anonymous', False)
+
+        # Generate HTML for results
+        html_parts = []
+
+        for i in range(len(options)):
+            option_votes = results.get(i, 0)
+            percentage = (option_votes / total_votes *
+                          100) if total_votes > 0 else 0
+            emoji = emojis[i] if i < len(emojis) else "🇦"
+            option_text = options[i]
+
+            html_parts.append(f'''
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span>{emoji} {escape(option_text)}</span>
+                    <span class="text-muted">{option_votes} votes ({percentage:.1f}%)</span>
+                </div>
+                <div class="progress" style="height: 20px;">
+                    <div class="progress-bar" role="progressbar" style="width: {percentage}%;" 
+                         aria-valuenow="{percentage}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+            </div>
+            ''')
+
+        # Add total votes and anonymous badge
+        anonymous_badge = '<span class="badge bg-info ms-2">Anonymous</span>' if is_anonymous else ""
+        html_parts.append(f'''
+        <div class="mt-3">
+            <strong>Total Votes: {total_votes}</strong>
+            {anonymous_badge}
+        </div>
+        ''')
+
+        return ''.join(html_parts)
+
+    except Exception as e:
+        logger.error(
+            f"Error getting real-time results for poll {poll_id}: {e}")
+        return '<div class="alert alert-danger">Error loading poll results</div>'
+    finally:
+        db.close()
+
+
+async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Close an active poll via HTMX"""
+    logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        if TypeSafeColumn.get_string(poll, 'status') != "active":
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Only active polls can be closed"
+            })
+
+        # Update poll status to closed
+        setattr(poll, 'status', 'closed')
+        setattr(poll, 'updated_at', datetime.now(pytz.UTC))
+        db.commit()
+
+        logger.info(f"Poll {poll_id} closed by user {current_user.id}")
+
+        return templates.TemplateResponse("htmx/components/alert_success.html", {
+            "request": request,
+            "message": "Poll closed successfully! Redirecting to polls...",
+            "redirect_url": "/htmx/polls"
+        })
+
+    except Exception as e:
+        logger.error(f"Error closing poll {poll_id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Closure", poll_id=poll_id, user_id=current_user.id)
+        db.rollback()
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error closing poll: {str(e)}"
+        })
+    finally:
+        db.close()
+
+
+async def delete_poll_htmx(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Delete a scheduled or closed poll via HTMX"""
+    logger.info(f"User {current_user.id} requesting to delete poll {poll_id}")
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        poll_status = TypeSafeColumn.get_string(poll, 'status')
+        if poll_status not in ['scheduled', 'closed']:
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Only scheduled or closed polls can be deleted"
+            })
+
+        # Clean up image file if exists
+        image_path = TypeSafeColumn.get_string(poll, 'image_path')
+        if image_path:
+            await cleanup_image(image_path)
+
+        # Delete associated votes first
+        db.query(Vote).filter(Vote.poll_id == poll_id).delete()
+
+        # Delete the poll
+        db.delete(poll)
+        db.commit()
+
+        logger.info(f"Poll {poll_id} deleted by user {current_user.id}")
+
+        return templates.TemplateResponse("htmx/components/alert_success.html", {
+            "request": request,
+            "message": "Poll deleted successfully! Redirecting to polls...",
+            "redirect_url": "/htmx/polls"
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting poll {poll_id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Poll Deletion", poll_id=poll_id, user_id=current_user.id)
+        db.rollback()
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error deleting poll: {str(e)}"
+        })
+    finally:
+        db.close()
 
 
 async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
