@@ -234,7 +234,8 @@ def add_htmx_routes(app: FastAPI):
         add_option_htmx, remove_option_htmx, upload_image_htmx, remove_image_htmx,
         get_servers_htmx, get_settings_htmx, save_settings_htmx, get_polls_realtime_htmx,
         create_poll_htmx, get_poll_edit_form, get_poll_details_htmx,
-        get_poll_results_realtime_htmx, close_poll_htmx, delete_poll_htmx
+        get_poll_results_realtime_htmx, close_poll_htmx, delete_poll_htmx,
+        get_guild_emojis_htmx
     )
     from .discord_bot import get_bot_instance
     from .background_tasks import get_scheduler
@@ -323,6 +324,11 @@ def add_htmx_routes(app: FastAPI):
     @app.delete("/htmx/poll/{poll_id}", response_class=HTMLResponse)
     async def htmx_delete_poll(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
         return await delete_poll_htmx(poll_id, request, current_user)
+
+    @app.get("/htmx/guild-emojis/{server_id}")
+    async def htmx_guild_emojis(server_id: str, current_user: DiscordUser = Depends(require_auth)):
+        bot = get_bot_instance()
+        return await get_guild_emojis_htmx(server_id, bot, current_user)
 
 
 # Create the app instance
