@@ -180,36 +180,8 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
 
 async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Embed:
     """Create Discord embed for a poll"""
-    # CRITICAL FIX: Always refresh poll data from database to ensure we have latest votes
-    # This prevents DetachedInstanceError and ensures vote counts are current
-    db = get_db_session()
-    try:
-        # Get poll ID safely
-        poll_id = getattr(poll, 'id')
-        if poll_id is None:
-            logger.error("Poll object has no ID, cannot refresh from database")
-            raise Exception("Invalid poll object - no ID")
-
-        # Refresh poll with all relationships loaded
-        fresh_poll = db.query(Poll).filter(Poll.id == poll_id).first()
-        if not fresh_poll:
-            logger.error(
-                f"Poll {poll_id} not found in database during embed creation")
-            raise Exception(f"Poll {poll_id} not found in database")
-
-        # Use the fresh poll object for all operations
-        poll = fresh_poll
-        logger.debug(
-            f"Successfully refreshed poll {poll_id} data for embed creation")
-
-    except Exception as e:
-        logger.error(f"Critical error refreshing poll data for embed: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Embed Data Refresh", poll_id=getattr(poll, 'id', 'unknown'))
-        # Continue with original poll object as fallback, but this may cause issues
-    finally:
-        db.close()
+    # Note: Poll object should already be attached to a database session with votes eagerly loaded
+    # to prevent DetachedInstanceError. This is handled by the calling function.
 
     # Determine embed color based on status
     poll_status = str(getattr(poll, 'status', 'unknown'))
