@@ -169,7 +169,16 @@
         const openTime = openTimeInput.value;
         const closeTime = closeTimeInput.value;
 
-        if (!openTime || !closeTime) return true; // Let required validation handle this
+        // Clear previous validation states
+        clearFieldValidation('open-time');
+        clearFieldValidation('close-time');
+
+        if (!openTime || !closeTime) {
+            // Don't validate times if they're empty - let required validation handle this
+            validationState['open-time'] = !!openTime;
+            validationState['close-time'] = !!closeTime;
+            return true;
+        }
 
         const openDate = new Date(openTime);
         const closeDate = new Date(closeTime);
@@ -218,7 +227,25 @@
         const timesValid = validateTimes();
         isValid = isValid && timesValid;
 
+        // Update submit button state
+        updateSubmitButtonState(isValid);
+
         return isValid;
+    }
+
+    function updateSubmitButtonState(isValid) {
+        const submitButton = document.querySelector('button[type="submit"]');
+        if (submitButton && !isSubmitting) {
+            // Don't disable the button - let HTMX handle that
+            // Just provide visual feedback
+            if (isValid) {
+                submitButton.classList.remove('btn-secondary');
+                submitButton.classList.add('btn-primary');
+            } else {
+                submitButton.classList.remove('btn-primary');
+                submitButton.classList.add('btn-secondary');
+            }
+        }
     }
 
     function showLoadingState(form) {
@@ -318,8 +345,15 @@
         const forms = document.querySelectorAll('form[hx-post]');
         forms.forEach(form => {
             form.addEventListener('submit', function(e) {
+                // Don't prevent submission if already submitting
+                if (isSubmitting) {
+                    e.preventDefault();
+                    return false;
+                }
+
                 // Validate form before submission
-                if (!validateForm()) {
+                const formIsValid = validateForm();
+                if (!formIsValid) {
                     e.preventDefault();
                     e.stopPropagation();
                     
@@ -332,31 +366,66 @@
                     return false;
                 }
 
-                // Show loading state
-                showLoadingState(form);
+                // Let HTMX handle the loading state
+            });
+
+            // Also validate on form changes to update submit button state
+            form.addEventListener('input', function() {
+                // Debounce validation
+                clearTimeout(window.formValidationTimeout);
+                window.formValidationTimeout = setTimeout(() => {
+                    if (!isSubmitting) {
+                        validateForm();
+                    }
+                }, 300);
+            });
+
+            form.addEventListener('change', function() {
+                if (!isSubmitting) {
+                    setTimeout(() => validateForm(), 100);
+                }
             });
         });
 
-        // Handle HTMX events
+        // Handle HTMX events - simplified approach
         document.addEventListener('htmx:beforeRequest', function(e) {
-            const form = e.target.closest('form');
-            if (form && form.querySelector('button[type="submit"]')) {
-                showLoadingState(form);
+            try {
+                isSubmitting = true;
+            } catch (error) {
+                console.warn('Error in htmx:beforeRequest handler:', error);
             }
         });
 
         document.addEventListener('htmx:afterRequest', function(e) {
-            const form = e.target.closest('form');
-            if (form) {
-                hideLoadingState(form);
+            try {
+                isSubmitting = false;
+                // Re-validate form after request to update button state
+                setTimeout(() => {
+                    try {
+                        validateForm();
+                    } catch (error) {
+                        console.warn('Error in delayed validation:', error);
+                    }
+                }, 100);
+            } catch (error) {
+                console.warn('Error in htmx:afterRequest handler:', error);
             }
         });
 
         // Handle HTMX errors
         document.addEventListener('htmx:responseError', function(e) {
-            const form = e.target.closest('form');
-            if (form) {
-                hideLoadingState(form);
+            try {
+                isSubmitting = false;
+                // Re-validate form after error to update button state
+                setTimeout(() => {
+                    try {
+                        validateForm();
+                    } catch (error) {
+                        console.warn('Error in delayed validation after error:', error);
+                    }
+                }, 100);
+            } catch (error) {
+                console.warn('Error in htmx:responseError handler:', error);
             }
         });
     }

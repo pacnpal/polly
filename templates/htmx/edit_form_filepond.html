@@ -781,6 +781,16 @@
             initializeEditForm();
         }
     });
+
+    // Ensure submit button is enabled on initial load
+    document.addEventListener('DOMContentLoaded', function() {
+        const submitBtn = document.getElementById('submit-btn');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.add('btn-primary');
+            submitBtn.classList.remove('btn-secondary');
+        }
+    });
 })();
 </script>
 
