@@ -390,14 +390,40 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     return embed
 
 
-async def post_poll_to_channel(bot: commands.Bot, poll: Poll):
+async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
     """Post a poll to its designated Discord channel with comprehensive debugging
+    
+    Args:
+        bot: Discord bot instance
+        poll_or_id: Either a Poll object or poll_id (int)
 
     Returns:
         Dict with success status and message_id if successful, or error details if failed
     """
-    poll_id = getattr(poll, 'id', 'unknown')
-    logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel")
+    # Handle both Poll object and poll_id
+    if isinstance(poll_or_id, int):
+        poll_id = poll_or_id
+        logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from poll_id)")
+        
+        # Fetch poll from database
+        db = get_db_session()
+        try:
+            from sqlalchemy.orm import joinedload
+            poll = db.query(Poll).options(joinedload(Poll.votes)).filter(Poll.id == poll_id).first()
+            if not poll:
+                logger.error(f"❌ POSTING POLL {poll_id} - Poll not found in database")
+                return False
+        except Exception as e:
+            logger.error(f"❌ POSTING POLL {poll_id} - Error fetching poll from database: {e}")
+            return False
+        finally:
+            db.close()
+    else:
+        # Assume it's a Poll object
+        poll = poll_or_id
+        poll_id = getattr(poll, 'id', 'unknown')
+        logger.info(f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from Poll object)")
+    
     logger.debug(
         f"Poll details: name='{getattr(poll, 'name', '')}', server_id={getattr(poll, 'server_id', '')}, channel_id={getattr(poll, 'channel_id', '')}")
 

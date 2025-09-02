@@ -726,7 +726,6 @@ async def restore_scheduled_jobs():
 
         # Process each scheduled poll
         restored_count = 0
-        immediate_posts = 0
         immediate_closes = 0
 
         for poll in scheduled_polls:
@@ -736,46 +735,31 @@ async def restore_scheduled_jobs():
                 logger.debug(
                     f"Poll {int(poll.id)} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}")
 
-                # Check if poll should have already opened
-                if poll.open_time <= now:
-                    # Poll should be active now, post it immediately
-                    time_overdue = (now - poll.open_time).total_seconds()
-                    logger.warning(
-                        f"⏰ SCHEDULER RESTORE - Poll {int(poll.id)} is {time_overdue:.0f} seconds overdue, posting immediately")
+                # All polls should be scheduled only - no immediate posting during restore
+                # Schedule poll to open at its designated time
+                time_until_open = (poll.open_time - now).total_seconds()
 
-                    try:
-                        success = await post_poll_to_channel(bot, poll)
-                        if success:
-                            immediate_posts += 1
-                            logger.info(
-                                f"✅ SCHEDULER RESTORE - Successfully posted overdue poll {int(poll.id)}")
-                        else:
-                            logger.error(
-                                f"❌ SCHEDULER RESTORE - Failed to post overdue poll {int(poll.id)}")
-                    except Exception as post_exc:
-                        logger.error(
-                            f"❌ SCHEDULER RESTORE - Exception posting poll {int(poll.id)}: {post_exc}")
-                        logger.exception(
-                            f"Full traceback for poll {int(poll.id)} posting:")
+                if poll.open_time <= now:
+                    logger.info(
+                        f"📅 SCHEDULER RESTORE - Poll {int(poll.id)} is overdue by {abs(time_until_open):.0f} seconds, scheduling for immediate posting")
                 else:
-                    # Schedule poll to open
-                    time_until_open = (poll.open_time - now).total_seconds()
                     logger.info(
                         f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to open in {time_until_open:.0f} seconds at {poll.open_time}")
 
-                    try:
-                        scheduler.add_job(
-                            post_poll_to_channel,
-                            DateTrigger(run_date=poll.open_time),
-                            args=[bot, poll],
-                            id=f"open_poll_{int(poll.id)}",
-                            replace_existing=True
-                        )
-                        logger.debug(
-                            f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {int(poll.id)}")
-                    except Exception as schedule_exc:
-                        logger.error(
-                            f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {int(poll.id)}: {schedule_exc}")
+                try:
+                    scheduler.add_job(
+                        post_poll_to_channel,
+                        DateTrigger(run_date=poll.open_time),
+                        # Pass poll_id instead of poll object
+                        args=[bot, int(poll.id)],
+                        id=f"open_poll_{int(poll.id)}",
+                        replace_existing=True
+                    )
+                    logger.debug(
+                        f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {int(poll.id)}")
+                except Exception as schedule_exc:
+                    logger.error(
+                        f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {int(poll.id)}: {schedule_exc}")
 
                 # Always schedule poll to close (whether it's active or scheduled)
                 if poll.close_time > now:
@@ -828,7 +812,7 @@ async def restore_scheduled_jobs():
         logger.info(
             f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} polls processed")
         logger.info(
-            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_posts} posted, {immediate_closes} closed")
+            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} closed")
 
         # Debug current scheduler jobs
         current_jobs = scheduler.get_jobs()
@@ -1710,31 +1694,18 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         poll_id = result["poll_id"]
         logger.info(f"Created poll {poll_id} for user {current_user.id}")
 
-        # Use bulletproof scheduling operations
+        # Schedule poll opening and closing - no immediate posting
         try:
-            # Always schedule polls - never post immediately to respect scheduling
-            # Schedule opening with bulletproof error handling
+            # Schedule poll to open at the specified time
             try:
-                # Get the poll object for scheduling
-                db = get_db_session()
-                try:
-                    poll_obj = db.query(Poll).filter(
-                        Poll.id == poll_id).first()
-                    if poll_obj:
-                        scheduler.add_job(
-                            post_poll_to_channel,
-                            DateTrigger(run_date=open_dt),
-                            args=[bot, poll_obj],
-                            id=f"open_poll_{poll_id}",
-                            replace_existing=True
-                        )
-                        logger.info(
-                            f"Scheduled poll {poll_id} to open at {open_dt}")
-                    else:
-                        logger.error(
-                            f"Poll {poll_id} not found for scheduling")
-                finally:
-                    db.close()
+                scheduler.add_job(
+                    post_poll_to_channel,
+                    DateTrigger(run_date=open_dt),
+                    args=[bot, poll_id],  # Pass poll_id instead of poll object
+                    id=f"open_poll_{poll_id}",
+                    replace_existing=True
+                )
+                logger.info(f"Scheduled poll {poll_id} to open at {open_dt}")
             except Exception as schedule_error:
                 logger.error(
                     f"Failed to schedule poll opening: {schedule_error}")
@@ -1742,7 +1713,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
                     schedule_error, poll_id, "poll_opening", bot
                 )
 
-            # Schedule poll to close with bulletproof error handling
+            # Schedule poll to close
             try:
                 scheduler.add_job(
                     close_poll,
@@ -2244,8 +2215,9 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
 
         # Remove scheduled jobs with improved error handling
         jobs_removed = 0
+        poll_id_int = int(getattr(poll, 'id'))
         for job_type in ["open", "close"]:
-            job_id = f"{job_type}_poll_{int(poll.id)}"
+            job_id = f"{job_type}_poll_{poll_id_int}"
             try:
                 if scheduler.get_job(job_id):
                     scheduler.remove_job(job_id)
@@ -2259,7 +2231,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
 
         if jobs_removed > 0:
             logger.info(
-                f"Removed {jobs_removed} scheduled jobs for poll {int(getattr(poll, 'id'))}")
+                f"Removed {jobs_removed} scheduled jobs for poll {poll_id_int}")
 
         # Delete poll and associated votes with detailed logging
         logger.info(f"Starting database deletion for poll {poll_id}")
