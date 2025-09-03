@@ -267,6 +267,13 @@ def add_core_routes(app: FastAPI):
             logger.error(f"Auth callback error: {e}")
             return HTMLResponse("Authentication failed", status_code=400)
 
+    @app.post("/logout")
+    async def logout():
+        """Logout endpoint - clears authentication cookie"""
+        response = RedirectResponse(url="/", status_code=302)
+        response.delete_cookie(key="access_token", httponly=True, secure=True, samesite="lax")
+        return response
+
     @app.get("/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request, current_user: DiscordUser = Depends(require_auth)):
         """User dashboard with HTMX"""
