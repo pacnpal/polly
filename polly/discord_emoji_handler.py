@@ -90,7 +90,7 @@ class DiscordEmojiHandler:
             return None
 
     def is_unicode_emoji(self, text: str) -> bool:
-        """Check if text is a valid Unicode emoji"""
+        """Check if text is a valid Unicode emoji using the emoji library"""
         if not text:
             return False
 
@@ -100,63 +100,44 @@ class DiscordEmojiHandler:
         print(f"🔍 IS_UNICODE_EMOJI DEBUG - Checking text: '{text}' (len: {len(text)})")
         logger.info(f"🔍 IS_UNICODE_EMOJI DEBUG - Checking text: '{text}' (len: {len(text)})")
 
-        # Check for multi-character emoji sequences first (more comprehensive)
-        emoji_pattern = re.compile(
-            r'[\U0001F600-\U0001F64F]|'  # emoticons
-            r'[\U0001F300-\U0001F5FF]|'  # symbols & pictographs
-            r'[\U0001F680-\U0001F6FF]|'  # transport & map symbols
-            r'[\U0001F1E0-\U0001F1FF]|'  # flags (iOS)
-            r'[\U00002702-\U000027B0]|'  # dingbats
-            r'[\U000024C2-\U0001F251]|'  # enclosed characters
-            r'[\U0001F900-\U0001F9FF]|'  # supplemental symbols
-            r'[\U0001FA70-\U0001FAFF]|'  # symbols and pictographs extended-A
-            r'[\U00002600-\U000026FF]|'  # miscellaneous symbols
-            r'[\U0000FE00-\U0000FE0F]'   # variation selectors
-        )
-        
-        # Check if the entire text matches emoji patterns
-        if emoji_pattern.search(text):
-            print(f"✅ IS_UNICODE_EMOJI DEBUG - Found emoji pattern match: '{text}'")
-            logger.info(f"✅ IS_UNICODE_EMOJI DEBUG - Found emoji pattern match: '{text}'")
+        try:
+            # Import the emoji library
+            import emoji
+            
+            # Use emoji.is_emoji() for single emoji validation
+            # This handles complex emoji sequences including variation selectors
+            if emoji.is_emoji(text):
+                print(f"✅ IS_UNICODE_EMOJI DEBUG - Single emoji validated: '{text}'")
+                logger.info(f"✅ IS_UNICODE_EMOJI DEBUG - Single emoji validated: '{text}'")
+                return True
+            
+            # Use emoji.purely_emoji() for strings that contain only emoji characters
+            # This handles multi-character emoji sequences and combinations
+            if emoji.purely_emoji(text):
+                print(f"✅ IS_UNICODE_EMOJI DEBUG - Pure emoji string validated: '{text}'")
+                logger.info(f"✅ IS_UNICODE_EMOJI DEBUG - Pure emoji string validated: '{text}'")
+                return True
+            
+            # Check if the text contains any emoji using emoji_count
+            emoji_count = emoji.emoji_count(text)
+            if emoji_count > 0 and len(text.strip()) <= 10:  # Reasonable length for emoji input
+                print(f"✅ IS_UNICODE_EMOJI DEBUG - Text contains {emoji_count} emoji(s): '{text}'")
+                logger.info(f"✅ IS_UNICODE_EMOJI DEBUG - Text contains {emoji_count} emoji(s): '{text}'")
+                return True
+            
+            print(f"❌ IS_UNICODE_EMOJI DEBUG - Not a valid emoji: '{text}'")
+            logger.info(f"❌ IS_UNICODE_EMOJI DEBUG - Not a valid emoji: '{text}'")
+            return False
+            
+        except Exception as e:
+            print(f"💥 IS_UNICODE_EMOJI DEBUG - Error using emoji library: {e}")
+            logger.error(f"💥 IS_UNICODE_EMOJI DEBUG - Error using emoji library: {e}")
+            
+            # Fallback: if emoji library fails, be permissive
+            # This ensures we don't break existing functionality
+            print(f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing '{text}' due to library error")
+            logger.warning(f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing '{text}' due to library error")
             return True
-
-        # Check if it's a single Unicode emoji character using category
-        if len(text) == 1:
-            import unicodedata
-            try:
-                category = unicodedata.category(text)
-                codepoint = ord(text)
-                print(f"🔍 IS_UNICODE_EMOJI DEBUG - Single char '{text}': category={category}, codepoint={codepoint}")
-                logger.info(f"🔍 IS_UNICODE_EMOJI DEBUG - Single char '{text}': category={category}, codepoint={codepoint}")
-                
-                # More inclusive category check
-                is_emoji = (category.startswith('So') or  # Symbol, other (most emojis)
-                           category.startswith('Sm') or  # Math symbols (some emojis)
-                           category.startswith('Sk') or  # Modifier symbols
-                           codepoint in range(0x1F000, 0x1FAFF) or  # Emoji blocks
-                           codepoint in range(0x2600, 0x27BF) or   # Miscellaneous symbols
-                           codepoint in range(0x1F300, 0x1F9FF) or  # Emoji ranges
-                           codepoint in range(0x1F600, 0x1F64F) or  # Emoticons
-                           codepoint in range(0x1F680, 0x1F6FF) or  # Transport symbols
-                           codepoint in range(0x2700, 0x27BF) or   # Dingbats
-                           codepoint in range(0xFE00, 0xFE0F))     # Variation selectors
-                
-                if is_emoji:
-                    print(f"✅ IS_UNICODE_EMOJI DEBUG - Single char emoji validated: '{text}'")
-                    logger.info(f"✅ IS_UNICODE_EMOJI DEBUG - Single char emoji validated: '{text}'")
-                else:
-                    print(f"❌ IS_UNICODE_EMOJI DEBUG - Single char not emoji: '{text}'")
-                    logger.info(f"❌ IS_UNICODE_EMOJI DEBUG - Single char not emoji: '{text}'")
-                
-                return is_emoji
-            except Exception as e:
-                print(f"💥 IS_UNICODE_EMOJI DEBUG - Error checking single char: {e}")
-                logger.error(f"💥 IS_UNICODE_EMOJI DEBUG - Error checking single char: {e}")
-                return False
-
-        print(f"❌ IS_UNICODE_EMOJI DEBUG - No emoji pattern found: '{text}'")
-        logger.info(f"❌ IS_UNICODE_EMOJI DEBUG - No emoji pattern found: '{text}'")
-        return False
 
     def parse_custom_emoji(self, emoji_text: str) -> Optional[Dict[str, Any]]:
         """Parse custom emoji format <:name:id> or <a:name:id>"""

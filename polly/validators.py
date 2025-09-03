@@ -121,42 +121,56 @@ class PollValidator:
 
     @staticmethod
     def validate_poll_emojis(emojis: List[str]) -> List[str]:
-        """Validate and sanitize poll emojis (supports both Unicode and Discord custom emojis)"""
+        """Validate and sanitize poll emojis using the emoji library for reliable validation"""
         if not emojis or not isinstance(emojis, list):
             return []  # Empty emojis list is valid, will use defaults
 
         valid_emojis = []
-        for i, emoji in enumerate(emojis):
-            if not emoji or not isinstance(emoji, str):
+        for i, emoji_text in enumerate(emojis):
+            if not emoji_text or not isinstance(emoji_text, str):
                 continue  # Skip empty/invalid emojis
 
-            emoji = emoji.strip()
-            if not emoji:
+            emoji_text = emoji_text.strip()
+            if not emoji_text:
                 continue
 
-            # Validate Discord custom emoji format: <:name:id> or <a:name:id>
+            # 1. Validate Discord custom emoji format: <:name:id> or <a:name:id>
             discord_emoji_pattern = r'^<a?:[a-zA-Z0-9_]+:\d+>$'
+            if re.match(discord_emoji_pattern, emoji_text):
+                valid_emojis.append(emoji_text)
+                logger.debug(f"✅ EMOJI VALIDATION - Discord custom emoji validated: {emoji_text}")
+                continue
 
-            # Check if it's a Discord custom emoji
-            if re.match(discord_emoji_pattern, emoji):
-                valid_emojis.append(emoji)
-                logger.debug(
-                    f"✅ EMOJI VALIDATION - Discord custom emoji validated: {emoji}")
-            else:
-                # Check if it's a valid Unicode emoji (basic check for Unicode characters)
-                try:
-                    # Unicode emojis are typically in specific ranges
-                    # This is a basic validation - more sophisticated validation could be added
-                    if len(emoji) <= 10 and any(ord(char) > 127 for char in emoji):
-                        valid_emojis.append(emoji)
-                        logger.debug(
-                            f"✅ EMOJI VALIDATION - Unicode emoji validated: {emoji}")
-                    else:
-                        logger.warning(
-                            f"⚠️ EMOJI VALIDATION - Invalid emoji format, skipping: {emoji}")
-                except Exception as e:
-                    logger.warning(
-                        f"⚠️ EMOJI VALIDATION - Error validating emoji '{emoji}': {e}")
+            # 2. Use the emoji library for reliable Unicode emoji validation
+            try:
+                import emoji
+                
+                # Check if it's a single emoji
+                if emoji.is_emoji(emoji_text):
+                    valid_emojis.append(emoji_text)
+                    logger.debug(f"✅ EMOJI VALIDATION - Single emoji validated: {emoji_text}")
+                    continue
+                
+                # Check if it's a string containing only emoji characters
+                if emoji.purely_emoji(emoji_text):
+                    valid_emojis.append(emoji_text)
+                    logger.debug(f"✅ EMOJI VALIDATION - Pure emoji string validated: {emoji_text}")
+                    continue
+                
+                # Check if it contains any emoji and is reasonably short
+                emoji_count = emoji.emoji_count(emoji_text)
+                if emoji_count > 0 and len(emoji_text) <= 10:
+                    valid_emojis.append(emoji_text)
+                    logger.debug(f"✅ EMOJI VALIDATION - Text with {emoji_count} emoji(s) validated: {emoji_text}")
+                    continue
+                
+                # If emoji library says it's not an emoji, log and skip
+                logger.warning(f"⚠️ EMOJI VALIDATION - Not recognized as emoji by library, skipping: {emoji_text}")
+                
+            except Exception as e:
+                # If emoji library fails, be lenient and include it anyway
+                valid_emojis.append(emoji_text)
+                logger.warning(f"⚠️ EMOJI VALIDATION - Error using emoji library for '{emoji_text}', including anyway: {e}")
 
         return valid_emojis
 
