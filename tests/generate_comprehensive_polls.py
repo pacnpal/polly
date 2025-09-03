@@ -670,6 +670,15 @@ class ComprehensivePollGenerator:
     async def create_poll_with_image_and_combination(self, image_path: str, combination: Dict[str, Any], poll_number: int) -> bool:
         """Create a poll with a specific image using a full combination"""
         try:
+            # Check rate limit before creating poll
+            await self.check_rate_limit()
+            
+            # Increment rate limit counter BEFORE attempting to create poll
+            # This ensures rate limiting works regardless of success/failure
+            if not self.dry_run:
+                self.polls_created_this_minute += 1
+                logger.info(f"🔄 Attempting image poll creation ({self.polls_created_this_minute}/{self.rate_limit_per_minute} this minute)")
+            
             # Create poll data from the combination
             poll_data = self.create_poll_data(combination)
             
