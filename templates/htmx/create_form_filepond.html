@@ -58,34 +58,23 @@
             <div class="mb-3">
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
+                    {% set default_emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'] %}
+                    {% for i in range(1, 3) %}
                     <div class="input-group mb-2">
                         <div class="btn-group">
-                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="1">🇦</button>
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ i }}">{{ default_emojis[i-1] }}</button>
                             <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
-                                    data-bs-toggle="dropdown" data-option="1" aria-expanded="false">
+                                    data-bs-toggle="dropdown" data-option="{{ i }}" aria-expanded="false">
                                 <span class="visually-hidden">Discord Emojis</span>
                             </button>
-                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="1">
+                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ i }}">
                                 <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
                             </ul>
                         </div>
-                        <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
-                        <input type="hidden" name="emoji1" value="🇦">
+                        <input type="text" class="form-control" name="option{{ i }}" placeholder="Option {{ i }}" required>
+                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ i }}" value="{{ default_emojis[i-1] }}">
                     </div>
-                    <div class="input-group mb-2">
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="2">🇧</button>
-                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
-                                    data-bs-toggle="dropdown" data-option="2" aria-expanded="false">
-                                <span class="visually-hidden">Discord Emojis</span>
-                            </button>
-                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="2">
-                                <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
-                            </ul>
-                        </div>
-                        <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
-                        <input type="hidden" name="emoji2" value="🇧">
-                    </div>
+                    {% endfor %}
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm"
                         hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
@@ -102,14 +91,14 @@
                 <div class="col-md-6">
                     <div class="mb-3">
                         <label for="open-time" class="form-label">Open Time <span class="text-danger">*</span></label>
-                        <input type="datetime-local" class="form-control" id="open-time" name="open_time" value="{{ open_time }}" required>
+                        <input type="datetime-local" data-emoji-input="unicode" class="form-control" id="open-time" name="open_time" value="{{ open_time }}" required>
                         <div class="invalid-feedback" id="open-time-error"></div>
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="mb-3">
                         <label for="close-time" class="form-label">Close Time <span class="text-danger">*</span></label>
-                        <input type="datetime-local" class="form-control" id="close-time" name="close_time" value="{{ close_time }}" required>
+                        <input type="datetime-local" data-emoji-input="unicode" class="form-control" id="close-time" name="close_time" value="{{ close_time }}" required>
                         <div class="invalid-feedback" id="close-time-error"></div>
                     </div>
                 </div>
