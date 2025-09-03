@@ -26,6 +26,9 @@ RUN mkdir -p static/uploads logs data
 EXPOSE 8000
 
 # User change
+RUN adduser --disabled-password --gecos "" xyn0th
+RUN chown -R xyn0th:xyn0th /app/static/uploads /app/logs /app/data /app/static /app
+RUN chmod -R 755 /app/static/uploads /app/logs /app/data /app/static
 USER xyn0th
 
 # Create entrypoint script
