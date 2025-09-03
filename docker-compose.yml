@@ -15,7 +15,7 @@ services:
       - ./data:/app/data
       - ./static/uploads:/app/static/uploads
       - ./logs:/app/logs
-    #  - polly_db:/app
+      - ./db:/app/db
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
