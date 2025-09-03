@@ -58,7 +58,6 @@
             <div class="mb-3">
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
-                    {% set default_emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'] %}
                     {% for i in range(2) %}
                     <div class="input-group mb-2">
                         <div class="btn-group">
@@ -453,7 +452,8 @@
 
         function resetEmojiButtonsToDefault() {
             // Reset all emoji buttons that have custom Discord emojis back to default
-            const defaultEmojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'];
+            // Get default emojis from the backend-provided data
+            const defaultEmojis = {{ default_emojis|tojson }};
             
             document.querySelectorAll('.emoji-picker-btn').forEach((button, index) => {
                 const optionNumber = button.dataset.option;

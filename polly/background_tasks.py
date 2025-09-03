@@ -28,10 +28,11 @@ scheduler = AsyncIOScheduler()
 
 
 async def close_poll(poll_id: int):
-    """Close a poll using bulletproof operations"""
+    """Close a poll using bulletproof operations and post final results"""
     try:
         from .poll_operations import BulletproofPollOperations
         from .discord_bot import get_bot_instance
+        from .discord_utils import post_poll_results
 
         # Use bulletproof poll closure
         bot = get_bot_instance()
@@ -48,6 +49,26 @@ async def close_poll(poll_id: int):
         else:
             logger.info(
                 f"Successfully closed poll {poll_id} using bulletproof operations")
+            
+            # Post final results to Discord
+            try:
+                db = get_db_session()
+                try:
+                    from sqlalchemy.orm import joinedload
+                    poll = db.query(Poll).options(joinedload(Poll.votes)).filter(Poll.id == poll_id).first()
+                    if poll:
+                        results_posted = await post_poll_results(bot, poll)
+                        if results_posted:
+                            logger.info(f"Successfully posted final results for poll {poll_id}")
+                        else:
+                            logger.warning(f"Failed to post final results for poll {poll_id}")
+                    else:
+                        logger.error(f"Poll {poll_id} not found for results posting")
+                finally:
+                    db.close()
+            except Exception as results_error:
+                logger.error(f"Error posting results for poll {poll_id}: {results_error}")
+                await notify_error_async(results_error, "Poll Results Posting After Closure", poll_id=poll_id)
 
     except Exception as e:
         # Handle unexpected closure errors with bot owner notification

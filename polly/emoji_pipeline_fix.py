@@ -4,9 +4,10 @@ Unified emoji processing for create and edit operations
 """
 
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple
 from .discord_emoji_handler import DiscordEmojiHandler
 from .validators import PollValidator
+from .database import POLL_EMOJIS
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,6 @@ class UnifiedEmojiProcessor:
     def __init__(self, bot):
         self.bot = bot
         self.emoji_handler = DiscordEmojiHandler(bot)
-        self.default_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
     
     async def process_poll_emojis_unified(self, emoji_inputs: List[str], server_id: int, operation: str = "create") -> Tuple[bool, List[str], str]:
         """
@@ -63,13 +63,13 @@ class UnifiedEmojiProcessor:
             if len(validated_emojis) < len(emoji_inputs):
                 # Fill in missing emojis with defaults
                 for i in range(len(validated_emojis), len(emoji_inputs)):
-                    if i < len(self.default_emojis):
-                        default_emoji = self.default_emojis[i]
+                    if i < len(POLL_EMOJIS):
+                        default_emoji = POLL_EMOJIS[i]
                         # Make sure the default isn't already used
                         while default_emoji in validated_emojis:
                             # Find next available default
-                            next_index = (self.default_emojis.index(default_emoji) + 1) % len(self.default_emojis)
-                            default_emoji = self.default_emojis[next_index]
+                            next_index = (POLL_EMOJIS.index(default_emoji) + 1) % len(POLL_EMOJIS)
+                            default_emoji = POLL_EMOJIS[next_index]
                         validated_emojis.append(default_emoji)
                         logger.info(f"🔧 UNIFIED EMOJI PROCESSOR - Added default emoji for option {i+1}: {default_emoji}")
                         print(f"🔧 UNIFIED EMOJI PROCESSOR - Added default emoji for option {i+1}: {default_emoji}")

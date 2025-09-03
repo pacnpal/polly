@@ -265,7 +265,8 @@ class DiscordEmojiHandler:
             List of valid emoji strings, preserving duplicates for form validation
         """
         processed_emojis = []
-        default_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+        from .database import POLL_EMOJIS
+        default_emojis = POLL_EMOJIS
 
         print(f"🎯 PROCESS_POLL_EMOJIS DEBUG - Starting with {len(emoji_inputs)} emoji inputs for guild {guild_id}")
         logger.info(f"🎯 PROCESS_POLL_EMOJIS DEBUG - Starting with {len(emoji_inputs)} emoji inputs for guild {guild_id}")

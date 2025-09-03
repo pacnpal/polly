@@ -791,8 +791,114 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
         return False
 
 
+async def create_poll_results_embed(poll: Poll) -> discord.Embed:
+    """Create comprehensive results embed for closed polls - ALWAYS shows full breakdown"""
+    poll_name = str(getattr(poll, 'name', ''))
+    poll_question = str(getattr(poll, 'question', ''))
+    
+    embed = discord.Embed(
+        title=f"🏁 Poll Results: {poll_name}",
+        description=poll_question,
+        color=0xff0000,  # Red for closed
+        timestamp=datetime.now(pytz.UTC)
+    )
+
+    # Get results data
+    results = poll.get_results()
+    total_votes = poll.get_total_votes()
+    
+    # Build comprehensive results breakdown
+    results_text = ""
+    
+    if total_votes > 0:
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            votes = results.get(i, 0)
+            percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+
+            # Create enhanced progress bar
+            bar_length = 15
+            filled = int((percentage / 100) * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled) if filled > 0 else "░" * bar_length
+
+            # Format the option with enhanced styling
+            results_text += f"{emoji} **{option}**\n"
+            results_text += f"`{bar}` **{votes}** votes (**{percentage:.1f}%**)\n\n"
+    else:
+        # Show options even with no votes
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            bar = "░" * 15  # Empty bar
+            results_text += f"{emoji} **{option}**\n"
+            results_text += f"`{bar}` **0** votes (**0.0%**)\n\n"
+
+    embed.add_field(
+        name="📊 Final Results",
+        value=results_text or "No votes cast",
+        inline=False
+    )
+
+    # Total votes
+    embed.add_field(
+        name="🗳️ Total Votes",
+        value=f"**{total_votes}**",
+        inline=True
+    )
+
+    # Winner announcement
+    if total_votes > 0:
+        winners = poll.get_winner()
+        if winners:
+            if len(winners) == 1:
+                winner_emoji = poll.emojis[winners[0]] if winners[0] < len(poll.emojis) else POLL_EMOJIS[winners[0]]
+                winner_option = poll.options[winners[0]]
+                winner_votes = results.get(winners[0], 0)
+                winner_percentage = (winner_votes / total_votes * 100) if total_votes > 0 else 0
+                embed.add_field(
+                    name="🏆 Winner",
+                    value=f"{winner_emoji} **{winner_option}**\n{winner_votes} votes ({winner_percentage:.1f}%)",
+                    inline=True
+                )
+            else:
+                # Multiple winners (tie)
+                winner_text = "**TIE!**\n"
+                for winner_idx in winners:
+                    winner_emoji = poll.emojis[winner_idx] if winner_idx < len(poll.emojis) else POLL_EMOJIS[winner_idx]
+                    winner_option = poll.options[winner_idx]
+                    winner_votes = results.get(winner_idx, 0)
+                    winner_percentage = (winner_votes / total_votes * 100) if total_votes > 0 else 0
+                    winner_text += f"{winner_emoji} {winner_option} ({winner_votes} votes, {winner_percentage:.1f}%)\n"
+                embed.add_field(name="🏆 Winners", value=winner_text, inline=True)
+    else:
+        embed.add_field(
+            name="🏆 Winner",
+            value="No votes cast",
+            inline=True
+        )
+
+    # Poll type indicator
+    poll_anonymous = bool(getattr(poll, 'anonymous', False))
+    poll_multiple_choice = bool(getattr(poll, 'multiple_choice', False))
+    
+    poll_type = []
+    if poll_anonymous:
+        poll_type.append("🔒 Anonymous")
+    if poll_multiple_choice:
+        poll_type.append("☑️ Multiple Choice")
+    
+    if poll_type:
+        embed.add_field(
+            name="📋 Poll Type",
+            value=" • ".join(poll_type),
+            inline=False
+        )
+
+    embed.set_footer(text="Poll completed • Created by Polly")
+    return embed
+
+
 async def post_poll_results(bot: commands.Bot, poll: Poll):
-    """Post final results when poll closes"""
+    """Post final results when poll closes - always shows full breakdown for all polls"""
     try:
         poll_channel_id = getattr(poll, 'channel_id', None)
         channel = bot.get_channel(int(str(poll_channel_id)))
@@ -803,11 +909,9 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
         if not isinstance(channel, discord.TextChannel):
             return False
 
-        # Create results embed
-        embed = await create_poll_embed(poll, show_results=True)
+        # Create comprehensive results embed - ALWAYS show results for closed polls
+        embed = await create_poll_results_embed(poll)
         poll_name = str(getattr(poll, 'name', ''))
-        embed.title = f"🏁 Poll Results: {poll_name}"
-        embed.color = 0xff0000  # Red for closed
 
         # Post results message
         await channel.send(f"📊 **Poll '{poll_name}' has ended!**", embed=embed)

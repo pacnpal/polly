@@ -67,7 +67,8 @@ async def create_quick_poll_command(
 
     # Collect options
     options = [option1, option2]
-    emojis = ["🇦", "🇧", "🇨", "🇩", "🇪"][:len(options)]
+    from .database import POLL_EMOJIS
+    emojis = POLL_EMOJIS[:len(options)]
     for opt in [option3, option4, option5]:
         if opt:
             options.append(opt)

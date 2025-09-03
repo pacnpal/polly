@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta
 from html import escape
 import pytz
-import random
 import uuid
 import aiofiles
 import os
@@ -17,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from apscheduler.triggers.date import DateTrigger
 
 from .auth import require_auth, DiscordUser
-from .database import get_db_session, Poll, Vote, UserPreference, TypeSafeColumn
+from .database import get_db_session, Poll, Vote, UserPreference, TypeSafeColumn, POLL_EMOJIS
 from .discord_utils import get_user_guilds_with_channels
 from .poll_operations import BulletproofPollOperations
 from .error_handler import PollErrorHandler
@@ -313,14 +312,14 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
 async def cleanup_image(image_path: str) -> bool:
     """Safely delete an image file"""
     try:
-        if image_path and os.path.exists(image_path):
+        if image_path and isinstance(image_path, str) and os.path.exists(image_path):
             os.remove(image_path)
             logger.info(f"Cleaned up image: {image_path}")
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
         from .error_handler import notify_error
-        notify_error(e, "Image Cleanup", image_path=image_path)
+        notify_error(e, "Image Cleanup", image_path=str(image_path))
     return False
 
 
@@ -734,7 +733,8 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
         "timezones": timezones,
         "open_time": open_time,
         "close_time": close_time,
-        "user_preferences": user_prefs
+        "user_preferences": user_prefs,
+        "default_emojis": POLL_EMOJIS
     })
 
 
@@ -793,8 +793,7 @@ async def add_option_htmx(request: Request):
             logger.warning(f"Maximum options (10) reached, cannot add option {option_num}")
             return ""  # Return empty to prevent adding more options
             
-        default_emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯']
-        emoji = default_emojis[min(option_num - 1, len(default_emojis) - 1)]
+        emoji = POLL_EMOJIS[min(option_num - 1, len(POLL_EMOJIS) - 1)]
         
         logger.debug(f"✅ ADD OPTION - Adding option {option_num} with emoji {emoji} (found {existing_options} existing options)")
 
@@ -809,7 +808,7 @@ async def add_option_htmx(request: Request):
         
         # Fallback: assume we're adding the 3rd option
         option_num = 3
-        emoji = '🇨'
+        emoji = POLL_EMOJIS[min(option_num - 1, len(POLL_EMOJIS) - 1)]
         logger.debug(f"⚠️ ADD OPTION FALLBACK - Using option {option_num} with emoji {emoji}")
         
         return templates.TemplateResponse("htmx/components/poll_option.html", {
@@ -1518,7 +1517,7 @@ async def get_poll_results_realtime_htmx(poll_id: int, request: Request, current
             option_votes = results.get(i, 0)
             percentage = (option_votes / total_votes *
                           100) if total_votes > 0 else 0
-            emoji = emojis[i] if i < len(emojis) else "🇦"
+            emoji = emojis[i] if i < len(emojis) else POLL_EMOJIS[min(i, len(POLL_EMOJIS) - 1)]
             option_text = options[i]
 
             html_parts.append(f'''
@@ -1622,7 +1621,7 @@ async def delete_poll_htmx(poll_id: int, request: Request, current_user: Discord
         # Clean up image file if exists
         image_path = TypeSafeColumn.get_string(poll, 'image_path')
         if image_path:
-            await cleanup_image(image_path)
+            await cleanup_image(str(image_path))
 
         # Delete associated votes first
         db.query(Vote).filter(Vote.poll_id == poll_id).delete()
@@ -1744,7 +1743,8 @@ async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: 
             "guilds": user_guilds,
             "timezones": timezones,
             "open_time": open_time,
-            "close_time": close_time
+            "close_time": close_time,
+            "default_emojis": POLL_EMOJIS
         })
     finally:
         db.close()
