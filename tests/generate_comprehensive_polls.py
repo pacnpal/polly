@@ -72,7 +72,8 @@ class ComprehensivePollGenerator:
     
     def __init__(self, dry_run: bool = False, limit: Optional[int] = None, 
                  server_id: Optional[str] = None, channel_id: Optional[str] = None,
-                 user_id: Optional[str] = None, role_id: Optional[str] = None):
+                 user_id: Optional[str] = None, role_id: Optional[str] = None,
+                 rate_limit_per_minute: int = 30):
         self.dry_run = dry_run
         self.limit = limit
         self.generated_count = 0
@@ -80,6 +81,11 @@ class ComprehensivePollGenerator:
         self.error_count = 0
         self.combinations = []
         self.should_cleanup = True  # Default to cleanup
+        
+        # Rate limiting
+        self.rate_limit_per_minute = rate_limit_per_minute
+        self.polls_created_this_minute = 0
+        self.current_minute_start = datetime.now()
         
         # Test data - use provided IDs or defaults
         self.test_user_id = user_id or "123456789012345678"  # Mock Discord user ID
@@ -415,9 +421,38 @@ class ComprehensivePollGenerator:
             # Fallback to default
             return self.letter_emojis[:count]
     
+    async def check_rate_limit(self):
+        """Check and enforce rate limiting"""
+        if self.dry_run:
+            return  # No rate limiting for dry runs
+            
+        now = datetime.now()
+        
+        # Check if we've moved to a new minute
+        if (now - self.current_minute_start).total_seconds() >= 60:
+            # Reset for new minute
+            self.current_minute_start = now
+            self.polls_created_this_minute = 0
+            logger.info(f"🕐 Rate limit reset - new minute started")
+        
+        # Check if we've hit the rate limit
+        if self.polls_created_this_minute >= self.rate_limit_per_minute:
+            # Calculate how long to wait
+            seconds_until_next_minute = 60 - (now - self.current_minute_start).total_seconds()
+            logger.info(f"⏳ Rate limit reached ({self.polls_created_this_minute}/{self.rate_limit_per_minute}). Waiting {seconds_until_next_minute:.1f} seconds...")
+            await asyncio.sleep(seconds_until_next_minute + 1)  # Add 1 second buffer
+            
+            # Reset for new minute
+            self.current_minute_start = datetime.now()
+            self.polls_created_this_minute = 0
+            logger.info(f"🕐 Rate limit reset after waiting")
+
     async def create_single_poll(self, combination: Dict[str, Any]) -> Tuple[bool, str]:
         """Create a single poll from combination data"""
         try:
+            # Check rate limit before creating poll
+            await self.check_rate_limit()
+            
             poll_data = self.create_poll_data(combination)
             
             if self.dry_run:
@@ -454,7 +489,9 @@ class ComprehensivePollGenerator:
             
             if result["success"]:
                 poll_id = result["poll_id"]
-                logger.info(f"✅ Created poll {poll_id}: {poll_data['name']}")
+                # Increment rate limit counter for successful polls
+                self.polls_created_this_minute += 1
+                logger.info(f"✅ Created poll {poll_id}: {poll_data['name']} ({self.polls_created_this_minute}/{self.rate_limit_per_minute} this minute)")
                 return True, f"Created poll {poll_id}"
             else:
                 error_msg = result.get("error", "Unknown error")
@@ -806,6 +843,10 @@ async def main():
     parser.add_argument("--role-id", type=str,
                        help="Discord role ID to use for role pings")
     
+    # Rate limiting option
+    parser.add_argument("--rate-limit", type=int, default=30,
+                       help="Maximum number of polls to create per minute (default: 30)")
+    
     args = parser.parse_args()
     
     # Initialize database first
@@ -848,7 +889,8 @@ async def main():
             server_id=args.server_id,
             channel_id=args.channel_id,
             user_id=args.user_id,
-            role_id=args.role_id
+            role_id=args.role_id,
+            rate_limit_per_minute=args.rate_limit
         )
         
         # Enable real images if requested

@@ -206,8 +206,23 @@ class PollValidator:
                             logger.debug(f"✅ EMOJI VALIDATION - Text with {emoji_count} emoji(s) validated (no preparation): {emoji_text}")
                         continue
                     
-                    # If emoji library says it's not an emoji, log and skip
-                    logger.warning(f"⚠️ EMOJI VALIDATION - Not recognized as emoji by library, skipping: {emoji_text}")
+                    # If emoji library says it's not an emoji, check if it's a flag emoji or other special case
+                    # Flag emojis (🇦🇧🇨 etc.) are often not recognized by the emoji library but are valid
+                    if len(emoji_text) <= 4 and any(ord(char) >= 0x1F1E6 and ord(char) <= 0x1F1FF for char in emoji_text):
+                        # This looks like a flag emoji or regional indicator
+                        valid_emojis.append(emoji_text)
+                        logger.debug(f"✅ EMOJI VALIDATION - Flag/regional emoji accepted: {emoji_text}")
+                        continue
+                    
+                    # Check for other common emoji patterns that might not be recognized
+                    if len(emoji_text) <= 6 and any(ord(char) >= 0x1F300 for char in emoji_text):
+                        # This looks like a Unicode emoji in the emoji block
+                        valid_emojis.append(emoji_text)
+                        logger.debug(f"✅ EMOJI VALIDATION - Unicode emoji pattern accepted: {emoji_text}")
+                        continue
+                    
+                    # Only log as warning if it's not a common emoji pattern
+                    logger.debug(f"⚠️ EMOJI VALIDATION - Not recognized as emoji by library, skipping: {emoji_text}")
                     
                 except Exception as e:
                     # If emoji library fails, be lenient and include it anyway

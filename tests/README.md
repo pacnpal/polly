@@ -122,6 +122,38 @@ uv run tests/generate_comprehensive_polls.py \
   --role-id "777888999000111222"
 ```
 
+#### Rate Limiting
+
+The script includes built-in rate limiting to prevent overwhelming Discord's API:
+
+```bash
+# Default rate limit (30 polls per minute)
+uv run tests/generate_comprehensive_polls.py --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+
+# Custom rate limit (10 polls per minute for conservative testing)
+uv run tests/generate_comprehensive_polls.py --rate-limit 10 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+
+# Higher rate limit (60 polls per minute for faster testing)
+uv run tests/generate_comprehensive_polls.py --rate-limit 60 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+
+# No rate limiting (dry run mode automatically disables rate limiting)
+uv run tests/generate_comprehensive_polls.py --dry-run --limit 100
+```
+
+**Rate Limiting Features:**
+- **Automatic Enforcement**: Tracks polls created per minute and enforces limits
+- **Smart Waiting**: When limit is reached, waits until next minute with progress logging
+- **Real-time Tracking**: Shows current usage in logs: `(15/30 this minute)`
+- **Configurable Limits**: Adjust rate limit based on your Discord server's needs
+- **Dry Run Bypass**: No rate limiting during dry runs for fast testing
+
+**Rate Limiting Logs:**
+```
+🕐 Rate limit reset - new minute started
+⏳ Rate limit reached (30/30). Waiting 23.4 seconds...
+✅ Created poll 123: Test Poll (15/30 this minute)
+```
+
 #### Real Image Testing
 
 ```bash
@@ -196,6 +228,21 @@ Total unique combinations used: 156
 - `custom`: Discord custom emojis (requires bot connection)
 
 The `random` emoji type provides much more variety by selecting from extended pools of 40+ emojis in each category.
+
+**Improved Emoji Validation**: The emoji validation system has been enhanced to gracefully handle all Unicode emoji patterns:
+
+- **Flag Emojis**: Regional indicator symbols (🇦-🇿) are now properly recognized
+- **Unicode Patterns**: Common emoji Unicode blocks are automatically detected
+- **Graceful Fallback**: Unrecognized patterns are handled without warnings
+- **Smart Detection**: Uses Unicode ranges to identify valid emoji characters
+- **Clean Logging**: Reduced noise from emoji validation warnings
+
+This means you'll no longer see warnings like:
+```
+⚠️ EMOJI VALIDATION - Not recognized as emoji by library, skipping: 🇦
+```
+
+Instead, flag emojis and other Unicode emoji patterns are automatically accepted and processed correctly.
 
 #### Testing and Troubleshooting
 
