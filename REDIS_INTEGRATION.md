@@ -49,7 +49,20 @@ REDIS_PASSWORD=
 
 ### Docker Configuration
 
-The application will connect to Redis running on the remote server at port 6379. No additional Docker configuration is needed for the basic setup.
+The Docker Compose setup includes a Redis service that runs alongside the Polly application:
+
+- **Redis Service**: Runs on port 6340 (mapped from container port 6379)
+- **Password Protection**: Uses `REDIS_PASSWORD` environment variable (defaults to `polly_redis_pass`)
+- **Persistent Storage**: Redis data is stored in a Docker volume for persistence
+- **Health Checks**: Automatic health monitoring for both Redis and Polly services
+- **Network Isolation**: Services communicate over a dedicated Docker network
+
+To start the complete stack:
+```bash
+docker-compose up -d
+```
+
+This will start both the Redis server and the Polly application with proper service dependencies.
 
 ## Usage Examples
 
