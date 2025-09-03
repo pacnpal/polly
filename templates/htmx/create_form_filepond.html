@@ -59,20 +59,20 @@
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
                     {% set default_emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'] %}
-                    {% for i in range(1, 3) %}
+                    {% for i in range(2) %}
                     <div class="input-group mb-2">
                         <div class="btn-group">
-                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ i }}">{{ default_emojis[i-1] }}</button>
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ default_emojis[loop.index0] }}</button>
                             <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
-                                    data-bs-toggle="dropdown" data-option="{{ i }}" aria-expanded="false">
+                                    data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
                                 <span class="visually-hidden">Discord Emojis</span>
                             </button>
-                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ i }}">
+                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ loop.index }}">
                                 <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
                             </ul>
                         </div>
-                        <input type="text" class="form-control" name="option{{ i }}" placeholder="Option {{ i }}" required>
-                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ i }}" value="{{ default_emojis[i-1] }}">
+                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" required>
+                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ default_emojis[loop.index0] }}">
                     </div>
                     {% endfor %}
                 </div>
@@ -580,68 +580,68 @@
             });
         }
 
-    // Time validation
-    const openTimeInput = document.getElementById('open-time');
-    const closeTimeInput = document.getElementById('close-time');
-    const timezoneSelect = document.getElementById('timezone');
-    const openTimeError = document.getElementById('open-time-error');
-    const closeTimeError = document.getElementById('close-time-error');
-    const form = openTimeInput.closest('form');
+        // Time validation
+        const openTimeInput = document.getElementById('open-time');
+        const closeTimeInput = document.getElementById('close-time');
+        const timezoneSelect = document.getElementById('timezone');
+        const openTimeError = document.getElementById('open-time-error');
+        const closeTimeError = document.getElementById('close-time-error');
+        const form = openTimeInput.closest('form');
 
-    function validateTimes() {
-        let isValid = true;
+        function validateTimes() {
+            let isValid = true;
 
-        // Clear previous errors
-        openTimeInput.classList.remove('is-invalid');
-        closeTimeInput.classList.remove('is-invalid');
-        openTimeError.textContent = '';
-        closeTimeError.textContent = '';
+            // Clear previous errors
+            openTimeInput.classList.remove('is-invalid');
+            closeTimeInput.classList.remove('is-invalid');
+            openTimeError.textContent = '';
+            closeTimeError.textContent = '';
 
-        if (openTimeInput.value && closeTimeInput.value) {
-            const openTime = new Date(openTimeInput.value);
-            const closeTime = new Date(closeTimeInput.value);
+            if (openTimeInput.value && closeTimeInput.value) {
+                const openTime = new Date(openTimeInput.value);
+                const closeTime = new Date(closeTimeInput.value);
+                
+                // Check if close time is after open time (basic validation)
+                if (closeTime <= openTime) {
+                    closeTimeInput.classList.add('is-invalid');
+                    closeTimeError.textContent = 'Close time must be after open time';
+                    isValid = false;
+                }
+            }
+
+            return isValid;
+        }
+
+        function showImageUploadStatus(type, message) {
+            // Create or update status message
+            let statusDiv = document.getElementById('image-upload-status');
+            if (!statusDiv) {
+                statusDiv = document.createElement('div');
+                statusDiv.id = 'image-upload-status';
+                statusDiv.className = 'mt-2';
+                document.querySelector('.filepond-container').appendChild(statusDiv);
+            }
+
+            const alertClass = type === 'success' ? 'alert-success' : 
+                              type === 'error' ? 'alert-danger' : 'alert-info';
             
-            // Check if close time is after open time (basic validation)
-            if (closeTime <= openTime) {
-                closeTimeInput.classList.add('is-invalid');
-                closeTimeError.textContent = 'Close time must be after open time';
-                isValid = false;
-            }
+            statusDiv.innerHTML = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                const alert = statusDiv.querySelector('.alert');
+                if (alert) {
+                    alert.classList.remove('show');
+                    setTimeout(() => statusDiv.innerHTML = '', 150);
+                }
+            }, 3000);
         }
-
-        return isValid;
-    }
-
-    function showImageUploadStatus(type, message) {
-        // Create or update status message
-        let statusDiv = document.getElementById('image-upload-status');
-        if (!statusDiv) {
-            statusDiv = document.createElement('div');
-            statusDiv.id = 'image-upload-status';
-            statusDiv.className = 'mt-2';
-            document.querySelector('.filepond-container').appendChild(statusDiv);
-        }
-
-        const alertClass = type === 'success' ? 'alert-success' : 
-                          type === 'error' ? 'alert-danger' : 'alert-info';
-        
-        statusDiv.innerHTML = `
-            <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
-
-        // Auto-hide after 3 seconds
-        setTimeout(() => {
-            const alert = statusDiv.querySelector('.alert');
-            if (alert) {
-                alert.classList.remove('show');
-                setTimeout(() => statusDiv.innerHTML = '', 150);
-            }
-        }, 3000);
-    }
 
         // Validate on input change
         if (openTimeInput) openTimeInput.addEventListener('change', validateTimes);

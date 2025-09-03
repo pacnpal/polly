@@ -1207,7 +1207,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
                 else:
                     validated_data['open_time'] = open_dt
                     validated_data['close_time'] = close_dt
-        except Exception as e:
+        except Exception:
             validation_errors.append({
                 "field_name": "Poll Times",
                 "message": "Invalid date/time format",
@@ -1320,14 +1320,14 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         # Simple uniqueness check - only validation we do
         if len(set(emojis)) != len(emojis):
             logger.warning(f"Duplicate emojis detected in poll creation: {emojis}")
-            print(f"❌ SIMPLE EMOJI VALIDATION - Duplicates found! Failing validation.")
+            print("❌ SIMPLE EMOJI VALIDATION - Duplicates found! Failing validation.")
             return templates.TemplateResponse("htmx/components/alert_error.html", {
                 "request": request,
                 "message": "Each poll option must have a unique emoji. Please select different emojis for each option."
             })
         else:
-            print(f"✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
-            logger.info(f"✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
+            print("✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
+            logger.info("✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
 
         # Extract validated data
         name = validated_data['name']
