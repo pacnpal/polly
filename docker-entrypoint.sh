@@ -6,6 +6,7 @@ echo "Starting Polly Discord Bot..."
 # Ensure directories exist and have proper permissions
 echo "Setting up directories and permissions..."
 mkdir -p static/uploads logs data
+chmod 755 static
 chmod 755 static/uploads
 chmod 755 logs
 chmod 755 data
