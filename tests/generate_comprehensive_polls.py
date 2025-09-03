@@ -69,7 +69,9 @@ logger = logging.getLogger(__name__)
 class ComprehensivePollGenerator:
     """Generates comprehensive test polls covering all possible combinations"""
     
-    def __init__(self, dry_run: bool = False, limit: Optional[int] = None):
+    def __init__(self, dry_run: bool = False, limit: Optional[int] = None, 
+                 server_id: Optional[str] = None, channel_id: Optional[str] = None,
+                 user_id: Optional[str] = None, role_id: Optional[str] = None):
         self.dry_run = dry_run
         self.limit = limit
         self.generated_count = 0
@@ -78,11 +80,11 @@ class ComprehensivePollGenerator:
         self.combinations = []
         self.should_cleanup = True  # Default to cleanup
         
-        # Test data
-        self.test_user_id = "123456789012345678"  # Mock Discord user ID
-        self.test_server_id = "987654321098765432"  # Mock Discord server ID
-        self.test_channel_id = "111222333444555666"  # Mock Discord channel ID
-        self.test_role_id = "777888999000111222"  # Mock Discord role ID
+        # Test data - use provided IDs or defaults
+        self.test_user_id = user_id or "123456789012345678"  # Mock Discord user ID
+        self.test_server_id = server_id or "987654321098765432"  # Mock Discord server ID
+        self.test_channel_id = channel_id or "111222333444555666"  # Mock Discord channel ID
+        self.test_role_id = role_id or "777888999000111222"  # Mock Discord role ID
         
         # Sample poll content
         self.poll_names = [
@@ -128,6 +130,29 @@ class ComprehensivePollGenerator:
         self.letter_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
         self.symbol_emojis = ["⭐", "❤️", "🔥", "👍", "👎", "✅", "❌", "⚠️", "❓", "❗"]
         
+        # Extended emoji sets for random selection
+        self.all_unicode_emojis = [
+            "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
+            "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
+            "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🤩",
+            "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣",
+            "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬"
+        ]
+        
+        self.all_symbol_emojis = [
+            "⭐", "❤️", "🔥", "👍", "👎", "✅", "❌", "⚠️", "❓", "❗",
+            "💯", "💢", "💥", "💫", "💦", "💨", "🕳️", "💣", "💤", "👋",
+            "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟",
+            "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎"
+        ]
+        
+        self.all_letter_emojis = [
+            "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯",
+            "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹",
+            "🇺", "🇻", "🇼", "🇽", "🇾", "🇿", "1️⃣", "2️⃣", "3️⃣", "4️⃣",
+            "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔢", "#️⃣", "*️⃣", "⏏️"
+        ]
+        
         # Timezones for testing
         self.test_timezones = [
             "UTC",
@@ -161,7 +186,7 @@ class ComprehensivePollGenerator:
         image_options = [True, False]
         
         # Emoji types to test
-        emoji_types = ["default", "unicode", "symbols", "mixed", "custom"]
+        emoji_types = ["default", "unicode", "symbols", "mixed", "random", "custom"]
         
         # Scheduling options
         schedule_types = ["immediate", "future", "far_future"]
@@ -356,6 +381,8 @@ class ComprehensivePollGenerator:
     
     def generate_emojis(self, emoji_type: str, count: int) -> List[str]:
         """Generate emojis based on type and count"""
+        import random
+        
         if emoji_type == "default":
             return self.letter_emojis[:count]
         elif emoji_type == "unicode":
@@ -373,6 +400,10 @@ class ComprehensivePollGenerator:
                 else:
                     emojis.append(self.letter_emojis[i % len(self.letter_emojis)])
             return emojis
+        elif emoji_type == "random":
+            # Randomly select from all available emoji types
+            all_emojis = self.all_unicode_emojis + self.all_symbol_emojis + self.all_letter_emojis
+            return random.sample(all_emojis, min(count, len(all_emojis)))
         else:
             # Fallback to default
             return self.letter_emojis[:count]
@@ -742,9 +773,26 @@ async def main():
     parser.add_argument("--no-cleanup", action="store_true",
                        help="Keep the sample-images repository after testing")
     
+    # Discord configuration options
+    parser.add_argument("--server-id", type=str,
+                       help="Discord server/guild ID to create polls in")
+    parser.add_argument("--channel-id", type=str,
+                       help="Discord channel ID to create polls in")
+    parser.add_argument("--user-id", type=str,
+                       help="Discord user ID to use as poll creator")
+    parser.add_argument("--role-id", type=str,
+                       help="Discord role ID to use for role pings")
+    
     args = parser.parse_args()
     
-    generator = ComprehensivePollGenerator(dry_run=args.dry_run, limit=args.limit)
+    generator = ComprehensivePollGenerator(
+        dry_run=args.dry_run, 
+        limit=args.limit,
+        server_id=args.server_id,
+        channel_id=args.channel_id,
+        user_id=args.user_id,
+        role_id=args.role_id
+    )
     
     # Enable real images if requested
     if args.use_real_images or args.use_all_images:

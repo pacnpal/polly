@@ -105,6 +105,23 @@ uv run tests/generate_comprehensive_polls.py --limit 100
 uv run tests/generate_comprehensive_polls.py --export-json
 ```
 
+#### Discord Configuration
+
+```bash
+# Use specific Discord server and channel IDs
+uv run tests/generate_comprehensive_polls.py --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+
+# Use specific user and role IDs
+uv run tests/generate_comprehensive_polls.py --user-id "YOUR_USER_ID" --role-id "YOUR_ROLE_ID"
+
+# Complete Discord configuration
+uv run tests/generate_comprehensive_polls.py \
+  --server-id "987654321098765432" \
+  --channel-id "111222333444555666" \
+  --user-id "123456789012345678" \
+  --role-id "777888999000111222"
+```
+
 #### Real Image Testing
 
 ```bash
@@ -127,11 +144,12 @@ The comprehensive poll generator covers:
 - **Visibility**: Anonymous, public
 - **Media**: With images, without images (including real images)
 - **Role Pings**: Enabled, disabled
-- **Emojis**: Default Unicode, custom Discord emojis, mixed
+- **Emojis**: Default Unicode, custom Discord emojis, mixed, **random selection**
 - **Scheduling**: Immediate, future scheduled, far future
 - **Timezones**: All major timezones
 - **Edge Cases**: Long content, special characters, Unicode
 - **Random Combinations**: When using `--use-all-images`, each image gets a random combination of features
+- **Random Emojis**: New "random" emoji type selects from extended emoji pools for variety
 
 #### Output and Logging
 
@@ -158,6 +176,26 @@ Total unique combinations used: 156
 2. **Real Images Mode** (`--use-real-images`): Uses real images from sample-images repository
 3. **Ultimate Mode** (`--use-all-images`): Creates one poll per real image with random feature combinations (2000+ polls)
 4. **Export Mode** (`--export-json`): Exports poll configurations to JSON without creating polls
+
+#### Configuration Options
+
+**Discord IDs**: By default, the script uses mock Discord IDs for testing. To use real Discord server/channel/user/role IDs:
+
+- `--server-id`: Your Discord server (guild) ID where polls will be created
+- `--channel-id`: Your Discord channel ID where polls will be posted  
+- `--user-id`: Your Discord user ID (will be set as poll creator)
+- `--role-id`: Your Discord role ID (used for role ping testing)
+
+**Emoji Types**: The script now supports these emoji types:
+
+- `default`: Letter emojis (🇦, 🇧, 🇨, etc.)
+- `unicode`: Face emojis (😀, 😃, 😄, etc.)
+- `symbols`: Symbol emojis (⭐, ❤️, 🔥, etc.)
+- `mixed`: Combination of all types
+- `random`: **NEW** - Randomly selects from extended emoji pools (50+ emojis per type)
+- `custom`: Discord custom emojis (requires bot connection)
+
+The `random` emoji type provides much more variety by selecting from extended pools of 40+ emojis in each category.
 
 ### Other Poll Generation Tools
 
