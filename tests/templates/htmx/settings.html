@@ -1,0 +1,70 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-cog me-2"></i>Settings
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form hx-post="/htmx/settings" hx-target="#main-content" hx-indicator="#settings-loading">
+                        <div class="mb-4">
+                            <h6 class="text-muted mb-3">
+                                <i class="fas fa-clock me-2"></i>Timezone Preferences
+                            </h6>
+                            
+                            <div class="mb-3">
+                                <label for="timezone" class="form-label">
+                                    Default Timezone
+                                    <small class="text-muted">(Used for displaying poll times and creating new polls)</small>
+                                </label>
+                                <select class="form-select" id="timezone" name="timezone" required>
+                                    {% for tz in timezones %}
+                                    <option value="{{ tz.name }}" {% if tz.name == user_prefs.default_timezone %}selected{% endif %}>
+                                        {{ tz.display }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">
+                                    Current timezone: <strong>{{ user_prefs.default_timezone }}</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h6 class="text-muted mb-3">
+                                <i class="fas fa-info-circle me-2"></i>About Timezone Settings
+                            </h6>
+                            <div class="alert alert-info">
+                                <ul class="mb-0">
+                                    <li>All poll times will be displayed in your selected timezone</li>
+                                    <li>New polls will default to your selected timezone</li>
+                                    <li>Existing polls will be converted to show in your timezone</li>
+                                    <li>Poll data is stored in UTC for accuracy across timezones</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i>Save Settings
+                            </button>
+                            <button type="button" class="btn btn-secondary" 
+                                    hx-get="/htmx/polls" hx-target="#main-content">
+                                <i class="fas fa-arrow-left me-1"></i>Back to Polls
+                            </button>
+                        </div>
+
+                        <div id="settings-loading" class="htmx-indicator text-center mt-3">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">Saving...</span>
+                            </div>
+                            <span class="ms-2">Saving settings...</span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

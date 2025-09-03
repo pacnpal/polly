@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Polly</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .poll-card {
+            transition: transform 0.2s;
+        }
+        .poll-card:hover {
+            transform: translateY(-2px);
+        }
+        .status-badge {
+            font-size: 0.75rem;
+        }
+        .timezone-display {
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-poll me-2"></i>Polly
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <i class="fas fa-user me-1"></i>{{ user.username }}
+                </span>
+                <a class="nav-link" href="/">
+                    <i class="fas fa-home me-1"></i>Home
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                        </h5>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        <button class="list-group-item list-group-item-action active" onclick="showSection('polls')">
+                            <i class="fas fa-poll me-2"></i>My Polls
+                        </button>
+                        <button class="list-group-item list-group-item-action" onclick="showSection('create')">
+                            <i class="fas fa-plus me-2"></i>Create Poll
+                        </button>
+                        <button class="list-group-item list-group-item-action" onclick="showSection('servers')">
+                            <i class="fas fa-server me-2"></i>Servers
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Quick Stats</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center">
+                            <div class="mb-2">
+                                <span class="badge bg-primary" id="total-polls">0</span>
+                                <small class="text-muted d-block">Total Polls</small>
+                            </div>
+                            <div class="mb-2">
+                                <span class="badge bg-success" id="active-polls">0</span>
+                                <small class="text-muted d-block">Active Polls</small>
+                            </div>
+                            <div>
+                                <span class="badge bg-info" id="total-votes">0</span>
+                                <small class="text-muted d-block">Total Votes</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-9">
+                <!-- My Polls Section -->
+                <div id="polls-section" class="section active">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2><i class="fas fa-poll me-2"></i>My Polls</h2>
+                        <button class="btn btn-primary" onclick="showSection('create')">
+                            <i class="fas fa-plus me-1"></i>Create New Poll
+                        </button>
+                    </div>
+
+                    <div class="row" id="polls-container">
+                        <div class="col-12 text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading your polls...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Create Poll Section -->
+                <div id="create-section" class="section" style="display: none;">
+                    <h2><i class="fas fa-plus me-2"></i>Create New Poll</h2>
+                    
+                    <form id="create-poll-form">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">Poll Details</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="poll-name" class="form-label">Poll Name <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="poll-name" name="name" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="timezone" class="form-label">Timezone</label>
+                                            <select class="form-select" id="timezone" name="timezone">
+                                                <option value="UTC">Loading timezones...</option>
+                                            </select>
+                                            <div class="timezone-display mt-1" id="current-time-display"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="poll-question" class="form-label">Question <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="poll-question" name="question" rows="3" required></textarea>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
+                                            <select class="form-select" id="server-select" name="server_id" required>
+                                                <option value="">Select a server...</option>
+                                                {% for guild in guilds %}
+                                                <option value="{{ guild.id }}">{{ guild.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="channel-select" class="form-label">Channel <span class="text-danger">*</span></label>
+                                            <select class="form-select" id="channel-select" name="channel_id" required>
+                                                <option value="">Select a server first...</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Poll Options <span class="text-danger">*</span></label>
+                                    <div id="options-container">
+                                        <div class="input-group mb-2">
+                                            <span class="input-group-text">🇦</span>
+                                            <input type="text" class="form-control" name="option1" placeholder="Option 1" required>
+                                        </div>
+                                        <div class="input-group mb-2">
+                                            <span class="input-group-text">🇧</span>
+                                            <input type="text" class="form-control" name="option2" placeholder="Option 2" required>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="addOption()">
+                                        <i class="fas fa-plus me-1"></i>Add Option
+                                    </button>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="open-time" class="form-label">Open Time <span class="text-danger">*</span></label>
+                                            <input type="datetime-local" class="form-control" id="open-time" name="open_time" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="close-time" class="form-label">Close Time <span class="text-danger">*</span></label>
+                                            <input type="datetime-local" class="form-control" id="close-time" name="close_time" required>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true">
+                                        <label class="form-check-label" for="anonymous-poll">
+                                            <i class="fas fa-eye-slash me-1"></i>Anonymous Poll
+                                            <small class="text-muted d-block">Hide results until poll ends</small>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-footer">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-rocket me-1"></i>Create Poll
+                                </button>
+                                <button type="reset" class="btn btn-outline-secondary ms-2">
+                                    <i class="fas fa-undo me-1"></i>Reset
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Servers Section -->
+                <div id="servers-section" class="section" style="display: none;">
+                    <h2><i class="fas fa-server me-2"></i>Your Servers</h2>
+                    <div class="row">
+                        {% for guild in guilds %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title">{{ guild.name }}</h6>
+                                    <p class="card-text text-muted">{{ guild.channels|length }} channels</p>
+                                    <div class="small">
+                                        {% for channel in guild.channels[:3] %}
+                                        <span class="badge bg-light text-dark me-1">#{{ channel.name }}</span>
+                                        {% endfor %}
+                                        {% if guild.channels|length > 3 %}
+                                        <span class="text-muted">+{{ guild.channels|length - 3 }} more</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div class="modal fade" id="alertModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="alertModalTitle">Alert</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="alertModalBody">
+                    <!-- Dynamic content -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        const guilds = {{ guilds | tojson | safe }} || [];
+        let optionCount = 2;
+        const maxOptions = 10;
+        const pollEmojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'];
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadPolls();
+            loadTimezones();
+            setupServerChannelSelector();
+            setDefaultTimes();
+            updateCurrentTimeDisplay();
+            setInterval(updateCurrentTimeDisplay, 1000);
+        });
+
+        // Show different sections
+        function showSection(sectionName) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Remove active class from all nav items
+            document.querySelectorAll('.list-group-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Show selected section
+            document.getElementById(sectionName + '-section').style.display = 'block';
+            
+            // Add active class to current nav item
+            event.target.classList.add('active');
+        }
+
+        // Load user's polls
+        async function loadPolls() {
+            try {
+                const response = await fetch('/api/polls');
+                const polls = await response.json();
+                
+                displayPolls(polls);
+                updateStats(polls);
+            } catch (error) {
+                console.error('Error loading polls:', error);
+                showAlert('Error', 'Failed to load polls');
+            }
+        }
+
+        // Display polls in the UI
+        function displayPolls(polls) {
+            const container = document.getElementById('polls-container');
+            
+            if (polls.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12 text-center">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No polls yet</h5>
+                        <p class="text-muted">Create your first poll to get started!</p>
+                        <button class="btn btn-primary" onclick="showSection('create')">
+                            <i class="fas fa-plus me-1"></i>Create Poll
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = polls.map(poll => `
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card poll-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">${poll.name}</h6>
+                                <span class="badge ${getStatusBadgeClass(poll.status)} status-badge">${poll.status.toUpperCase()}</span>
+                            </div>
+                            <p class="card-text text-muted small">${poll.question}</p>
+                            
+                            <div class="small text-muted mb-2">
+                                <i class="fas fa-server me-1"></i>${poll.server_name}<br>
+                                <i class="fas fa-hashtag me-1"></i>${poll.channel_name}
+                            </div>
+                            
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="small">
+                                    <i class="fas fa-vote-yea me-1"></i>${poll.total_votes} votes
+                                    ${poll.anonymous ? '<i class="fas fa-eye-slash ms-2" title="Anonymous"></i>' : ''}
+                                </div>
+                                <div class="small text-muted">
+                                    <i class="fas fa-calendar me-1"></i>${formatDate(poll.close_time)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Update dashboard stats
+        function updateStats(polls) {
+            document.getElementById('total-polls').textContent = polls.length;
+            document.getElementById('active-polls').textContent = polls.filter(p => p.status === 'active').length;
+            document.getElementById('total-votes').textContent = polls.reduce((sum, p) => sum + p.total_votes, 0);
+        }
+
+        // Get status badge class
+        function getStatusBadgeClass(status) {
+            switch(status) {
+                case 'active': return 'bg-success';
+                case 'scheduled': return 'bg-warning';
+                case 'closed': return 'bg-danger';
+                default: return 'bg-secondary';
+            }
+        }
+
+        // Format date
+        function formatDate(dateString) {
+            return new Date(dateString).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Load timezones
+        async function loadTimezones() {
+            try {
+                const response = await fetch('/api/timezones');
+                const timezones = await response.json();
+                
+                const select = document.getElementById('timezone');
+                select.innerHTML = timezones.map(tz => 
+                    `<option value="${tz.value}">${tz.label}</option>`
+                ).join('');
+                
+                // Set default timezone to UTC
+                select.value = 'UTC';
+            } catch (error) {
+                console.error('Error loading timezones:', error);
+            }
+        }
+
+        // Setup server/channel selector
+        function setupServerChannelSelector() {
+            const serverSelect = document.getElementById('server-select');
+            const channelSelect = document.getElementById('channel-select');
+            
+            serverSelect.addEventListener('change', function() {
+                const serverId = this.value;
+                channelSelect.innerHTML = '<option value="">Select a channel...</option>';
+                
+                if (serverId) {
+                    const guild = guilds.find(g => g.id === serverId);
+                    if (guild && guild.channels) {
+                        guild.channels.forEach(channel => {
+                            channelSelect.innerHTML += `<option value="${channel.id}">#${channel.name}</option>`;
+                        });
+                    }
+                } else {
+                    channelSelect.innerHTML = '<option value="">Select a server first...</option>';
+                }
+            });
+        }
+
+        // Add poll option
+        function addOption() {
+            if (optionCount >= maxOptions) {
+                showAlert('Maximum Options', `You can only add up to ${maxOptions} options.`);
+                return;
+            }
+            
+            optionCount++;
+            const container = document.getElementById('options-container');
+            const optionDiv = document.createElement('div');
+            optionDiv.className = 'input-group mb-2';
+            optionDiv.innerHTML = `
+                <span class="input-group-text">${pollEmojis[optionCount - 1]}</span>
+                <input type="text" class="form-control" name="option${optionCount}" placeholder="Option ${optionCount}">
+                <button type="button" class="btn btn-outline-danger" onclick="removeOption(this)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            container.appendChild(optionDiv);
+        }
+
+        // Remove poll option
+        function removeOption(button) {
+            if (optionCount <= 2) {
+                showAlert('Minimum Options', 'You must have at least 2 options.');
+                return;
+            }
+            
+            button.parentElement.remove();
+            optionCount--;
+        }
+
+        // Set default times
+        function setDefaultTimes() {
+            const now = new Date();
+            const openTime = new Date(now.getTime() + 5 * 60000); // 5 minutes from now
+            const closeTime = new Date(now.getTime() + 24 * 60 * 60000); // 24 hours from now
+            
+            document.getElementById('open-time').value = formatDateTimeLocal(openTime);
+            document.getElementById('close-time').value = formatDateTimeLocal(closeTime);
+        }
+
+        // Format datetime for input[type="datetime-local"]
+        function formatDateTimeLocal(date) {
+            const pad = (num) => num.toString().padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+
+        // Update current time display
+        function updateCurrentTimeDisplay() {
+            const timezone = document.getElementById('timezone').value || 'UTC';
+            const now = new Date();
+            const timeString = now.toLocaleString('en-US', {
+                timeZone: timezone === 'UTC' ? 'UTC' : timezone.replace('_', '/'),
+                weekday: 'short',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            document.getElementById('current-time-display').textContent = `Current time: ${timeString}`;
+        }
+
+        // Handle timezone change
+        document.getElementById('timezone').addEventListener('change', updateCurrentTimeDisplay);
+
+        // Handle form submission
+        document.getElementById('create-poll-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            try {
+                const response = await fetch('/api/polls', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert('Success', 'Poll created successfully!');
+                    this.reset();
+                    setDefaultTimes();
+                    optionCount = 2;
+                    loadPolls();
+                    showSection('polls');
+                } else {
+                    showAlert('Error', result.detail || 'Failed to create poll');
+                }
+            } catch (error) {
+                console.error('Error creating poll:', error);
+                showAlert('Error', 'Failed to create poll');
+            }
+        });
+
+        // Show alert modal
+        function showAlert(title, message) {
+            document.getElementById('alertModalTitle').textContent = title;
+            document.getElementById('alertModalBody').textContent = message;
+            new bootstrap.Modal(document.getElementById('alertModal')).show();
+        }
+    </script>
+</body>
+</html>

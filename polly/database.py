@@ -246,9 +246,15 @@ def get_db():
 
 
 def init_database():
-    """Initialize database tables"""
-    Base.metadata.create_all(bind=engine)
-    print("Database initialized successfully!")
+    """Initialize database tables using migration system"""
+    from .migrations import initialize_database_if_missing
+    
+    success = initialize_database_if_missing()
+    if success:
+        print("Database initialized successfully!")
+    else:
+        print("Database initialization failed!")
+        raise RuntimeError("Failed to initialize database")
 
 
 def get_db_session():

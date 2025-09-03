@@ -1,6 +1,6 @@
-<h2><i class="fas fa-plus me-2"></i>{% if is_template %}Create Poll from Template{% else %}Create New Poll{% endif %}</h2>
+<h2><i class="fas fa-edit me-2"></i>Edit Poll</h2>
 
-<form hx-post="/htmx/create-poll" hx-target="#main-content" hx-encoding="multipart/form-data" 
+<form hx-post="/htmx/poll/{{ poll.id }}/edit" hx-target="#main-content" hx-encoding="multipart/form-data" 
       hx-indicator="#loading-indicator">
     <div class="card">
         <div class="card-header">
@@ -11,7 +11,7 @@
                 <div class="col-md-6">
                     <div class="mb-3">
                         <label for="poll-name" class="form-label">Poll Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="poll-name" name="name" required value="{% if template_data %}{{ template_data.name|e }}{% endif %}">
+                        <input type="text" class="form-control" id="poll-name" name="name" value="{{ poll.name }}" required>
                     </div>
                 </div>
                 <div class="col-md-6">
@@ -19,7 +19,7 @@
                         <label for="timezone" class="form-label">Timezone</label>
                         <select class="form-select" id="timezone" name="timezone">
                             {% for tz in timezones %}
-                            <option value="{{ tz.name }}" {% if tz.name == (user_preferences.default_timezone if user_preferences else "US/Eastern") %}selected{% endif %}>{{ tz.display|e }}</option>
+                            <option value="{{ tz.name }}" {% if tz.name == poll.timezone %}selected{% endif %}>{{ tz.display }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -28,7 +28,7 @@
 
             <div class="mb-3">
                 <label for="poll-question" class="form-label">Question <span class="text-danger">*</span></label>
-                <textarea class="form-control" id="poll-question" name="question" rows="3" required>{% if template_data %}{{ template_data.question|e }}{% endif %}</textarea>
+                <textarea class="form-control" id="poll-question" name="question" rows="3" required>{{ poll.question }}</textarea>
             </div>
 
             <div class="row">
@@ -37,10 +37,10 @@
                         <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
                         <select class="form-select" id="server-select" name="server_id" required
                                 hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
-                                hx-trigger="change, {% if user_preferences and user_preferences.last_server_id %}load{% endif %}">
+                                hx-trigger="change, load">
                             <option value="">Select a server...</option>
                             {% for guild in guilds %}
-                            <option value="{{ guild.id }}" {% if user_preferences and guild.id|string == user_preferences.last_server_id|string %}selected{% endif %}>{{ guild.name|e }}</option>
+                            <option value="{{ guild.id }}" {% if guild.id|string == poll.server_id|string %}selected{% endif %}>{{ guild.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -49,7 +49,11 @@
                     <div class="mb-3">
                         <label for="channel-select" class="form-label">Channel <span class="text-danger">*</span></label>
                         <select class="form-select" id="channel-select" name="channel_id" required>
-                            <option value="">Select a server first...</option>
+                            <option value="">Loading channels...</option>
+                            <!-- Pre-populate with current channel if available -->
+                            {% if poll.channel_id %}
+                            <option value="{{ poll.channel_id }}" selected>{{ poll.channel_name }}</option>
+                            {% endif %}
                         </select>
                     </div>
                 </div>
@@ -58,10 +62,10 @@
             <div class="mb-3">
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
-                    {% for i in range(2) %}
+                    {% for option in poll.options %}
                     <div class="input-group mb-2">
                         <div class="btn-group">
-                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ default_emojis[loop.index0] }}</button>
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}</button>
                             <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
                                     data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
                                 <span class="visually-hidden">Discord Emojis</span>
@@ -70,15 +74,23 @@
                                 <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
                             </ul>
                         </div>
-                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" required>
-                        <input type="hidden" name="emoji{{ loop.index }}" value="{{ default_emojis[loop.index0] }}">
+                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option }}" {% if loop.index <= 2 %}required{% endif %}>
+                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}">
+                        {% if loop.index > 2 %}
+                        <button type="button" class="btn btn-outline-danger"
+                                hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
+                            <i class="fas fa-times"></i>
+                        </button>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
+                {% if poll.options|length < 10 %}
                 <button type="button" class="btn btn-outline-primary btn-sm"
-                        hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend" hx-include="#options-container">
+                        hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
                     <i class="fas fa-plus me-1"></i>Add Option
                 </button>
+                {% endif %}
             </div>
 
             <!-- Emoji Picker (hidden by default) -->
@@ -108,11 +120,27 @@
                 <label for="poll-image" class="form-label">
                     <i class="fas fa-image me-1"></i>Poll Image (Optional)
                 </label>
+                
+                <!-- Show current image if exists -->
+                {% if poll.image_path %}
+                <div class="current-image mb-3" id="current-image">
+                    <div class="card" style="max-width: 300px;">
+                        <img src="/{{ poll.image_path }}" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Current poll image">
+                        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Current Image</small>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="remove-current-image">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
                 <div class="image-upload-container">
                     <div class="image-drop-zone" id="image-drop-zone">
                         <div class="drop-zone-content">
                             <i class="fas fa-cloud-upload-alt fa-2x text-primary mb-2"></i>
-                            <p class="mb-2">Drag & drop an image here or click to browse</p>
+                            <p class="mb-2">Drag & drop a new image here or click to browse</p>
                             <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
                         </div>
                         <input type="file" 
@@ -123,9 +151,9 @@
                     </div>
                     <div id="image-preview" class="mt-3" style="display: none;">
                         <div class="card" style="max-width: 300px;">
-                            <img id="preview-img" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Image preview">
+                            <img id="preview-img" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="New image preview">
                             <div class="card-body p-2 d-flex justify-content-between align-items-center">
-                                <small class="text-muted" id="image-info">Image Preview</small>
+                                <small class="text-muted" id="image-info">New Image Preview</small>
                                 <button type="button" class="btn btn-sm btn-outline-danger" id="remove-image">
                                     <i class="fas fa-times"></i>
                                 </button>
@@ -135,7 +163,7 @@
                 </div>
                 
                 <!-- Optional: Image Message Text -->
-                <div id="image-message-section" class="mt-3" style="display: none;">
+                <div id="image-message-section" class="mt-3" style="display: {% if poll.image_path or poll.image_message_text %}block{% else %}none{% endif %};">
                     <label for="image-message-text" class="form-label">
                         <i class="fas fa-comment me-1"></i>Message with Image (Optional)
                     </label>
@@ -143,14 +171,14 @@
                               id="image-message-text" 
                               name="image_message_text" 
                               rows="2" 
-                              placeholder="Add a message to display with your image..."></textarea>
+                              placeholder="Add a message to display with your image...">{{ poll.image_message_text or '' }}</textarea>
                     <small class="text-muted">This text will appear with the image before the poll</small>
                 </div>
             </div>
 
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true">
+                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true" {% if poll.anonymous %}checked{% endif %}>
                     <label class="form-check-label" for="anonymous-poll">
                         <i class="fas fa-eye-slash me-1"></i>Anonymous Poll
                         <small class="text-muted d-block">Hide results until poll ends</small>
@@ -160,7 +188,7 @@
 
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="multiple-choice-poll" name="multiple_choice" value="true">
+                    <input class="form-check-input" type="checkbox" id="multiple-choice-poll" name="multiple_choice" value="true" {% if poll.multiple_choice %}checked{% endif %}>
                     <label class="form-check-label" for="multiple-choice-poll">
                         <i class="fas fa-list-check me-1"></i>Multiple Choice
                         <small class="text-muted d-block">Allow users to select multiple options</small>
@@ -171,20 +199,23 @@
             <!-- Role Ping Section -->
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="ping-role-enabled" name="ping_role_enabled" value="true">
+                    <input class="form-check-input" type="checkbox" id="ping-role-enabled" name="ping_role_enabled" value="true" {% if poll.ping_role_enabled %}checked{% endif %}>
                     <label class="form-check-label" for="ping-role-enabled">
                         <i class="fas fa-at me-1"></i>Ping a role when poll is opened and closed?
-                        <small class="text-muted d-block">Notify a specific role when the poll starts and ends</small>
+                        <small class="text-muted d-block">Mention a role to notify members when the poll starts and ends</small>
                     </label>
                 </div>
                 
-                <!-- Role Selection (initially hidden) -->
-                <div id="role-selection-container" class="mt-3" style="display: none;">
-                    <label for="role-select" class="form-label">Select Role to Ping</label>
+                <div id="role-selection-container" class="mt-3" style="display: {% if poll.ping_role_enabled %}block{% else %}none{% endif %};">
+                    <label for="role-select" class="form-label">Select Role</label>
                     <select class="form-select" id="role-select" name="ping_role_id"
                             hx-get="/htmx/roles" hx-target="#role-select" hx-include="[name='server_id']"
-                            hx-trigger="change from:#server-select, load from:#server-select">
-                        <option value="">Select a server first...</option>
+                            hx-trigger="load from:#server-select">
+                        <option value="">Loading roles...</option>
+                        <!-- Pre-populate with current role if available -->
+                        {% if poll.ping_role_id %}
+                        <option value="{{ poll.ping_role_id }}" selected>{{ poll.ping_role_name or 'Selected Role' }}</option>
+                        {% endif %}
                     </select>
                 </div>
             </div>
@@ -192,11 +223,11 @@
         <div class="card-footer">
             <button type="submit" class="btn btn-primary" id="submit-btn">
                 <span class="submit-text">
-                    <i class="fas fa-rocket me-1"></i>Create Poll
+                    <i class="fas fa-save me-1"></i>Update Poll
                 </span>
                 <span class="loading-text d-none">
                     <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    Creating Poll...
+                    Updating Poll...
                 </span>
             </button>
             <button type="button" class="btn btn-outline-secondary ms-2"
@@ -210,7 +241,7 @@
                     <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
-                    <span class="text-muted">Processing your poll...</span>
+                    <span class="text-muted">Processing your changes...</span>
                 </div>
             </div>
         </div>
@@ -224,9 +255,9 @@
 <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
 
 <script>
-// Initialize Create Form functionality (HTMX compatible)
+// Initialize Edit Form functionality (HTMX compatible)
 (function() {
-    function initializeCreateForm() {
+    function initializeEditForm() {
         // Image upload functionality
         const imageDropZone = document.getElementById('image-drop-zone');
         const imageInput = document.getElementById('poll-image');
@@ -234,6 +265,8 @@
         const previewImg = document.getElementById('preview-img');
         const imageInfo = document.getElementById('image-info');
         const removeImageBtn = document.getElementById('remove-image');
+        const removeCurrentImageBtn = document.getElementById('remove-current-image');
+        const currentImage = document.getElementById('current-image');
         const imageMessageSection = document.getElementById('image-message-section');
 
         if (imageDropZone && imageInput) {
@@ -270,10 +303,20 @@
                 }
             });
 
-            // Remove image
+            // Remove new image
             if (removeImageBtn) {
                 removeImageBtn.addEventListener('click', () => {
                     clearImagePreview();
+                });
+            }
+
+            // Remove current image
+            if (removeCurrentImageBtn) {
+                removeCurrentImageBtn.addEventListener('click', () => {
+                    if (currentImage) {
+                        currentImage.style.display = 'none';
+                        showImageUploadStatus('info', 'Current image will be removed when you save the poll');
+                    }
                 });
             }
 
@@ -299,6 +342,11 @@
                     imagePreview.style.display = 'block';
                     imageDropZone.style.display = 'none';
                     imageMessageSection.style.display = 'block';
+                    
+                    // Hide current image when new one is selected
+                    if (currentImage) {
+                        currentImage.style.display = 'none';
+                    }
                 };
                 reader.readAsDataURL(file);
             }
@@ -307,10 +355,18 @@
                 imageInput.value = '';
                 imagePreview.style.display = 'none';
                 imageDropZone.style.display = 'block';
-                imageMessageSection.style.display = 'none';
                 previewImg.src = '';
                 imageInfo.textContent = '';
-                document.getElementById('image-message-text').value = '';
+                
+                // Show current image again if it exists
+                if (currentImage) {
+                    currentImage.style.display = 'block';
+                }
+                
+                // Hide image message section if no current image
+                if (!currentImage || currentImage.style.display === 'none') {
+                    imageMessageSection.style.display = 'none';
+                }
             }
 
             function showImageError(message) {
@@ -339,6 +395,37 @@
                         setTimeout(() => errorDiv.innerHTML = '', 150);
                     }
                 }, 5000);
+            }
+
+            function showImageUploadStatus(type, message) {
+                // Create or update status message
+                let statusDiv = document.getElementById('image-upload-status');
+                if (!statusDiv) {
+                    statusDiv = document.createElement('div');
+                    statusDiv.id = 'image-upload-status';
+                    statusDiv.className = 'mt-2';
+                    imageDropZone.parentNode.appendChild(statusDiv);
+                }
+
+                const alertClass = type === 'success' ? 'alert-success' : 
+                                  type === 'error' ? 'alert-danger' : 'alert-info';
+                
+                statusDiv.innerHTML = `
+                    <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                        ${message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+
+                // Auto-hide after 3 seconds
+                setTimeout(() => {
+                    const alert = statusDiv.querySelector('.alert');
+                    if (alert) {
+                        alert.classList.remove('show');
+                        setTimeout(() => statusDiv.innerHTML = '', 150);
+                    }
+                }, 3000);
             }
 
             function formatFileSize(bytes) {
@@ -416,13 +503,9 @@
                     
                     // Update button text and hidden input
                     currentEmojiButton.textContent = emoji;
-                    // Fix DOM selector - hidden input is in the parent's parent (input-group)
-                    const hiddenInput = currentEmojiButton.closest('.input-group').querySelector(`input[name="emoji${optionNumber}"]`);
+                    const hiddenInput = currentEmojiButton.parentElement.querySelector(`input[name="emoji${optionNumber}"]`);
                     if (hiddenInput) {
                         hiddenInput.value = emoji;
-                        logger.debug && logger.debug(`✅ EMOJI PICKER - Updated emoji${optionNumber} to: ${emoji}`);
-                    } else {
-                        console.warn(`⚠️ EMOJI PICKER - Could not find hidden input for emoji${optionNumber}`);
                     }
                     
                     // Hide the picker
@@ -587,7 +670,39 @@
             }
         });
 
-        // Handle intelligent channel pre-selection
+        // Role ping functionality
+        const pingRoleCheckbox = document.getElementById('ping-role-enabled');
+        const roleSelectionContainer = document.getElementById('role-selection-container');
+        const roleSelect = document.getElementById('role-select');
+        
+        if (pingRoleCheckbox && roleSelectionContainer) {
+            // Show/hide role selection when checkbox is toggled
+            pingRoleCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    roleSelectionContainer.style.display = 'block';
+                } else {
+                    roleSelectionContainer.style.display = 'none';
+                    // Clear role selection when disabled
+                    if (roleSelect) {
+                        roleSelect.value = '';
+                    }
+                }
+            });
+        }
+
+        // Load roles when server changes (for role selection)
+        if (serverSelectElement && roleSelect) {
+            serverSelectElement.addEventListener('change', function() {
+                // Clear role selection when server changes
+                roleSelect.value = '';
+                // Trigger HTMX to reload roles for new server
+                if (pingRoleCheckbox && pingRoleCheckbox.checked) {
+                    htmx.trigger(roleSelect, 'load');
+                }
+            });
+        }
+
+        // Handle intelligent channel pre-selection for edit form
         let isInitialLoad = true;
         
         if (serverSelectElement) {
@@ -635,37 +750,6 @@
             }
 
             return isValid;
-        }
-
-        function showImageUploadStatus(type, message) {
-            // Create or update status message
-            let statusDiv = document.getElementById('image-upload-status');
-            if (!statusDiv) {
-                statusDiv = document.createElement('div');
-                statusDiv.id = 'image-upload-status';
-                statusDiv.className = 'mt-2';
-                document.querySelector('.filepond-container').appendChild(statusDiv);
-            }
-
-            const alertClass = type === 'success' ? 'alert-success' : 
-                              type === 'error' ? 'alert-danger' : 'alert-info';
-            
-            statusDiv.innerHTML = `
-                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            `;
-
-            // Auto-hide after 3 seconds
-            setTimeout(() => {
-                const alert = statusDiv.querySelector('.alert');
-                if (alert) {
-                    alert.classList.remove('show');
-                    setTimeout(() => statusDiv.innerHTML = '', 150);
-                }
-            }, 3000);
         }
 
         // Validate on input change
@@ -742,203 +826,28 @@
     
     // Initialize on DOM ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeCreateForm);
+        document.addEventListener('DOMContentLoaded', initializeEditForm);
     } else {
-        initializeCreateForm();
+        initializeEditForm();
     }
 
     // Re-initialize when HTMX loads new content
     document.addEventListener('htmx:afterSwap', function(event) {
         // Only re-initialize if this content contains our form
         if (event.detail.target.querySelector('#emoji-picker-container') || event.detail.target.querySelector('#image-drop-zone')) {
-            initializeCreateForm();
+            initializeEditForm();
         }
     });
 
-        // Role ping checkbox functionality
-        const pingRoleCheckbox = document.getElementById('ping-role-enabled');
-        const roleSelectionContainer = document.getElementById('role-selection-container');
-        
-        if (pingRoleCheckbox && roleSelectionContainer) {
-            // Show/hide role selection based on checkbox state
-            pingRoleCheckbox.addEventListener('change', function() {
-                if (this.checked) {
-                    roleSelectionContainer.style.display = 'block';
-                } else {
-                    roleSelectionContainer.style.display = 'none';
-                    // Clear the role selection when hiding
-                    const roleSelect = document.getElementById('role-select');
-                    if (roleSelect) {
-                        roleSelect.value = '';
-                    }
-                }
-            });
-            
-            // Initialize visibility based on current checkbox state
-            if (pingRoleCheckbox.checked) {
-                roleSelectionContainer.style.display = 'block';
-            } else {
-                roleSelectionContainer.style.display = 'none';
-            }
+    // Ensure submit button is enabled on initial load
+    document.addEventListener('DOMContentLoaded', function() {
+        const submitBtn = document.getElementById('submit-btn');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.add('btn-primary');
+            submitBtn.classList.remove('btn-secondary');
         }
-
-        // Ensure submit button is enabled on initial load
-        document.addEventListener('DOMContentLoaded', function() {
-            const submitBtn = document.getElementById('submit-btn');
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.classList.add('btn-primary');
-                submitBtn.classList.remove('btn-secondary');
-            }
-        });
-
-        // Template data pre-filling functionality - ALWAYS LOG WHAT WE RECEIVE
-        console.log('🔍 TEMPLATE JS DEBUG - Template section loading...');
-        console.log('🔍 TEMPLATE JS DEBUG - is_template flag:', {{ is_template|default(false)|tojson }});
-        
-        {% if template_data %}
-        console.log('🔍 TEMPLATE JS DEBUG - Template data section EXISTS in Jinja');
-        function preFillTemplateData() {
-            const templateData = {{ template_data|tojson }};
-            
-            // COMPREHENSIVE TEMPLATE DATA DEBUGGING
-            console.log('🔍 TEMPLATE JS DEBUG - Raw template data:', templateData);
-            console.log('🔍 TEMPLATE JS DEBUG - Template data type:', typeof templateData);
-            console.log('🔍 TEMPLATE JS DEBUG - Template data keys:', templateData ? Object.keys(templateData) : 'null/undefined');
-            
-            if (templateData) {
-                console.log('🔍 TEMPLATE JS DEBUG - name:', templateData.name);
-                console.log('🔍 TEMPLATE JS DEBUG - question:', templateData.question);
-                console.log('🔍 TEMPLATE JS DEBUG - options:', templateData.options, 'type:', typeof templateData.options, 'length:', templateData.options ? templateData.options.length : 'null');
-                console.log('🔍 TEMPLATE JS DEBUG - emojis:', templateData.emojis, 'type:', typeof templateData.emojis, 'length:', templateData.emojis ? templateData.emojis.length : 'null');
-                console.log('🔍 TEMPLATE JS DEBUG - server_id:', templateData.server_id);
-                console.log('🔍 TEMPLATE JS DEBUG - channel_id:', templateData.channel_id);
-                console.log('🔍 TEMPLATE JS DEBUG - anonymous:', templateData.anonymous);
-                console.log('🔍 TEMPLATE JS DEBUG - multiple_choice:', templateData.multiple_choice);
-                console.log('🔍 TEMPLATE JS DEBUG - ping_role_enabled:', templateData.ping_role_enabled);
-                console.log('🔍 TEMPLATE JS DEBUG - ping_role_id:', templateData.ping_role_id);
-            } else {
-                console.log('🔍 TEMPLATE JS DEBUG - No template data available');
-                return;
-            }
-
-            // Pre-fill server selection
-            if (templateData.server_id) {
-                const serverSelect = document.getElementById('server-select');
-                if (serverSelect) {
-                    serverSelect.value = templateData.server_id;
-                    // Trigger change event to load channels
-                    serverSelect.dispatchEvent(new Event('change'));
-                }
-            }
-
-            // Pre-fill options and emojis
-            if (templateData.options && templateData.emojis) {
-                const optionsContainer = document.getElementById('options-container');
-                
-                // Clear existing options first
-                optionsContainer.innerHTML = '';
-                
-                // Add options from template
-                templateData.options.forEach((option, index) => {
-                    const optionNum = index + 1;
-                    const emoji = templateData.emojis[index] || '🇦';
-                    
-                    const optionHtml = `
-                        <div class="input-group mb-2">
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="${optionNum}">${emoji}</button>
-                                <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
-                                        data-bs-toggle="dropdown" data-option="${optionNum}" aria-expanded="false">
-                                    <span class="visually-hidden">Discord Emojis</span>
-                                </button>
-                                <ul class="dropdown-menu discord-emoji-dropdown" data-option="${optionNum}">
-                                    <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
-                                </ul>
-                            </div>
-                            <input type="text" class="form-control" name="option${optionNum}" placeholder="Option ${optionNum}" required value="${option}">
-                            <input type="hidden" name="emoji${optionNum}" value="${emoji}">
-                        </div>
-                    `;
-                    optionsContainer.insertAdjacentHTML('beforeend', optionHtml);
-                });
-            }
-
-            // Pre-fill checkboxes
-            if (templateData.anonymous) {
-                const anonymousCheckbox = document.getElementById('anonymous-poll');
-                if (anonymousCheckbox) {
-                    anonymousCheckbox.checked = true;
-                }
-            }
-
-            if (templateData.multiple_choice) {
-                const multipleChoiceCheckbox = document.getElementById('multiple-choice-poll');
-                if (multipleChoiceCheckbox) {
-                    multipleChoiceCheckbox.checked = true;
-                }
-            }
-
-            if (templateData.ping_role_enabled) {
-                const pingRoleCheckbox = document.getElementById('ping-role-enabled');
-                const roleSelectionContainer = document.getElementById('role-selection-container');
-                if (pingRoleCheckbox) {
-                    pingRoleCheckbox.checked = true;
-                    if (roleSelectionContainer) {
-                        roleSelectionContainer.style.display = 'block';
-                    }
-                }
-            }
-
-            // Wait for channels to load, then pre-select channel
-            if (templateData.channel_id) {
-                const checkChannelLoad = setInterval(() => {
-                    const channelSelect = document.getElementById('channel-select');
-                    if (channelSelect && channelSelect.children.length > 1) {
-                        channelSelect.value = templateData.channel_id;
-                        clearInterval(checkChannelLoad);
-                    }
-                }, 100);
-                
-                // Clear interval after 5 seconds to prevent infinite loop
-                setTimeout(() => clearInterval(checkChannelLoad), 5000);
-            }
-
-            // Wait for roles to load, then pre-select role
-            if (templateData.ping_role_id) {
-                const checkRoleLoad = setInterval(() => {
-                    const roleSelect = document.getElementById('role-select');
-                    if (roleSelect && roleSelect.children.length > 1) {
-                        roleSelect.value = templateData.ping_role_id;
-                        clearInterval(checkRoleLoad);
-                    }
-                }, 100);
-                
-                // Clear interval after 5 seconds to prevent infinite loop
-                setTimeout(() => clearInterval(checkRoleLoad), 5000);
-            }
-        }
-
-        // Call pre-fill function after DOM is ready
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔍 TEMPLATE JS DEBUG - DOMContentLoaded event fired, calling preFillTemplateData');
-            preFillTemplateData();
-        });
-        
-        // Also call immediately if DOM is already ready
-        if (document.readyState === 'loading') {
-            console.log('🔍 TEMPLATE JS DEBUG - DOM still loading, waiting for DOMContentLoaded');
-        } else {
-            console.log('🔍 TEMPLATE JS DEBUG - DOM already ready, calling preFillTemplateData immediately');
-            preFillTemplateData();
-        }
-        {% else %}
-        console.log('🔍 TEMPLATE JS DEBUG - NO template_data in Jinja context - this is NOT a template creation');
-        function preFillTemplateData() {
-            console.log('🔍 TEMPLATE JS DEBUG - preFillTemplateData called but no template data available');
-            return;
-        }
-        {% endif %}
+    });
 })();
 </script>
 
@@ -1006,6 +915,21 @@
     border-top-right-radius: calc(0.375rem - 1px);
 }
 
+/* Current Image Card */
+.current-image {
+    transition: opacity 0.3s ease;
+}
+
+.current-image .card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.current-image .card-img-top {
+    border-top-left-radius: calc(0.375rem - 1px);
+    border-top-right-radius: calc(0.375rem - 1px);
+}
+
 /* Image Message Section */
 #image-message-section {
     padding: 1rem;
@@ -1046,7 +970,8 @@
         font-size: 1.5rem;
     }
     
-    #image-preview .card {
+    #image-preview .card,
+    .current-image .card {
         max-width: 100% !important;
     }
 }

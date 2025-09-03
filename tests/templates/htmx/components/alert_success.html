@@ -1,0 +1,6 @@
+<div class="alert alert-success">
+    <i class="fas fa-check-circle me-2"></i>{{ message }}
+</div>
+{% if redirect_url %}
+<div hx-get="{{ redirect_url }}" hx-target="#main-content" hx-trigger="load delay:2s"></div>
+{% endif %}

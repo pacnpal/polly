@@ -19,14 +19,11 @@ from .auth import (
     get_discord_oauth_url, exchange_code_for_token, get_discord_user,
     create_access_token, require_auth, save_user_to_db, DiscordUser
 )
-from .database import init_database, get_db_session, UserPreference
+from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .error_handler import notify_error_async
 
 logger = logging.getLogger(__name__)
-
-# Initialize database
-init_database()
 
 # Create directories
 os.makedirs("static/uploads", exist_ok=True)
@@ -130,6 +127,21 @@ async def shutdown_background_tasks():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    logger.info("Starting Polly application...")
+    
+    # Initialize database if needed
+    from .migrations import initialize_database_if_missing
+    try:
+        success = initialize_database_if_missing()
+        if success:
+            logger.info("Database initialization completed successfully")
+        else:
+            logger.error("Database initialization failed")
+            raise RuntimeError("Failed to initialize database")
+    except Exception as e:
+        logger.error(f"Database initialization error: {e}")
+        raise
+    
     await start_background_tasks()
     yield
     # Shutdown

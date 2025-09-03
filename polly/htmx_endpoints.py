@@ -740,7 +740,9 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
         "open_time": open_time,
         "close_time": close_time,
         "user_preferences": user_prefs,
-        "default_emojis": POLL_EMOJIS
+        "default_emojis": POLL_EMOJIS,
+        "template_data": None,  # No template data for regular form
+        "is_template": False  # Flag to indicate this is not a template creation
     })
 
 

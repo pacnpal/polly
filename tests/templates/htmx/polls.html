@@ -1,0 +1,72 @@
+<!-- Poll Organization and Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="fas fa-poll me-2"></i>My Polls</h4>
+            <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
+                <i class="fas fa-plus me-1"></i>Create Poll
+            </button>
+        </div>
+        
+        <!-- Filter Tabs -->
+        <ul class="nav nav-pills mb-3" id="poll-filter-tabs">
+            <li class="nav-item">
+                <button class="nav-link {% if not current_filter or current_filter == 'all' %}active{% endif %}" 
+                        hx-get="/htmx/polls" hx-target="#main-content">
+                    <i class="fas fa-list me-1"></i>All Polls
+                    <span class="badge bg-secondary ms-1">{{ polls|length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link {% if current_filter == 'active' %}active{% endif %}" 
+                        hx-get="/htmx/polls?filter=active" hx-target="#main-content">
+                    <i class="fas fa-play-circle me-1"></i>Active
+                    <span class="badge bg-success ms-1">{{ polls|selectattr("status", "equalto", "active")|list|length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link {% if current_filter == 'scheduled' %}active{% endif %}" 
+                        hx-get="/htmx/polls?filter=scheduled" hx-target="#main-content">
+                    <i class="fas fa-clock me-1"></i>Scheduled
+                    <span class="badge bg-warning ms-1">{{ polls|selectattr("status", "equalto", "scheduled")|list|length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link {% if current_filter == 'closed' %}active{% endif %}" 
+                        hx-get="/htmx/polls?filter=closed" hx-target="#main-content">
+                    <i class="fas fa-stop-circle me-1"></i>Closed
+                    <span class="badge bg-danger ms-1">{{ polls|selectattr("status", "equalto", "closed")|list|length }}</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<!-- Real-time Poll Updates Container -->
+<div id="polls-realtime-container" 
+     hx-get="/htmx/polls-realtime{% if current_filter %}?filter={{ current_filter }}{% endif %}" 
+     hx-trigger="load, every 5s" 
+     hx-swap="innerHTML">
+    <!-- Real-time poll data will be loaded here -->
+    
+    <!-- Fallback content for when no polls exist or there's an error -->
+    {% if error %}
+    <div class="col-12 text-center">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+        </div>
+        <button class="btn btn-primary" hx-get="/htmx/polls" hx-target="#main-content">
+            <i class="fas fa-refresh me-1"></i>Retry
+        </button>
+    </div>
+    {% elif not polls %}
+    <div class="col-12 text-center">
+        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+        <h5 class="text-muted">No polls yet</h5>
+        <p class="text-muted">Create your first poll to get started!</p>
+        <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
+            <i class="fas fa-plus me-1"></i>Create Poll
+        </button>
+    </div>
+    {% endif %}
+</div>
