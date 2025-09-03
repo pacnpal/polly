@@ -25,6 +25,9 @@ RUN mkdir -p static/uploads logs data
 # Expose port
 EXPOSE 8000
 
+# User change
+USER xyn0th
+
 # Create entrypoint script
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
