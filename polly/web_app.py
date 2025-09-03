@@ -33,25 +33,44 @@ os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
 
 
-def get_user_preferences(user_id: str) -> dict:
-    """Get user preferences for poll creation"""
+async def get_user_preferences(user_id: str) -> dict:
+    """Get user preferences for poll creation with Redis caching"""
+    from .cache_service import get_cache_service
+    
+    cache_service = get_cache_service()
+    
+    # Try to get from cache first
+    cached_prefs = await cache_service.get_cached_user_preferences(user_id)
+    if cached_prefs:
+        logger.debug(f"Retrieved user preferences from cache for {user_id}")
+        return cached_prefs
+    
+    # If not in cache, get from database
     db = get_db_session()
     try:
         prefs = db.query(UserPreference).filter(
             UserPreference.user_id == user_id).first()
         if prefs:
-            return {
+            user_prefs = {
                 "last_server_id": prefs.last_server_id,
                 "last_channel_id": prefs.last_channel_id,
                 "default_timezone": prefs.default_timezone or "US/Eastern",
                 "timezone_explicitly_set": bool(prefs.timezone_explicitly_set)
             }
-        return {
-            "last_server_id": None,
-            "last_channel_id": None,
-            "default_timezone": "US/Eastern",
-            "timezone_explicitly_set": False
-        }
+        else:
+            user_prefs = {
+                "last_server_id": None,
+                "last_channel_id": None,
+                "default_timezone": "US/Eastern",
+                "timezone_explicitly_set": False
+            }
+        
+        # Cache the result
+        await cache_service.cache_user_preferences(user_id, user_prefs)
+        logger.debug(f"Cached user preferences for {user_id}")
+        
+        return user_prefs
+        
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
         return {
@@ -64,8 +83,12 @@ def get_user_preferences(user_id: str) -> dict:
         db.close()
 
 
-def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None):
-    """Save user preferences for poll creation"""
+async def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None):
+    """Save user preferences for poll creation with cache invalidation"""
+    from .cache_service import get_cache_service
+    
+    cache_service = get_cache_service()
+    
     db = get_db_session()
     try:
         prefs = db.query(UserPreference).filter(
@@ -93,6 +116,10 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
             db.add(prefs)
 
         db.commit()
+        
+        # Invalidate cache after successful database update
+        await cache_service.invalidate_user_preferences(user_id)
+        
         logger.debug(
             f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}, timezone={timezone}")
     except Exception as e:
@@ -106,6 +133,17 @@ async def start_background_tasks():
     """Start all background tasks"""
     from .background_tasks import start_scheduler, start_reaction_safeguard
     from .discord_bot import start_bot
+    from .redis_client import get_redis_client
+
+    # Initialize Redis connection
+    try:
+        redis_client = await get_redis_client()
+        if redis_client.is_connected:
+            logger.info("Redis client initialized successfully")
+        else:
+            logger.warning("Redis client failed to connect - continuing without Redis")
+    except Exception as e:
+        logger.error(f"Redis initialization error: {e} - continuing without Redis")
 
     # Start background tasks
     # Note: Automatic bot owner notifications are initialized in discord_bot.py after bot is ready
@@ -118,10 +156,18 @@ async def shutdown_background_tasks():
     """Shutdown all background tasks"""
     from .background_tasks import shutdown_scheduler
     from .discord_bot import shutdown_bot
+    from .redis_client import close_redis_client
 
     # Shutdown tasks
     await shutdown_scheduler()
     await shutdown_bot()
+    
+    # Close Redis connection
+    try:
+        await close_redis_client()
+        logger.info("Redis client closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis client: {e}")
 
 
 # Lifespan manager for background tasks
@@ -174,6 +220,20 @@ def add_core_routes(app: FastAPI):
         """Home page"""
         return templates.TemplateResponse("index.html", {"request": request})
 
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint including Redis status"""
+        from .cache_service import get_cache_service
+        
+        cache_service = get_cache_service()
+        redis_health = await cache_service.health_check()
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "redis": redis_health
+        }
+
     @app.get("/login")
     async def login():
         """Redirect to Discord OAuth"""
@@ -213,7 +273,7 @@ def add_core_routes(app: FastAPI):
         from .discord_bot import get_bot_instance
 
         # Check if user has timezone preference set
-        user_prefs = get_user_preferences(current_user.id)
+        user_prefs = await get_user_preferences(current_user.id)
 
         # Get user's guilds with channels with error handling
         try:
