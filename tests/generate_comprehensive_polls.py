@@ -453,6 +453,12 @@ class ComprehensivePollGenerator:
             # Check rate limit before creating poll
             await self.check_rate_limit()
             
+            # Increment rate limit counter BEFORE attempting to create poll
+            # This ensures rate limiting works regardless of success/failure
+            if not self.dry_run:
+                self.polls_created_this_minute += 1
+                logger.info(f"🔄 Attempting poll creation ({self.polls_created_this_minute}/{self.rate_limit_per_minute} this minute)")
+            
             poll_data = self.create_poll_data(combination)
             
             if self.dry_run:
@@ -489,9 +495,7 @@ class ComprehensivePollGenerator:
             
             if result["success"]:
                 poll_id = result["poll_id"]
-                # Increment rate limit counter for successful polls
-                self.polls_created_this_minute += 1
-                logger.info(f"✅ Created poll {poll_id}: {poll_data['name']} ({self.polls_created_this_minute}/{self.rate_limit_per_minute} this minute)")
+                logger.info(f"✅ Created poll {poll_id}: {poll_data['name']}")
                 return True, f"Created poll {poll_id}"
             else:
                 error_msg = result.get("error", "Unknown error")
