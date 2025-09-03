@@ -1792,6 +1792,10 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         emojis = poll.emojis
         is_anonymous = TypeSafeColumn.get_bool(poll, 'anonymous', False)
         
+        # IMPORTANT: Poll creators always see usernames, even for anonymous polls
+        # This allows poll creators to see who voted while maintaining anonymity for other users
+        show_usernames_to_creator = True
+        
         # Prepare vote data with Discord usernames
         vote_data = []
         unique_users = set()
@@ -1852,6 +1856,7 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
             "options": options,
             "emojis": emojis,
             "is_anonymous": is_anonymous,
+            "show_usernames_to_creator": show_usernames_to_creator,
             "format_datetime_for_user": format_datetime_for_user
         })
 
@@ -1866,7 +1871,7 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
 
 
 async def export_poll_csv(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
-    """Export poll results as CSV"""
+    """Export poll results as CSV - Poll creators always see usernames, even for anonymous polls"""
     from fastapi.responses import StreamingResponse
     import csv
     import io
@@ -1886,14 +1891,16 @@ async def export_poll_csv(poll_id: int, request: Request, bot, current_user: Dis
         options = poll.options
         emojis = poll.emojis
         poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown Poll')
+        is_anonymous = TypeSafeColumn.get_bool(poll, 'anonymous', False)
         
         # Create CSV content
         output = io.StringIO()
         writer = csv.writer(output)
         
-        # Write header
+        # Write header - include poll anonymity status for reference
         writer.writerow([
             'Poll Name',
+            'Poll Type',
             'Voter Username', 
             'Voter ID',
             'Option Selected',
@@ -1907,14 +1914,16 @@ async def export_poll_csv(poll_id: int, request: Request, bot, current_user: Dis
         user_prefs = get_user_preferences(current_user.id)
         user_timezone = user_prefs.get("default_timezone", "US/Eastern")
         
-        # Write vote data
+        poll_type = "Anonymous" if is_anonymous else "Public"
+        
+        # Write vote data - IMPORTANT: Poll creators always see usernames, even for anonymous polls
         for vote in votes:
             try:
                 user_id = TypeSafeColumn.get_string(vote, 'user_id')
                 option_index = TypeSafeColumn.get_int(vote, 'option_index')
                 voted_at = TypeSafeColumn.get_datetime(vote, 'voted_at')
                 
-                # Get Discord username
+                # Get Discord username - always fetch for poll creator
                 username = "Unknown User"
                 if bot and user_id:
                     try:
@@ -1938,7 +1947,8 @@ async def export_poll_csv(poll_id: int, request: Request, bot, current_user: Dis
                 
                 writer.writerow([
                     poll_name,
-                    username,
+                    poll_type,
+                    username,  # Always show username to poll creator
                     user_id,
                     option_text,
                     option_index,

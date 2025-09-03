@@ -94,7 +94,7 @@
                             <td>{{ loop.index }}</td>
                             <td>
                                 <div class="d-flex align-items-center">
-                                    {% if vote.avatar_url and not is_anonymous %}
+                                    {% if vote.avatar_url and show_usernames_to_creator %}
                                     <img src="{{ vote.avatar_url }}" alt="Avatar" 
                                          class="rounded-circle me-2" style="width: 24px; height: 24px;">
                                     {% else %}
@@ -104,10 +104,10 @@
                                     </div>
                                     {% endif %}
                                     <span class="text-truncate" style="max-width: 150px;" title="{{ vote.username|e }}">
-                                        {% if is_anonymous %}
-                                        Anonymous User
-                                        {% else %}
+                                        {% if show_usernames_to_creator %}
                                         {{ vote.username|e }}
+                                        {% else %}
+                                        Anonymous User
                                         {% endif %}
                                     </span>
                                 </div>
