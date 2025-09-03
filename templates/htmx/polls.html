@@ -3,10 +3,36 @@
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4><i class="fas fa-poll me-2"></i>My Polls</h4>
-            <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
-                <i class="fas fa-plus me-1"></i>Create Poll
-            </button>
+            <div class="btn-group">
+                <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
+                    <i class="fas fa-plus me-1"></i>Create Poll
+                </button>
+                <button class="btn btn-outline-primary" onclick="document.getElementById('json-import-file').click()">
+                    <i class="fas fa-upload me-1"></i>Import JSON
+                </button>
+            </div>
         </div>
+        
+        <!-- Hidden file input for JSON import -->
+        <input type="file" id="json-import-file" accept=".json" style="display: none;" 
+               onchange="importJsonFile(this)">
+        
+        <script>
+        function importJsonFile(input) {
+            if (input.files && input.files[0]) {
+                const formData = new FormData();
+                formData.append('json_file', input.files[0]);
+                
+                htmx.ajax('POST', '/htmx/import-json', {
+                    values: formData,
+                    target: '#main-content'
+                });
+                
+                // Reset the input
+                input.value = '';
+            }
+        }
+        </script>
         
         <!-- Filter Tabs -->
         <ul class="nav nav-pills mb-3" id="poll-filter-tabs">
