@@ -1270,22 +1270,43 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
                 print(f"🎭 POLL CREATION DEBUG - Detected custom emoji format in input: '{emoji_input}'")
                 logger.info(f"🎭 POLL CREATION DEBUG - Detected custom emoji format in input: '{emoji_input}'")
 
-        # Process all emojis using Discord native handler
+        # Simple emoji validation - just use what the user provided and check for uniqueness
         server_id = validated_data['server_id']
-        emojis = await emoji_handler.process_poll_emojis(emoji_inputs, int(server_id) if server_id else 0)
+        emojis = []
+        
+        print(f"🔍 SIMPLE EMOJI VALIDATION - Processing {len(emoji_inputs)} emoji inputs")
+        logger.info(f"🔍 SIMPLE EMOJI VALIDATION - Processing {len(emoji_inputs)} emoji inputs")
+        
+        for i, emoji_input in enumerate(emoji_inputs):
+            # Use the emoji exactly as provided by the user, no processing
+            if emoji_input and emoji_input.strip():
+                emojis.append(emoji_input.strip())
+                print(f"✅ SIMPLE EMOJI VALIDATION - Option {i+1}: Using emoji '{emoji_input.strip()}' as-is")
+                logger.info(f"✅ SIMPLE EMOJI VALIDATION - Option {i+1}: Using emoji '{emoji_input.strip()}' as-is")
+            else:
+                # Only use defaults if no emoji provided
+                default_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                default_emoji = default_emojis[i] if i < len(default_emojis) else default_emojis[0]
+                emojis.append(default_emoji)
+                print(f"⚪ SIMPLE EMOJI VALIDATION - Option {i+1}: No emoji provided, using default '{default_emoji}'")
+                logger.info(f"⚪ SIMPLE EMOJI VALIDATION - Option {i+1}: No emoji provided, using default '{default_emoji}'")
 
-        print(f"📊 POLL CREATION DEBUG - Final options: {options}")
-        print(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
-        logger.info(f"📊 POLL CREATION DEBUG - Final options: {options}")
-        logger.info(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
+        print(f"📊 SIMPLE EMOJI VALIDATION - Final options: {options}")
+        print(f"😀 SIMPLE EMOJI VALIDATION - Final emojis: {emojis}")
+        logger.info(f"📊 SIMPLE EMOJI VALIDATION - Final options: {options}")
+        logger.info(f"😀 SIMPLE EMOJI VALIDATION - Final emojis: {emojis}")
 
-        # Validate emoji uniqueness - this should fail validation if duplicates exist
+        # Simple uniqueness check - only validation we do
         if len(set(emojis)) != len(emojis):
             logger.warning(f"Duplicate emojis detected in poll creation: {emojis}")
+            print(f"❌ SIMPLE EMOJI VALIDATION - Duplicates found! Failing validation.")
             return templates.TemplateResponse("htmx/components/alert_error.html", {
                 "request": request,
                 "message": "Each poll option must have a unique emoji. Please select different emojis for each option."
             })
+        else:
+            print(f"✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
+            logger.info(f"✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
 
         # Extract validated data
         name = validated_data['name']
