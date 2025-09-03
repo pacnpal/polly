@@ -23,6 +23,7 @@ from .error_handler import PollErrorHandler
 from .timezone_scheduler_fix import TimezoneAwareScheduler
 from .discord_emoji_handler import DiscordEmojiHandler
 from .emoji_pipeline_fix import get_unified_emoji_processor
+from .json_import import PollJSONImporter, PollJSONExporter
 
 logger = logging.getLogger(__name__)
 
@@ -521,6 +522,150 @@ def get_common_timezones() -> list:
     # Sort by display name for better UX
     timezones.sort(key=lambda x: x['display'])
     return timezones
+
+
+async def import_json_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Import poll data from JSON file via HTMX"""
+    logger.info(f"User {current_user.id} importing poll from JSON")
+    
+    try:
+        form_data = await request.form()
+        json_file = form_data.get("json_file")
+        
+        if not json_file or not hasattr(json_file, 'filename') or not json_file.filename:
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Please select a JSON file to import"
+            })
+        
+        # Validate file type
+        if not json_file.filename.lower().endswith('.json'):
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Please upload a valid JSON file (.json extension required)"
+            })
+        
+        # Read file content
+        try:
+            file_content = await json_file.read()
+        except Exception as e:
+            logger.error(f"Error reading JSON file: {e}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Error reading the uploaded file"
+            })
+        
+        # Get user timezone for processing
+        user_prefs = get_user_preferences(current_user.id)
+        user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+        
+        # Import JSON data
+        success, poll_data, errors = await PollJSONImporter.import_from_json_file(
+            file_content, user_timezone
+        )
+        
+        if not success:
+            error_message = "JSON import failed:\n" + "\n".join(f"• {error}" for error in errors)
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": error_message
+            })
+        
+        logger.info(f"Successfully imported JSON data for user {current_user.id}: {poll_data['name']}")
+        
+        # Return success with the imported data as template data
+        # This will redirect to the create form with pre-filled data
+        return templates.TemplateResponse("htmx/components/alert_success.html", {
+            "request": request,
+            "message": f"JSON imported successfully! Poll '{poll_data['name']}' is ready to create.",
+            "redirect_url": f"/htmx/create-form-json-import",
+            "json_data": poll_data  # Pass the data for the next form
+        })
+        
+    except Exception as e:
+        logger.error(f"Error importing JSON for user {current_user.id}: {e}")
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Unexpected error importing JSON: {str(e)}"
+        })
+
+
+async def get_create_form_json_import_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get create poll form pre-filled with JSON import data"""
+    # This endpoint will be called after successful JSON import
+    # For now, we'll get the JSON data from the session or request parameters
+    # In a real implementation, you might store this temporarily in Redis or similar
+    
+    # Get user's guilds with channels with error handling
+    try:
+        user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+        if user_guilds is None:
+            user_guilds = []
+    except Exception as e:
+        logger.error(f"Error getting user guilds for JSON import form for {current_user.id}: {e}")
+        user_guilds = []
+
+    # Get user preferences
+    user_prefs = get_user_preferences(current_user.id)
+    
+    # Get priority timezone for new poll creation
+    priority_timezone = get_priority_timezone_for_user(current_user.id)
+
+    # Get timezones - priority timezone first
+    common_timezones = [
+        priority_timezone, "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
+        "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+    ]
+    # Remove duplicates while preserving order
+    seen = set()
+    common_timezones = [tz for tz in common_timezones if not (tz in seen or seen.add(tz))]
+
+    # Set default times in priority timezone if not provided in JSON
+    user_tz = pytz.timezone(priority_timezone)
+    now = datetime.now(user_tz)
+
+    # Default start time should be next day at 12:00AM (midnight)
+    next_day = now.date() + timedelta(days=1)
+    open_time_dt = datetime.combine(next_day, datetime.min.time())
+    open_time_dt = user_tz.localize(open_time_dt)
+    default_open_time = open_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+    # Close time should be 24 hours after open time
+    close_time_dt = open_time_dt + timedelta(hours=24)
+    default_close_time = close_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+    # Prepare timezone data for template
+    timezones = []
+    for tz in common_timezones:
+        try:
+            tz_obj = pytz.timezone(tz)
+            offset = datetime.now(tz_obj).strftime('%z')
+            timezones.append({
+                "name": tz,
+                "display": f"{tz} (UTC{offset})"
+            })
+        except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+            logger.warning(f"Error formatting timezone {tz}: {e}")
+            timezones.append({
+                "name": tz,
+                "display": tz
+            })
+
+    # For now, return the regular create form
+    # In a full implementation, you'd pass the JSON data here
+    return templates.TemplateResponse("htmx/create_form_filepond.html", {
+        "request": request,
+        "guilds": user_guilds,
+        "timezones": timezones,
+        "open_time": default_open_time,
+        "close_time": default_close_time,
+        "user_preferences": user_prefs,
+        "priority_timezone": priority_timezone,
+        "default_emojis": POLL_EMOJIS,
+        "template_data": None,  # JSON data would go here
+        "is_template": False,
+        "is_json_import": True  # Flag to indicate this is from JSON import
+    })
 
 
 # HTMX endpoint functions that will be registered with the FastAPI app
@@ -2053,6 +2198,39 @@ async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordU
             "request": request,
             "message": f"Error closing poll: {str(e)}"
         })
+    finally:
+        db.close()
+
+
+async def export_poll_json_htmx(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+    """Export poll as JSON file via HTMX"""
+    from fastapi.responses import Response
+    
+    logger.info(f"User {current_user.id} exporting poll {poll_id} as JSON")
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Poll not found or access denied")
+
+        # Export poll to JSON
+        json_string = PollJSONExporter.export_poll_to_json_string(poll, indent=2)
+        filename = PollJSONExporter.generate_filename(poll)
+        
+        logger.info(f"Exported poll {poll_id} as JSON for user {current_user.id}")
+        
+        return Response(
+            content=json_string,
+            media_type='application/json',
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting JSON for poll {poll_id}: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Error exporting JSON: {str(e)}")
     finally:
         db.close()
 

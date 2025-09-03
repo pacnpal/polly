@@ -1,0 +1,48 @@
+{
+  "name": "Annual Company Retreat Planning Poll",
+  "question": "Help us plan the perfect company retreat! Which location and activities would you prefer for our 2025 annual retreat?",
+  "options": [
+    "Mountain Resort - Hiking, Team Building, Spa Activities",
+    "Beach Resort - Water Sports, Volleyball, Sunset Dinners", 
+    "City Hotel - Museums, Fine Dining, Urban Exploration",
+    "Countryside Lodge - Fishing, Campfires, Nature Walks",
+    "Adventure Camp - Rock Climbing, Zip Lines, Obstacle Courses"
+  ],
+  "emojis": [
+    "🏔️",
+    "🏖️",
+    "🏙️", 
+    "🌲",
+    "🧗"
+  ],
+  "server_id": "123456789012345678",
+  "channel_id": "987654321098765432",
+  "multiple_choice": true,
+  "anonymous": false,
+  "role_ping": "@here",
+  "image_message_text": "🎉 Help us plan an amazing retreat! Your input matters - vote for your top preferences! 🎉",
+  "scheduled_date": "2025-01-20",
+  "scheduled_time": "09:00",
+  "timezone": "US/Eastern",
+  "description": "This poll will help our HR team plan the most enjoyable and engaging company retreat possible. You can select multiple options if you're interested in different types of activities. The poll will run for one week to give everyone time to participate. Results will be shared with the planning committee to make the final decision.",
+  "metadata": {
+    "department": "Human Resources",
+    "budget_range": "$150-200 per person",
+    "expected_attendees": 45,
+    "retreat_duration": "3 days, 2 nights",
+    "planning_committee": [
+      "Sarah Johnson - HR Director",
+      "Mike Chen - Operations Manager", 
+      "Lisa Rodriguez - Employee Experience Lead"
+    ],
+    "decision_deadline": "2025-02-01",
+    "retreat_dates": "March 15-17, 2025",
+    "additional_notes": "Transportation will be provided. Dietary restrictions and accessibility needs will be accommodated.",
+    "follow_up_actions": [
+      "Share results with planning committee",
+      "Book venue within 48 hours of poll closure",
+      "Send detailed itinerary to all employees",
+      "Collect dietary restrictions and special needs"
+    ]
+  }
+}

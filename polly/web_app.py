@@ -352,6 +352,22 @@ def add_htmx_routes(app: FastAPI):
         bot = get_bot_instance()
         return await get_guild_emojis_htmx(server_id, bot, current_user)
 
+    @app.post("/htmx/import-json", response_class=HTMLResponse)
+    async def htmx_import_json(request: Request, current_user: DiscordUser = Depends(require_auth)):
+        from .htmx_endpoints import import_json_htmx
+        return await import_json_htmx(request, current_user)
+
+    @app.get("/htmx/create-form-json-import", response_class=HTMLResponse)
+    async def htmx_create_form_json_import(request: Request, current_user: DiscordUser = Depends(require_auth)):
+        from .htmx_endpoints import get_create_form_json_import_htmx
+        bot = get_bot_instance()
+        return await get_create_form_json_import_htmx(request, bot, current_user)
+
+    @app.get("/htmx/poll/{poll_id}/export-json")
+    async def htmx_export_poll_json(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        from .htmx_endpoints import export_poll_json_htmx
+        return await export_poll_json_htmx(poll_id, request, current_user)
+
     @app.get("/htmx/poll/{poll_id}/dashboard", response_class=HTMLResponse)
     async def htmx_poll_dashboard(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
         from .htmx_endpoints import get_poll_dashboard_htmx

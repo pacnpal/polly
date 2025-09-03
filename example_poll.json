@@ -1,0 +1,33 @@
+{
+  "name": "Weekly Team Meeting Poll",
+  "question": "What time works best for our weekly team meeting?",
+  "options": [
+    "Monday 9:00 AM EST",
+    "Tuesday 2:00 PM EST", 
+    "Wednesday 10:00 AM EST",
+    "Thursday 3:00 PM EST",
+    "Friday 11:00 AM EST"
+  ],
+  "emojis": [
+    "📅",
+    "⏰", 
+    "🗓️",
+    "⌚",
+    "📆"
+  ],
+  "server_id": "123456789012345678",
+  "channel_id": "987654321098765432",
+  "multiple_choice": false,
+  "anonymous": false,
+  "role_ping": "@everyone",
+  "image_message_text": "Please vote for your preferred meeting time! 🗳️",
+  "scheduled_date": "2025-01-15",
+  "scheduled_time": "09:00",
+  "timezone": "US/Eastern",
+  "description": "This poll will help us determine the best time for our weekly team meetings. Please consider your availability and time zone when voting.",
+  "metadata": {
+    "created_by": "Team Lead",
+    "department": "Engineering",
+    "priority": "high"
+  }
+}

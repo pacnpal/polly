@@ -1,0 +1,10 @@
+{
+  "name": "Lunch Choice",
+  "question": "Where should we go for lunch today?",
+  "options": [
+    "Pizza Palace",
+    "Burger Barn", 
+    "Taco Town",
+    "Salad Station"
+  ]
+}
