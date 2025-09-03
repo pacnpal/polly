@@ -524,7 +524,7 @@ def get_common_timezones() -> list:
     return timezones
 
 
-async def import_json_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def import_json_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
     """Import poll data from JSON file via HTMX"""
     logger.info(f"🔍 JSON IMPORT - User {current_user.id} starting JSON import process")
     
