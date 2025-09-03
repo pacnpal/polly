@@ -1,24 +1,7 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: polly-redis
-    ports:
-      - "6340:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD:-polly_redis_pass}
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-polly_redis_pass}", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - polly-network
-
   polly:
     build: .
-    container_name: polly-app
+    user: "1000:1000"
     ports:
       - "8000:8000"
     env_file:
@@ -29,31 +12,36 @@ services:
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
       - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-polly_redis_pass}@redis:6379
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
+      - REDIS_URL=redis://:polly_redis_password_2024@redis:6379/0
     volumes:
       - ./data:/app/data
-      - ./static:/app/static
+      - ./static/uploads:/app/static/uploads
       - ./logs:/app/logs
       - ./db:/app/db
-    restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - polly-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data:/data
+    command: redis-server /usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "polly_redis_password_2024", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 volumes:
   polly_db:
   redis_data:
-
-networks:
-  polly-network:
-    driver: bridge
