@@ -532,15 +532,31 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
         form_data = await request.form()
         json_file = form_data.get("json_file")
         
-        if not json_file or not hasattr(json_file, 'filename') or not json_file.filename:
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} attempted import without selecting file")
+        # Enhanced file detection - check for file object and content
+        if not json_file:
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} no json_file in form data")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please select a JSON file to import"
             })
         
-        filename = str(json_file.filename)
-        logger.info(f"🔍 JSON IMPORT - User {current_user.id} uploading file: {filename}")
+        # Check if it's a proper file upload object
+        if not hasattr(json_file, 'read'):
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} json_file is not a file object: {type(json_file)}")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
+                "request": request,
+                "message": "Invalid file upload. Please try selecting the file again."
+            })
+        
+        # Get filename - handle cases where filename might be None or empty
+        filename = getattr(json_file, 'filename', None)
+        if not filename:
+            # Try to get filename from content_disposition or use a default
+            filename = "uploaded_file.json"
+            logger.info(f"🔍 JSON IMPORT - User {current_user.id} no filename provided, using default: {filename}")
+        else:
+            filename = str(filename)
+            logger.info(f"🔍 JSON IMPORT - User {current_user.id} uploading file: {filename}")
         
         # Validate file type
         if not filename.lower().endswith('.json'):
