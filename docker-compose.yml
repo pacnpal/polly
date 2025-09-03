@@ -35,7 +35,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
     volumes:
       - ./data:/app/data
-      - ./static/uploads:/app/static/uploads
+      - ./static:/app/static
       - ./logs:/app/logs
       - ./db:/app/db
     restart: unless-stopped
