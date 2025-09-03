@@ -9,13 +9,14 @@ import os
 import json
 import logging
 from datetime import datetime
+from decouple import config
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 # Default database path
-DEFAULT_DB_PATH = "polly.db"
+DEFAULT_DB_PATH = config("DB_PATH", default="./db/polly.db")
 
 # Default emojis for polls
 DEFAULT_POLL_EMOJIS = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]

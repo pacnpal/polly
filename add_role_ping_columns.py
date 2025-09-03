@@ -7,11 +7,12 @@ Run this script to add the new role ping functionality to existing installations
 import sqlite3
 import os
 import sys
+from decouple import config
 from datetime import datetime
 
 def migrate_database():
     """Add role ping columns to existing database"""
-    db_path = "polly.db"
+    db_path = config("DB_PATH", default="./db/polly.db")
     
     if not os.path.exists(db_path):
         print(f"Database file {db_path} not found. No migration needed for new installations.")

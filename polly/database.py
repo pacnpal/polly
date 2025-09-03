@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
 from typing import List, Optional
+from decouple import config
 import json
 
 
@@ -55,7 +56,7 @@ class TypeSafeColumn:
             return default
 
 # Database setup
-DATABASE_URL = "sqlite:///./polly.db"
+DATABASE_URL = config("DATABASE_URL", default="sqlite:///./db/polly.db")
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

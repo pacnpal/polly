@@ -6,9 +6,10 @@ Updates the database schema to match the current models.
 
 import sqlite3
 import os
+from decouple import config
 
 
-DB_PATH = os.environ.get("POLLY_DB_PATH", "polly.db")
+DB_PATH = config("DB_PATH", "./db/polly.db")
 
 
 def migrate_database():

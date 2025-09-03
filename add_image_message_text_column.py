@@ -7,6 +7,7 @@ Run this script to update existing databases with the new bulletproof operations
 import sqlite3
 import os
 import logging
+from decouple import config
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def migrate_database():
     """Add image_message_text column to polls table if it doesn't exist"""
-    db_path = "polly.db"
+    db_path = config("DB_PATH", default="./db/polly.db")
 
     if not os.path.exists(db_path):
         logger.info(f"Database {db_path} does not exist. No migration needed.")

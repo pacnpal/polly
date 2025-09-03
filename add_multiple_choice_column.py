@@ -5,15 +5,16 @@ Add multiple_choice column to polls table
 
 import sqlite3
 import sys
+from decouple import config
 from pathlib import Path
 
 
 def add_multiple_choice_column():
     """Add multiple_choice column to polls table"""
-    db_path = Path("polly.db")
+    db_path = config("DB_PATH", default="./db/polly.db")
 
-    if not db_path.exists():
-        print("❌ Database file polly.db not found!")
+    if not Path(db_path).exists():
+        print(f"❌ Database file {db_path} not found!")
         return False
 
     conn = None
