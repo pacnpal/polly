@@ -744,6 +744,115 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
     })
 
 
+async def get_create_form_template_htmx(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get create poll form pre-filled with template data from existing poll"""
+    logger.info(f"User {current_user.id} creating template from poll {poll_id}")
+    db = get_db_session()
+    try:
+        # Get the source poll
+        source_poll = db.query(Poll).filter(Poll.id == poll_id, Poll.creator_id == current_user.id).first()
+        if not source_poll:
+            logger.warning(f"Poll {poll_id} not found or not owned by user {current_user.id}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        # Get user's guilds with channels with error handling
+        try:
+            user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+            if user_guilds is None:
+                user_guilds = []
+        except Exception as e:
+            logger.error(f"Error getting user guilds for template form for {current_user.id}: {e}")
+            from .error_handler import notify_error_async
+            await notify_error_async(e, "Template Form Guild Retrieval", user_id=current_user.id)
+            user_guilds = []
+
+        # Get user preferences
+        user_prefs = get_user_preferences(current_user.id)
+
+        # Get timezones - user's default first
+        common_timezones = [
+            user_prefs["default_timezone"], "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
+            "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+        ]
+        # Remove duplicates while preserving order
+        seen = set()
+        common_timezones = [tz for tz in common_timezones if not (tz in seen or seen.add(tz))]
+
+        # Set default times in user's timezone (not copying original times)
+        user_tz = pytz.timezone(user_prefs["default_timezone"])
+        now = datetime.now(user_tz)
+
+        # Default start time should be next day at 12:00AM (midnight)
+        next_day = now.date() + timedelta(days=1)
+        open_time_dt = datetime.combine(next_day, datetime.min.time())
+        open_time_dt = user_tz.localize(open_time_dt)
+        open_time = open_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+        # Close time should be 24 hours after open time
+        close_time_dt = open_time_dt + timedelta(hours=24)
+        close_time = close_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+        # Prepare timezone data for template
+        timezones = []
+        for tz in common_timezones:
+            try:
+                tz_obj = pytz.timezone(tz)
+                offset = datetime.now(tz_obj).strftime('%z')
+                timezones.append({
+                    "name": tz,
+                    "display": f"{tz} (UTC{offset})"
+                })
+            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+                logger.warning(f"Error formatting timezone {tz}: {e}")
+                timezones.append({
+                    "name": tz,
+                    "display": tz
+                })
+
+        # Extract template data from source poll
+        template_data = {
+            "name": f"Copy of {TypeSafeColumn.get_string(source_poll, 'name')}",
+            "question": TypeSafeColumn.get_string(source_poll, 'question'),
+            "options": source_poll.options,  # Use the property method
+            "emojis": source_poll.emojis,    # Use the property method
+            "server_id": TypeSafeColumn.get_string(source_poll, 'server_id'),
+            "channel_id": TypeSafeColumn.get_string(source_poll, 'channel_id'),
+            "anonymous": TypeSafeColumn.get_bool(source_poll, 'anonymous', False),
+            "multiple_choice": TypeSafeColumn.get_bool(source_poll, 'multiple_choice', False),
+            "ping_role_enabled": TypeSafeColumn.get_bool(source_poll, 'ping_role_enabled', False),
+            "ping_role_id": TypeSafeColumn.get_string(source_poll, 'ping_role_id', ""),
+            # Note: Intentionally NOT copying image_path or image_message_text as requested
+        }
+
+        logger.info(f"Template data extracted from poll {poll_id}: {len(template_data['options'])} options, server={template_data['server_id']}")
+
+        return templates.TemplateResponse("htmx/create_form_filepond.html", {
+            "request": request,
+            "guilds": user_guilds,
+            "timezones": timezones,
+            "open_time": open_time,
+            "close_time": close_time,
+            "user_preferences": user_prefs,
+            "default_emojis": POLL_EMOJIS,
+            "template_data": template_data,  # Pass template data to pre-fill form
+            "is_template": True  # Flag to indicate this is a template creation
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating template from poll {poll_id}: {e}")
+        from .error_handler import notify_error_async
+        await notify_error_async(e, "Template Creation", poll_id=poll_id, user_id=current_user.id)
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error loading template: {str(e)}"
+        })
+    finally:
+        db.close()
+
+
 async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth), preselect_last_channel: bool = True):
     """Get channels for a server as HTML options for HTMX"""
     if not server_id:

@@ -1,4 +1,4 @@
-<h2><i class="fas fa-plus me-2"></i>Create New Poll</h2>
+<h2><i class="fas fa-plus me-2"></i>{% if is_template %}Create Poll from Template{% else %}Create New Poll{% endif %}</h2>
 
 <form hx-post="/htmx/create-poll" hx-target="#main-content" hx-encoding="multipart/form-data" 
       hx-indicator="#loading-indicator">
@@ -11,7 +11,7 @@
                 <div class="col-md-6">
                     <div class="mb-3">
                         <label for="poll-name" class="form-label">Poll Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="poll-name" name="name" required>
+                        <input type="text" class="form-control" id="poll-name" name="name" required value="{% if template_data %}{{ template_data.name|e }}{% endif %}">
                     </div>
                 </div>
                 <div class="col-md-6">
@@ -28,7 +28,7 @@
 
             <div class="mb-3">
                 <label for="poll-question" class="form-label">Question <span class="text-danger">*</span></label>
-                <textarea class="form-control" id="poll-question" name="question" rows="3" required></textarea>
+                <textarea class="form-control" id="poll-question" name="question" rows="3" required>{% if template_data %}{{ template_data.question|e }}{% endif %}</textarea>
             </div>
 
             <div class="row">
@@ -791,6 +791,113 @@
                 submitBtn.classList.remove('btn-secondary');
             }
         });
+
+        // Template data pre-filling functionality
+        {% if template_data %}
+        function preFillTemplateData() {
+            const templateData = {{ template_data|tojson }};
+            console.log('Pre-filling template data:', templateData);
+
+            // Pre-fill server selection
+            if (templateData.server_id) {
+                const serverSelect = document.getElementById('server-select');
+                if (serverSelect) {
+                    serverSelect.value = templateData.server_id;
+                    // Trigger change event to load channels
+                    serverSelect.dispatchEvent(new Event('change'));
+                }
+            }
+
+            // Pre-fill options and emojis
+            if (templateData.options && templateData.emojis) {
+                const optionsContainer = document.getElementById('options-container');
+                
+                // Clear existing options first
+                optionsContainer.innerHTML = '';
+                
+                // Add options from template
+                templateData.options.forEach((option, index) => {
+                    const optionNum = index + 1;
+                    const emoji = templateData.emojis[index] || '🇦';
+                    
+                    const optionHtml = `
+                        <div class="input-group mb-2">
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="${optionNum}">${emoji}</button>
+                                <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                        data-bs-toggle="dropdown" data-option="${optionNum}" aria-expanded="false">
+                                    <span class="visually-hidden">Discord Emojis</span>
+                                </button>
+                                <ul class="dropdown-menu discord-emoji-dropdown" data-option="${optionNum}">
+                                    <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                                </ul>
+                            </div>
+                            <input type="text" class="form-control" name="option${optionNum}" placeholder="Option ${optionNum}" required value="${option}">
+                            <input type="hidden" name="emoji${optionNum}" value="${emoji}">
+                        </div>
+                    `;
+                    optionsContainer.insertAdjacentHTML('beforeend', optionHtml);
+                });
+            }
+
+            // Pre-fill checkboxes
+            if (templateData.anonymous) {
+                const anonymousCheckbox = document.getElementById('anonymous-poll');
+                if (anonymousCheckbox) {
+                    anonymousCheckbox.checked = true;
+                }
+            }
+
+            if (templateData.multiple_choice) {
+                const multipleChoiceCheckbox = document.getElementById('multiple-choice-poll');
+                if (multipleChoiceCheckbox) {
+                    multipleChoiceCheckbox.checked = true;
+                }
+            }
+
+            if (templateData.ping_role_enabled) {
+                const pingRoleCheckbox = document.getElementById('ping-role-enabled');
+                const roleSelectionContainer = document.getElementById('role-selection-container');
+                if (pingRoleCheckbox) {
+                    pingRoleCheckbox.checked = true;
+                    if (roleSelectionContainer) {
+                        roleSelectionContainer.style.display = 'block';
+                    }
+                }
+            }
+
+            // Wait for channels to load, then pre-select channel
+            if (templateData.channel_id) {
+                const checkChannelLoad = setInterval(() => {
+                    const channelSelect = document.getElementById('channel-select');
+                    if (channelSelect && channelSelect.children.length > 1) {
+                        channelSelect.value = templateData.channel_id;
+                        clearInterval(checkChannelLoad);
+                    }
+                }, 100);
+                
+                // Clear interval after 5 seconds to prevent infinite loop
+                setTimeout(() => clearInterval(checkChannelLoad), 5000);
+            }
+
+            // Wait for roles to load, then pre-select role
+            if (templateData.ping_role_id) {
+                const checkRoleLoad = setInterval(() => {
+                    const roleSelect = document.getElementById('role-select');
+                    if (roleSelect && roleSelect.children.length > 1) {
+                        roleSelect.value = templateData.ping_role_id;
+                        clearInterval(checkRoleLoad);
+                    }
+                }, 100);
+                
+                // Clear interval after 5 seconds to prevent infinite loop
+                setTimeout(() => clearInterval(checkRoleLoad), 5000);
+            }
+        }
+
+        // Call pre-fill function after DOM is ready
+        document.addEventListener('DOMContentLoaded', preFillTemplateData);
+        {% endif %}
 })();
 </script>
 
