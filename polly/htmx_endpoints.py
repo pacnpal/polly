@@ -1241,10 +1241,9 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         if not is_valid:
             logger.info(
                 f"Poll creation validation failed for user {current_user.id}: {len(validation_errors)} errors")
-            return templates.TemplateResponse("htmx/components/validation_error.html", {
-                "request": request,
-                "validation_errors": validation_errors
-            })
+            # Return a 400 status code to trigger client-side validation
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Validation failed")
 
         # Create Discord emoji handler
         emoji_handler = DiscordEmojiHandler(bot)
@@ -1736,10 +1735,9 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if not is_valid:
             logger.info(
                 f"Poll update validation failed for poll {poll_id}: {len(validation_errors)} errors")
-            return templates.TemplateResponse("htmx/components/validation_error.html", {
-                "request": request,
-                "validation_errors": validation_errors
-            })
+            # Return a 400 status code to trigger client-side validation
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Validation failed")
 
         # Extract validated data
         name = validated_data['name']

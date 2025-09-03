@@ -407,6 +407,21 @@
         document.addEventListener('htmx:responseError', function(e) {
             try {
                 isSubmitting = false;
+                
+                // If we get a 400 status code, it means validation failed
+                // Run client-side validation to show the errors
+                if (e.detail.xhr && e.detail.xhr.status === 400) {
+                    setTimeout(() => {
+                        validateForm(true); // Show all validation errors
+                        
+                        // Scroll to first error
+                        const firstError = document.querySelector('.is-invalid');
+                        if (firstError) {
+                            firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            firstError.focus();
+                        }
+                    }, 100);
+                }
             } catch (error) {
                 console.warn('Error in htmx:responseError handler:', error);
             }
