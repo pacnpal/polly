@@ -650,13 +650,13 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
             "json_data": poll_data  # Pass the data for the next form
         })
         
-        except Exception as e:
-            logger.error(f"❌ JSON IMPORT - Critical error for user {current_user.id}: {e}")
-            logger.exception("Full traceback for JSON import error:")
-            return templates.TemplateResponse("htmx/components/inline_error.html", {
-                "request": request,
-                "message": f"Unexpected error importing JSON: {str(e)}"
-            })
+    except Exception as e:
+        logger.error(f"❌ JSON IMPORT - Critical error for user {current_user.id}: {e}")
+        logger.exception("Full traceback for JSON import error:")
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
+            "request": request,
+            "message": f"Unexpected error importing JSON: {str(e)}"
+        })
 
 
 async def get_create_form_json_import_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
