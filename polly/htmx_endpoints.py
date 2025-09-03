@@ -1140,7 +1140,7 @@ async def get_create_form_template_htmx(poll_id: int, request: Request, bot, cur
 
     except Exception as e:
         logger.error(f"Error creating template from poll {poll_id}: {e}")
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": f"Error loading template: {str(e)}"
         })
@@ -1778,7 +1778,7 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         
         if not emoji_success:
             logger.warning(f"Unified emoji processing failed for user {current_user.id}: {emoji_error}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": emoji_error
             })
@@ -1832,7 +1832,7 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
                     image_filename = None
             except Exception as e:
                 logger.error(f"Error reading image file: {e}")
-                return templates.TemplateResponse("htmx/components/alert_error.html", {
+                return templates.TemplateResponse("htmx/components/inline_error.html", {
                     "request": request,
                     "message": "Error reading image file"
                 })
@@ -1855,7 +1855,7 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
             error_msg = await PollErrorHandler.handle_poll_creation_error(
                 Exception(result["error"]), poll_data, bot
             )
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": error_msg
             })
@@ -1920,7 +1920,7 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         error_msg = await PollErrorHandler.handle_poll_creation_error(
             e, {"name": poll_name, "user_id": current_user.id}, bot
         )
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": error_msg
         })
@@ -2236,7 +2236,7 @@ async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordU
         poll = db.query(Poll).filter(Poll.id == poll_id,
                                      Poll.creator_id == current_user.id).first()
         if not poll:
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
@@ -2317,14 +2317,14 @@ async def delete_poll_htmx(poll_id: int, request: Request, current_user: Discord
         poll = db.query(Poll).filter(Poll.id == poll_id,
                                      Poll.creator_id == current_user.id).first()
         if not poll:
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
 
         poll_status = TypeSafeColumn.get_string(poll, 'status')
         if poll_status not in ['scheduled', 'closed']:
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Only scheduled or closed polls can be deleted"
             })
@@ -2352,7 +2352,7 @@ async def delete_poll_htmx(poll_id: int, request: Request, current_user: Discord
     except Exception as e:
         logger.error(f"Error deleting poll {poll_id}: {e}")
         db.rollback()
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": f"Error deleting poll: {str(e)}"
         })
@@ -2371,7 +2371,7 @@ async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: 
         if not poll:
             logger.warning(
                 f"Poll {poll_id} not found or not owned by user {current_user.id}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
@@ -2379,7 +2379,7 @@ async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: 
         if TypeSafeColumn.get_string(poll, 'status') != "scheduled":
             logger.warning(
                 f"Attempt to edit non-scheduled poll {poll_id} (status: {TypeSafeColumn.get_string(poll, 'status')})")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Only scheduled polls can be edited"
             })
@@ -2405,7 +2405,7 @@ async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: 
         # Ensure we have valid datetime objects before processing
         if not isinstance(open_time_value, datetime) or not isinstance(close_time_value, datetime):
             logger.error(f"Invalid datetime values for poll {poll_id}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Error processing poll times"
             })
@@ -2467,7 +2467,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if not poll:
             logger.warning(
                 f"Poll {poll_id} not found or not owned by user {current_user.id}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
@@ -2475,7 +2475,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if TypeSafeColumn.get_string(poll, 'status') != "scheduled":
             logger.warning(
                 f"Attempt to edit non-scheduled poll {poll_id} (status: {TypeSafeColumn.get_string(poll, 'status')})")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Only scheduled polls can be edited"
             })
@@ -2535,7 +2535,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if not is_valid:
             logger.warning(
                 f"Image validation failed for poll {poll_id}: {error_msg}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": error_msg
             })
@@ -2546,7 +2546,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
             new_image_path = await save_image_file(content, str(getattr(image_file, 'filename', '')))
             if not new_image_path:
                 logger.error(f"Failed to save new image for poll {poll_id}")
-                return templates.TemplateResponse("htmx/components/alert_error.html", {
+                return templates.TemplateResponse("htmx/components/inline_error.html", {
                     "request": request,
                     "message": "Failed to save image file"
                 })
@@ -2584,7 +2584,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if len(options) < 2:
             logger.warning(
                 f"Insufficient options for poll {poll_id}: {len(options)}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "At least 2 options required"
             })
@@ -2608,7 +2608,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
 
             logger.warning(
                 f"Attempt to schedule poll in the past: {open_dt} < {next_minute}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": f"Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later."
             })
@@ -2616,7 +2616,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if close_dt <= open_dt:
             logger.warning(
                 f"Invalid time range for poll {poll_id}: open={open_dt}, close={close_dt}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Close time must be after open time"
             })
@@ -2628,7 +2628,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         if not guild or not channel:
             logger.error(
                 f"Invalid guild or channel for poll {poll_id}: guild={guild}, channel={channel}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Invalid server or channel"
             })
@@ -2697,7 +2697,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
     except Exception as e:
         logger.error(f"Error updating poll {poll_id}: {e}")
         db.rollback()
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": f"Error updating poll: {str(e)}"
         })
