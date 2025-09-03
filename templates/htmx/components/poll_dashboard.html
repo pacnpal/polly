@@ -163,7 +163,7 @@
 <!-- Auto-refresh the dashboard every 5 seconds -->
 <div hx-get="/htmx/poll/{{ poll.id }}/dashboard" 
      hx-trigger="every 5s" 
-     hx-swap="outerHTML"
-     hx-select=".card"
+     hx-swap="innerHTML"
+     hx-target="#poll-dashboard-container"
      style="display: none;">
 </div>
