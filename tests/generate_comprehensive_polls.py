@@ -21,19 +21,22 @@ Features:
 
 Usage:
     # Standard comprehensive testing
-    uv run tests/generate_comprehensive_polls.py [--dry-run] [--limit N]
+    uv run tests/generate_comprehensive_polls.py [--dry-run] [--limit N] [--delay 2.0]
     
     # With real images from sample-images repository
-    uv run tests/generate_comprehensive_polls.py --use-real-images
+    uv run tests/generate_comprehensive_polls.py --use-real-images --delay 1.0
 
     # Ultimate testing: create a poll for each real image
-    uv run tests/generate_comprehensive_polls.py --use-all-images
+    uv run tests/generate_comprehensive_polls.py --use-all-images --delay 0.5
 
     # Keep repository after testing
-    uv run tests/generate_comprehensive_polls.py --use-all-images --no-cleanup
+    uv run tests/generate_comprehensive_polls.py --use-all-images --no-cleanup --delay 3.0
     
-    # Export poll combinations to JSON
+    # Export poll combinations to JSON (no rate limiting needed)
     uv run tests/generate_comprehensive_polls.py --export-json
+    
+    # Fast testing with minimal delay
+    uv run tests/generate_comprehensive_polls.py --limit 10 --delay 0.1
 """
 
 import asyncio
@@ -73,7 +76,7 @@ class ComprehensivePollGenerator:
     def __init__(self, dry_run: bool = False, limit: Optional[int] = None, 
                  server_id: Optional[str] = None, channel_id: Optional[str] = None,
                  user_id: Optional[str] = None, role_id: Optional[str] = None,
-                 rate_limit_per_minute: int = 30):
+                 delay_between_polls: float = 2.0):
         self.dry_run = dry_run
         self.limit = limit
         self.generated_count = 0
@@ -82,10 +85,8 @@ class ComprehensivePollGenerator:
         self.combinations = []
         self.should_cleanup = True  # Default to cleanup
         
-        # Rate limiting
-        self.rate_limit_per_minute = rate_limit_per_minute
-        self.polls_created_this_minute = 0
-        self.current_minute_start = datetime.now()
+        # Rate limiting - simple delay between polls
+        self.delay_between_polls = delay_between_polls
         
         # Test data - use provided IDs or defaults
         self.test_user_id = user_id or "123456789012345678"  # Mock Discord user ID
@@ -421,43 +422,13 @@ class ComprehensivePollGenerator:
             # Fallback to default
             return self.letter_emojis[:count]
     
-    async def check_rate_limit(self):
-        """Check and enforce rate limiting"""
-        if self.dry_run:
-            return  # No rate limiting for dry runs
-            
-        now = datetime.now()
-        
-        # Check if we've moved to a new minute
-        if (now - self.current_minute_start).total_seconds() >= 60:
-            # Reset for new minute
-            self.current_minute_start = now
-            self.polls_created_this_minute = 0
-            logger.info(f"🕐 Rate limit reset - new minute started")
-        
-        # Check if we've hit the rate limit
-        if self.polls_created_this_minute >= self.rate_limit_per_minute:
-            # Calculate how long to wait
-            seconds_until_next_minute = 60 - (now - self.current_minute_start).total_seconds()
-            logger.info(f"⏳ Rate limit reached ({self.polls_created_this_minute}/{self.rate_limit_per_minute}). Waiting {seconds_until_next_minute:.1f} seconds...")
-            await asyncio.sleep(seconds_until_next_minute + 1)  # Add 1 second buffer
-            
-            # Reset for new minute
-            self.current_minute_start = datetime.now()
-            self.polls_created_this_minute = 0
-            logger.info(f"🕐 Rate limit reset after waiting")
-
     async def create_single_poll(self, combination: Dict[str, Any]) -> Tuple[bool, str]:
         """Create a single poll from combination data"""
         try:
-            # Check rate limit before creating poll
-            await self.check_rate_limit()
-            
-            # Increment rate limit counter BEFORE attempting to create poll
-            # This ensures rate limiting works regardless of success/failure
-            if not self.dry_run:
-                self.polls_created_this_minute += 1
-                logger.info(f"🔄 Attempting poll creation ({self.polls_created_this_minute}/{self.rate_limit_per_minute} this minute)")
+            # Apply delay between polls (simple rate limiting)
+            if not self.dry_run and self.delay_between_polls > 0:
+                logger.info(f"⏳ Waiting {self.delay_between_polls} seconds before creating poll...")
+                await asyncio.sleep(self.delay_between_polls)
             
             poll_data = self.create_poll_data(combination)
             
@@ -670,14 +641,10 @@ class ComprehensivePollGenerator:
     async def create_poll_with_image_and_combination(self, image_path: str, combination: Dict[str, Any], poll_number: int) -> bool:
         """Create a poll with a specific image using a full combination"""
         try:
-            # Check rate limit before creating poll
-            await self.check_rate_limit()
-            
-            # Increment rate limit counter BEFORE attempting to create poll
-            # This ensures rate limiting works regardless of success/failure
-            if not self.dry_run:
-                self.polls_created_this_minute += 1
-                logger.info(f"🔄 Attempting image poll creation ({self.polls_created_this_minute}/{self.rate_limit_per_minute} this minute)")
+            # Apply delay between polls (simple rate limiting)
+            if not self.dry_run and self.delay_between_polls > 0:
+                logger.info(f"⏳ Waiting {self.delay_between_polls} seconds before creating image poll...")
+                await asyncio.sleep(self.delay_between_polls)
             
             # Create poll data from the combination
             poll_data = self.create_poll_data(combination)
@@ -857,8 +824,8 @@ async def main():
                        help="Discord role ID to use for role pings")
     
     # Rate limiting option
-    parser.add_argument("--rate-limit", type=int, default=30,
-                       help="Maximum number of polls to create per minute (default: 30)")
+    parser.add_argument("--delay", type=float, default=2.0,
+                       help="Seconds to wait between creating polls (default: 2.0)")
     
     args = parser.parse_args()
     
@@ -903,7 +870,7 @@ async def main():
             channel_id=args.channel_id,
             user_id=args.user_id,
             role_id=args.role_id,
-            rate_limit_per_minute=args.rate_limit
+            delay_between_polls=args.delay
         )
         
         # Enable real images if requested

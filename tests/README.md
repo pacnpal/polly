@@ -124,34 +124,43 @@ uv run tests/generate_comprehensive_polls.py \
 
 #### Rate Limiting
 
-The script includes built-in rate limiting to prevent overwhelming Discord's API:
+The script includes simple delay-based rate limiting to prevent overwhelming Discord's API:
 
 ```bash
-# Default rate limit (30 polls per minute)
+# Default delay (2.0 seconds between polls)
 uv run tests/generate_comprehensive_polls.py --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
 
-# Custom rate limit (10 polls per minute for conservative testing)
-uv run tests/generate_comprehensive_polls.py --rate-limit 10 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+# Conservative delay (3.0 seconds for slower, safer testing)
+uv run tests/generate_comprehensive_polls.py --delay 3.0 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
 
-# Higher rate limit (60 polls per minute for faster testing)
-uv run tests/generate_comprehensive_polls.py --rate-limit 60 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+# Faster testing (1.0 second delay)
+uv run tests/generate_comprehensive_polls.py --delay 1.0 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
 
-# No rate limiting (dry run mode automatically disables rate limiting)
+# Minimal delay for rapid testing (0.1 seconds)
+uv run tests/generate_comprehensive_polls.py --delay 0.1 --limit 10 --server-id "YOUR_SERVER_ID" --channel-id "YOUR_CHANNEL_ID"
+
+# No delay (dry run mode automatically disables delays)
 uv run tests/generate_comprehensive_polls.py --dry-run --limit 100
 ```
 
 **Rate Limiting Features:**
-- **Automatic Enforcement**: Tracks polls created per minute and enforces limits
-- **Smart Waiting**: When limit is reached, waits until next minute with progress logging
-- **Real-time Tracking**: Shows current usage in logs: `(15/30 this minute)`
-- **Configurable Limits**: Adjust rate limit based on your Discord server's needs
-- **Dry Run Bypass**: No rate limiting during dry runs for fast testing
+- **Simple Delay System**: Waits specified seconds between each poll creation
+- **Configurable Timing**: Adjust delay from 0.1 to any number of seconds
+- **Predictable Pacing**: Consistent timing between poll creations
+- **Dry Run Bypass**: No delays during dry runs for fast testing
+- **Easy Calculation**: Rate = 60 / delay_seconds polls per minute
+
+**Rate Limiting Examples:**
+- `--delay 2.0` = 30 polls per minute
+- `--delay 1.0` = 60 polls per minute  
+- `--delay 3.0` = 20 polls per minute
+- `--delay 0.5` = 120 polls per minute
 
 **Rate Limiting Logs:**
 ```
-🕐 Rate limit reset - new minute started
-⏳ Rate limit reached (30/30). Waiting 23.4 seconds...
-✅ Created poll 123: Test Poll (15/30 this minute)
+⏳ Waiting 2.0 seconds before creating poll...
+✅ Created poll 123: Test Poll
+⏳ Waiting 2.0 seconds before creating image poll...
 ```
 
 #### Real Image Testing
