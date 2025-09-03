@@ -1261,9 +1261,14 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
             emoji_input = safe_get_form_data(form_data, f"emoji{i}")
             emoji_inputs.append(emoji_input)
             print(
-                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
+                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}' (type: {type(emoji_input)}, len: {len(emoji_input) if emoji_input else 0})")
             logger.info(
-                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}'")
+                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}' (type: {type(emoji_input)}, len: {len(emoji_input) if emoji_input else 0})")
+            
+            # Additional debugging for custom emoji format detection
+            if emoji_input and '<' in emoji_input and '>' in emoji_input:
+                print(f"🎭 POLL CREATION DEBUG - Detected custom emoji format in input: '{emoji_input}'")
+                logger.info(f"🎭 POLL CREATION DEBUG - Detected custom emoji format in input: '{emoji_input}'")
 
         # Process all emojis using Discord native handler
         server_id = validated_data['server_id']
@@ -1273,6 +1278,14 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         print(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
         logger.info(f"📊 POLL CREATION DEBUG - Final options: {options}")
         logger.info(f"😀 POLL CREATION DEBUG - Final emojis: {emojis}")
+
+        # Validate emoji uniqueness - this should fail validation if duplicates exist
+        if len(set(emojis)) != len(emojis):
+            logger.warning(f"Duplicate emojis detected in poll creation: {emojis}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Each poll option must have a unique emoji. Please select different emojis for each option."
+            })
 
         # Extract validated data
         name = validated_data['name']
