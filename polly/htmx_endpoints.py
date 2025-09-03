@@ -333,11 +333,13 @@ def get_user_preferences(user_id: str) -> dict:
             return {
                 "last_server_id": TypeSafeColumn.get_string(prefs, 'last_server_id') or None,
                 "last_channel_id": TypeSafeColumn.get_string(prefs, 'last_channel_id') or None,
+                "last_role_id": TypeSafeColumn.get_string(prefs, 'last_role_id') or None,
                 "default_timezone": TypeSafeColumn.get_string(prefs, 'default_timezone', 'US/Eastern')
             }
         return {
             "last_server_id": None,
             "last_channel_id": None,
+            "last_role_id": None,
             "default_timezone": "US/Eastern"
         }
     except Exception as e:
@@ -347,13 +349,14 @@ def get_user_preferences(user_id: str) -> dict:
         return {
             "last_server_id": None,
             "last_channel_id": None,
+            "last_role_id": None,
             "default_timezone": "US/Eastern"
         }
     finally:
         db.close()
 
 
-def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None):
+def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, role_id: str = None, timezone: str = None):
     """Save user preferences for poll creation"""
     db = get_db_session()
     try:
@@ -366,6 +369,8 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 setattr(prefs, 'last_server_id', server_id)
             if channel_id:
                 setattr(prefs, 'last_channel_id', channel_id)
+            if role_id:
+                setattr(prefs, 'last_role_id', role_id)
             if timezone:
                 setattr(prefs, 'default_timezone', timezone)
             setattr(prefs, 'updated_at', datetime.now(pytz.UTC))
@@ -375,18 +380,19 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 user_id=user_id,
                 last_server_id=server_id,
                 last_channel_id=channel_id,
+                last_role_id=role_id,
                 default_timezone=timezone or "US/Eastern"
             )
             db.add(prefs)
 
         db.commit()
         logger.debug(
-            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
+            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}, role={role_id}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
         from .error_handler import notify_error
         notify_error(e, "User Preferences Saving", user_id=user_id,
-                     server_id=server_id, channel_id=channel_id, timezone=timezone)
+                     server_id=server_id, channel_id=channel_id, role_id=role_id, timezone=timezone)
         db.rollback()
     finally:
         db.close()
@@ -770,6 +776,50 @@ async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Dep
         options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
 
     return options
+
+
+async def get_roles_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth), preselect_last_role: bool = True):
+    """Get roles for a server as HTML options for HTMX"""
+    if not server_id:
+        return '<option value="">Select a server first...</option>'
+
+    try:
+        from .discord_utils import get_guild_roles
+        roles = await get_guild_roles(bot, server_id)
+        
+        if not roles:
+            return '<option value="">No mentionable roles found...</option>'
+
+        # Get user preferences to potentially pre-select last used role
+        user_prefs = get_user_preferences(current_user.id)
+        last_role_id = user_prefs.get("last_role_id") if preselect_last_role else None
+        last_server_id = user_prefs.get("last_server_id")
+
+        # Only pre-select the last role if we're loading the same server as last time
+        should_preselect = (preselect_last_role and
+                            last_role_id and
+                            last_server_id and
+                            str(server_id) == str(last_server_id))
+
+        options = '<option value="">Select a role (optional)...</option>'
+        for role in roles:
+            # HTML escape the role name to prevent JavaScript syntax errors
+            escaped_role_name = escape(role["name"])
+            # Pre-select the last used role only if it's from the same server
+            selected = 'selected' if should_preselect and role["id"] == last_role_id else ''
+            
+            # Add color indicator if role has a color
+            color_indicator = ""
+            if role.get("color") and role["color"] != "0":
+                color_indicator = f'<span style="color: {role["color"]};">●</span> '
+            
+            options += f'<option value="{role["id"]}" {selected}>{color_indicator}@{escaped_role_name}</option>'
+
+        return options
+        
+    except Exception as e:
+        logger.error(f"Error getting roles for server {server_id}: {e}")
+        return '<option value="">Error loading roles...</option>'
 
 
 async def add_option_htmx(request: Request):
@@ -1248,6 +1298,21 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
                 "suggestion": "Please check your date and time selections"
             })
 
+    # Handle role ping fields
+    ping_role_enabled = form_data.get("ping_role_enabled") == "true"
+    ping_role_id = safe_get_form_data(form_data, "ping_role_id", "")
+    
+    # Validate role ping settings
+    if ping_role_enabled and not ping_role_id:
+        validation_errors.append({
+            "field_name": "Role Selection",
+            "message": "Please select a role to ping when role ping is enabled",
+            "suggestion": "Choose a role from the dropdown or disable role ping"
+        })
+    
+    validated_data['ping_role_enabled'] = ping_role_enabled
+    validated_data['ping_role_id'] = ping_role_id if ping_role_enabled else None
+
     # Add other validated data
     validated_data['timezone'] = validate_and_normalize_timezone(timezone_str)
     validated_data['anonymous'] = form_data.get("anonymous") == "true"
@@ -1330,6 +1395,8 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
         timezone_str = validated_data['timezone']
         anonymous = validated_data['anonymous']
         multiple_choice = validated_data['multiple_choice']
+        ping_role_enabled = validated_data['ping_role_enabled']
+        ping_role_id = validated_data['ping_role_id']
         image_message_text = validated_data['image_message_text']
 
         # Prepare poll data for bulletproof operations
@@ -1345,6 +1412,8 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
             "timezone": timezone_str,
             "anonymous": anonymous,
             "multiple_choice": multiple_choice,
+            "ping_role_enabled": ping_role_enabled,
+            "ping_role_id": ping_role_id,
             "creator_id": current_user.id
         }
 
@@ -1435,7 +1504,7 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
 
         # Save user preferences for next time
         save_user_preferences(current_user.id, server_id,
-                              channel_id, timezone_str)
+                              channel_id, ping_role_id, timezone_str)
 
         # Return success message and redirect to polls view
         return templates.TemplateResponse("htmx/components/alert_success.html", {
@@ -2017,6 +2086,8 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         timezone_str = validated_data['timezone']
         anonymous = validated_data['anonymous']
         multiple_choice = validated_data['multiple_choice']
+        ping_role_enabled = validated_data['ping_role_enabled']
+        ping_role_id = validated_data['ping_role_id']
         image_message_text = validated_data['image_message_text']
 
         # Handle image upload
@@ -2141,6 +2212,8 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         setattr(poll, 'timezone', timezone_str)
         setattr(poll, 'anonymous', anonymous)
         setattr(poll, 'multiple_choice', multiple_choice)
+        setattr(poll, 'ping_role_enabled', ping_role_enabled)
+        setattr(poll, 'ping_role_id', ping_role_id)
 
         db.commit()
 

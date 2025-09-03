@@ -80,6 +80,12 @@ class Poll(Base):
     creator_id = Column(String(50), nullable=False)  # Discord user ID
     # Discord message ID when posted
     message_id = Column(String(50), nullable=True)
+    # Role to ping when poll opens/closes
+    ping_role_id = Column(String(50), nullable=True)
+    # Role name for display
+    ping_role_name = Column(String(255), nullable=True)
+    # Whether to ping role when poll opens and closes
+    ping_role_enabled = Column(Boolean, default=False)
     open_time = Column(DateTime, nullable=False)  # When poll opens
     close_time = Column(DateTime, nullable=False)  # When poll closes
     timezone = Column(String(50), default="UTC")  # Timezone for scheduling
@@ -192,6 +198,8 @@ class UserPreference(Base):
     last_server_id = Column(String(50), nullable=True)  # Last selected server
     # Last selected channel
     last_channel_id = Column(String(50), nullable=True)
+    # Last selected role for pinging
+    last_role_id = Column(String(50), nullable=True)
     default_timezone = Column(
         String(50), default="US/Eastern")  # Default timezone
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

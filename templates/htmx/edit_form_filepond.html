@@ -195,6 +195,30 @@
                     </label>
                 </div>
             </div>
+
+            <!-- Role Ping Section -->
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ping-role-enabled" name="ping_role_enabled" value="true" {% if poll.ping_role_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="ping-role-enabled">
+                        <i class="fas fa-at me-1"></i>Ping a role when poll is opened and closed?
+                        <small class="text-muted d-block">Mention a role to notify members when the poll starts and ends</small>
+                    </label>
+                </div>
+                
+                <div id="role-selection-container" class="mt-3" style="display: {% if poll.ping_role_enabled %}block{% else %}none{% endif %};">
+                    <label for="role-select" class="form-label">Select Role</label>
+                    <select class="form-select" id="role-select" name="ping_role_id"
+                            hx-get="/htmx/roles" hx-target="#role-select" hx-include="[name='server_id']"
+                            hx-trigger="load from:#server-select">
+                        <option value="">Loading roles...</option>
+                        <!-- Pre-populate with current role if available -->
+                        {% if poll.ping_role_id %}
+                        <option value="{{ poll.ping_role_id }}" selected>{{ poll.ping_role_name or 'Selected Role' }}</option>
+                        {% endif %}
+                    </select>
+                </div>
+            </div>
         </div>
         <div class="card-footer">
             <button type="submit" class="btn btn-primary" id="submit-btn">
@@ -645,6 +669,38 @@
                 loadDiscordEmojis();
             }
         });
+
+        // Role ping functionality
+        const pingRoleCheckbox = document.getElementById('ping-role-enabled');
+        const roleSelectionContainer = document.getElementById('role-selection-container');
+        const roleSelect = document.getElementById('role-select');
+        
+        if (pingRoleCheckbox && roleSelectionContainer) {
+            // Show/hide role selection when checkbox is toggled
+            pingRoleCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    roleSelectionContainer.style.display = 'block';
+                } else {
+                    roleSelectionContainer.style.display = 'none';
+                    // Clear role selection when disabled
+                    if (roleSelect) {
+                        roleSelect.value = '';
+                    }
+                }
+            });
+        }
+
+        // Load roles when server changes (for role selection)
+        if (serverSelectElement && roleSelect) {
+            serverSelectElement.addEventListener('change', function() {
+                // Clear role selection when server changes
+                roleSelect.value = '';
+                // Trigger HTMX to reload roles for new server
+                if (pingRoleCheckbox && pingRoleCheckbox.checked) {
+                    htmx.trigger(roleSelect, 'load');
+                }
+            });
+        }
 
         // Handle intelligent channel pre-selection for edit form
         let isInitialLoad = true;

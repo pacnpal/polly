@@ -611,12 +611,25 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
 
         # Embed was already created above while poll was attached to database session
 
+        # Check if role ping is enabled and prepare content
+        message_content = None
+        if getattr(poll, 'ping_role_enabled', False) and getattr(poll, 'ping_role_id', None):
+            role_id = str(getattr(poll, 'ping_role_id'))
+            role_name = str(getattr(poll, 'ping_role_name', 'Unknown Role'))
+            message_content = f"<@&{role_id}> 📊 **Poll '{getattr(poll, 'name', '')}' is now open!**"
+            logger.info(f"🔔 POSTING POLL {poll.id} - Will ping role {role_name} ({role_id})")
+
         # Post message with debugging
         logger.info(
             f"📤 POSTING POLL {poll.id} - Sending message to {channel.name}")
-        message = await channel.send(embed=embed)
-        logger.info(
-            f"✅ POSTING POLL {poll.id} - Message sent successfully, ID: {message.id}")
+        if message_content:
+            message = await channel.send(content=message_content, embed=embed)
+            logger.info(
+                f"✅ POSTING POLL {poll.id} - Message sent with role ping, ID: {message.id}")
+        else:
+            message = await channel.send(embed=embed)
+            logger.info(
+                f"✅ POSTING POLL {poll.id} - Message sent successfully, ID: {message.id}")
 
         # Add reactions for voting with debugging
         poll_emojis = poll.emojis
@@ -914,8 +927,16 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
         embed = await create_poll_results_embed(poll)
         poll_name = str(getattr(poll, 'name', ''))
 
+        # Check if role ping is enabled and prepare content
+        message_content = f"📊 **Poll '{poll_name}' has ended!**"
+        if getattr(poll, 'ping_role_enabled', False) and getattr(poll, 'ping_role_id', None):
+            role_id = str(getattr(poll, 'ping_role_id'))
+            role_name = str(getattr(poll, 'ping_role_name', 'Unknown Role'))
+            message_content = f"<@&{role_id}> {message_content}"
+            logger.info(f"🔔 POLL RESULTS {getattr(poll, 'id')} - Will ping role {role_name} ({role_id}) for poll closure")
+
         # Post results message
-        await channel.send(f"📊 **Poll '{poll_name}' has ended!**", embed=embed)
+        await channel.send(content=message_content, embed=embed)
 
         logger.info(f"Posted final results for poll {getattr(poll, 'id')}")
         return True
@@ -1054,6 +1075,53 @@ async def send_vote_confirmation_dm(bot: commands.Bot, poll: Poll, user_id: str,
         logger.error(f"❌ Error sending vote confirmation DM to user {user_id}: {e}")
         await notify_error_async(e, "Vote Confirmation DM", user_id=user_id, poll_id=getattr(poll, 'id', 'unknown'))
         return False
+
+
+async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, Any]]:
+    """Get roles for a guild that can be mentioned/pinged"""
+    roles = []
+    
+    if not bot or not bot.guilds:
+        logger.warning("Bot not ready or no guilds available")
+        return roles
+    
+    try:
+        guild = bot.get_guild(int(guild_id))
+        if not guild:
+            logger.warning(f"Guild {guild_id} not found")
+            return roles
+        
+        # Get roles that can be mentioned (excluding @everyone and managed roles)
+        for role in guild.roles:
+            try:
+                # Skip @everyone role and managed roles (like bot roles)
+                if role.name == "@everyone" or role.managed:
+                    continue
+                
+                # Only include roles that can be mentioned
+                if role.mentionable or role.permissions.administrator:
+                    roles.append({
+                        'id': str(role.id),
+                        'name': role.name,
+                        'color': str(role.color) if role.color != discord.Color.default() else None,
+                        'position': role.position,
+                        'mentionable': role.mentionable
+                    })
+            except Exception as e:
+                logger.warning(f"Error processing role {role.name}: {e}")
+                continue
+        
+        # Sort roles by position (higher position = higher in hierarchy)
+        roles.sort(key=lambda x: x.get('position', 0), reverse=True)
+        
+        logger.debug(f"Found {len(roles)} mentionable roles in guild {guild.name}")
+        return roles
+        
+    except Exception as e:
+        logger.error(f"Error getting roles for guild {guild_id}: {e}")
+        from .error_handler import notify_error
+        notify_error(e, "Guild Roles Retrieval", guild_id=guild_id)
+        return roles
 
 
 def user_has_admin_permissions(member: discord.Member) -> bool:

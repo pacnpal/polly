@@ -235,7 +235,7 @@ def add_htmx_routes(app: FastAPI):
         get_servers_htmx, get_settings_htmx, save_settings_htmx, get_polls_realtime_htmx,
         create_poll_htmx, get_poll_edit_form, get_poll_details_htmx,
         get_poll_results_realtime_htmx, close_poll_htmx, delete_poll_htmx,
-        get_guild_emojis_htmx
+        get_guild_emojis_htmx, get_roles_htmx
     )
     from .discord_bot import get_bot_instance
     from .background_tasks import get_scheduler
@@ -257,6 +257,11 @@ def add_htmx_routes(app: FastAPI):
     async def htmx_channels(server_id: str, preselect_last_channel: bool = False, current_user: DiscordUser = Depends(require_auth)):
         bot = get_bot_instance()
         return await get_channels_htmx(server_id, bot, current_user, preselect_last_channel)
+
+    @app.get("/htmx/roles", response_class=HTMLResponse)
+    async def htmx_roles(server_id: str, current_user: DiscordUser = Depends(require_auth)):
+        bot = get_bot_instance()
+        return await get_roles_htmx(server_id, bot, current_user)
 
     @app.post("/htmx/add-option", response_class=HTMLResponse)
     async def htmx_add_option(request: Request):
