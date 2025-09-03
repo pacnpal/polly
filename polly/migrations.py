@@ -90,6 +90,14 @@ class DatabaseMigrator:
                     "ALTER TABLE polls ADD COLUMN ping_role_enabled BOOLEAN DEFAULT 0",
                     "ALTER TABLE user_preferences ADD COLUMN last_role_id VARCHAR(50)"
                 ]
+            },
+            {
+                "version": 8,
+                "name": "add_timezone_explicitly_set",
+                "description": "Add timezone_explicitly_set column to track if user has set timezone preference",
+                "sql": [
+                    "ALTER TABLE user_preferences ADD COLUMN timezone_explicitly_set BOOLEAN DEFAULT 0"
+                ]
             }
         ]
     

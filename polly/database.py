@@ -202,6 +202,8 @@ class UserPreference(Base):
     last_role_id = Column(String(50), nullable=True)
     default_timezone = Column(
         String(50), default="US/Eastern")  # Default timezone
+    # Track if user has explicitly set their timezone preference
+    timezone_explicitly_set = Column(Boolean, default=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationship to user

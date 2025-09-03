@@ -43,19 +43,22 @@ def get_user_preferences(user_id: str) -> dict:
             return {
                 "last_server_id": prefs.last_server_id,
                 "last_channel_id": prefs.last_channel_id,
-                "default_timezone": prefs.default_timezone or "US/Eastern"
+                "default_timezone": prefs.default_timezone or "US/Eastern",
+                "timezone_explicitly_set": bool(prefs.timezone_explicitly_set)
             }
         return {
             "last_server_id": None,
             "last_channel_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
+            "timezone_explicitly_set": False
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
         return {
             "last_server_id": None,
             "last_channel_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
+            "timezone_explicitly_set": False
         }
     finally:
         db.close()
@@ -76,6 +79,7 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 setattr(prefs, 'last_channel_id', channel_id)
             if timezone:
                 setattr(prefs, 'default_timezone', timezone)
+                setattr(prefs, 'timezone_explicitly_set', True)
             setattr(prefs, 'updated_at', datetime.now(pytz.UTC))
         else:
             # Create new preferences
@@ -83,13 +87,14 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 user_id=user_id,
                 last_server_id=server_id,
                 last_channel_id=channel_id,
-                default_timezone=timezone or "US/Eastern"
+                default_timezone=timezone or "US/Eastern",
+                timezone_explicitly_set=bool(timezone)
             )
             db.add(prefs)
 
         db.commit()
         logger.debug(
-            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
+            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}, timezone={timezone}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
         db.rollback()
@@ -226,7 +231,7 @@ def add_core_routes(app: FastAPI):
             "request": request,
             "user": current_user,
             "guilds": user_guilds,
-            "show_timezone_prompt": user_prefs.get("last_server_id") is None
+            "show_timezone_prompt": user_prefs.get("last_server_id") is None and not user_prefs.get("timezone_explicitly_set", False)
         })
 
     # Add HTMX endpoints

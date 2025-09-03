@@ -321,13 +321,15 @@ def get_user_preferences(user_id: str) -> dict:
                 "last_server_id": TypeSafeColumn.get_string(prefs, 'last_server_id') or None,
                 "last_channel_id": TypeSafeColumn.get_string(prefs, 'last_channel_id') or None,
                 "last_role_id": TypeSafeColumn.get_string(prefs, 'last_role_id') or None,
-                "default_timezone": TypeSafeColumn.get_string(prefs, 'default_timezone', 'US/Eastern')
+                "default_timezone": TypeSafeColumn.get_string(prefs, 'default_timezone', 'US/Eastern'),
+                "timezone_explicitly_set": TypeSafeColumn.get_bool(prefs, 'timezone_explicitly_set', False)
             }
         return {
             "last_server_id": None,
             "last_channel_id": None,
             "last_role_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
+            "timezone_explicitly_set": False
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
@@ -335,8 +337,50 @@ def get_user_preferences(user_id: str) -> dict:
             "last_server_id": None,
             "last_channel_id": None,
             "last_role_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
+            "timezone_explicitly_set": False
         }
+    finally:
+        db.close()
+
+
+def get_priority_timezone_for_user(user_id: str) -> str:
+    """Get timezone for new poll creation based on priority system:
+    1. Last poll preference (highest priority)
+    2. Fallback to explicit set timezone
+    3. Fallback to eastern time (lowest priority)
+    """
+    db = get_db_session()
+    try:
+        # Priority 1: Get timezone from user's most recent poll
+        last_poll = db.query(Poll).filter(
+            Poll.creator_id == user_id
+        ).order_by(Poll.created_at.desc()).first()
+        
+        if last_poll:
+            last_poll_timezone = TypeSafeColumn.get_string(last_poll, 'timezone')
+            if last_poll_timezone and last_poll_timezone.strip():
+                logger.debug(f"Using last poll timezone for user {user_id}: {last_poll_timezone}")
+                return validate_and_normalize_timezone(last_poll_timezone)
+        
+        # Priority 2: Get explicitly set timezone from user preferences
+        prefs = db.query(UserPreference).filter(
+            UserPreference.user_id == user_id).first()
+        
+        if prefs:
+            timezone_explicitly_set = TypeSafeColumn.get_bool(prefs, 'timezone_explicitly_set', False)
+            if timezone_explicitly_set:
+                explicit_timezone = TypeSafeColumn.get_string(prefs, 'default_timezone', 'US/Eastern')
+                logger.debug(f"Using explicitly set timezone for user {user_id}: {explicit_timezone}")
+                return validate_and_normalize_timezone(explicit_timezone)
+        
+        # Priority 3: Fallback to US/Eastern
+        logger.debug(f"Using fallback timezone for user {user_id}: US/Eastern")
+        return "US/Eastern"
+        
+    except Exception as e:
+        logger.error(f"Error getting priority timezone for user {user_id}: {e}")
+        return "US/Eastern"
     finally:
         db.close()
 
@@ -358,6 +402,7 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 setattr(prefs, 'last_role_id', role_id)
             if timezone:
                 setattr(prefs, 'default_timezone', timezone)
+                setattr(prefs, 'timezone_explicitly_set', True)
             setattr(prefs, 'updated_at', datetime.now(pytz.UTC))
         else:
             # Create new preferences
@@ -366,13 +411,14 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 last_server_id=server_id,
                 last_channel_id=channel_id,
                 last_role_id=role_id,
-                default_timezone=timezone or "US/Eastern"
+                default_timezone=timezone or "US/Eastern",
+                timezone_explicitly_set=bool(timezone)
             )
             db.add(prefs)
 
         db.commit()
         logger.debug(
-            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}, role={role_id}")
+            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}, role={role_id}, timezone={timezone}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
         db.rollback()
@@ -676,17 +722,20 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
         # Ensure user_guilds is always a valid list
         if user_guilds is None:
             user_guilds = []
-        except Exception as e:
-            logger.error(
-                f"Error getting user guilds for create form for {current_user.id}: {e}")
-            user_guilds = []
+    except Exception as e:
+        logger.error(
+            f"Error getting user guilds for create form for {current_user.id}: {e}")
+        user_guilds = []
 
     # Get user preferences
     user_prefs = get_user_preferences(current_user.id)
+    
+    # Get priority timezone for new poll creation
+    priority_timezone = get_priority_timezone_for_user(current_user.id)
 
-    # Get timezones - user's default first
+    # Get timezones - priority timezone first
     common_timezones = [
-        user_prefs["default_timezone"], "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
+        priority_timezone, "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
         "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
     ]
     # Remove duplicates while preserving order
@@ -694,8 +743,8 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
     common_timezones = [tz for tz in common_timezones if not (
         tz in seen or seen.add(tz))]
 
-    # Set default times in user's timezone
-    user_tz = pytz.timezone(user_prefs["default_timezone"])
+    # Set default times in priority timezone
+    user_tz = pytz.timezone(priority_timezone)
     now = datetime.now(user_tz)
 
     # Default start time should be next day at 12:00AM (midnight)
@@ -732,6 +781,7 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
         "open_time": open_time,
         "close_time": close_time,
         "user_preferences": user_prefs,
+        "priority_timezone": priority_timezone,  # Pass priority timezone to template
         "default_emojis": POLL_EMOJIS,
         "template_data": None,  # No template data for regular form
         "is_template": False  # Flag to indicate this is not a template creation

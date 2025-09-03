@@ -19,7 +19,7 @@
                         <label for="timezone" class="form-label">Timezone</label>
                         <select class="form-select" id="timezone" name="timezone">
                             {% for tz in timezones %}
-                            <option value="{{ tz.name }}" {% if tz.name == (user_preferences.default_timezone if user_preferences else "US/Eastern") %}selected{% endif %}>{{ tz.display|e }}</option>
+                            <option value="{{ tz.name }}" {% if tz.name == (priority_timezone if priority_timezone else "US/Eastern") %}selected{% endif %}>{{ tz.display|e }}</option>
                             {% endfor %}
                         </select>
                     </div>
