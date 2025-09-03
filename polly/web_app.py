@@ -415,7 +415,8 @@ def add_htmx_routes(app: FastAPI):
     @app.post("/htmx/import-json", response_class=HTMLResponse)
     async def htmx_import_json(request: Request, current_user: DiscordUser = Depends(require_auth)):
         from .htmx_endpoints import import_json_htmx
-        return await import_json_htmx(request, current_user)
+        bot = get_bot_instance()
+        return await import_json_htmx(request, bot, current_user)
 
     @app.get("/htmx/create-form-json-import", response_class=HTMLResponse)
     async def htmx_create_form_json_import(request: Request, current_user: DiscordUser = Depends(require_auth)):
