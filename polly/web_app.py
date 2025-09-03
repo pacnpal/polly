@@ -19,6 +19,9 @@ from .auth import (
     get_discord_oauth_url, exchange_code_for_token, get_discord_user,
     create_access_token, require_auth, save_user_to_db, DiscordUser
 )
+from .security_middleware import (
+    RateLimitMiddleware, SecurityHeadersMiddleware, InputSanitizationMiddleware
+)
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .error_handler import setup_automatic_bot_owner_notifications
@@ -203,6 +206,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
 
+    # Add security middleware (order matters - add in reverse order of execution)
+    app.add_middleware(InputSanitizationMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware, requests_per_minute=60, requests_per_hour=1000)
+
     # Mount static files
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -348,11 +356,11 @@ def add_htmx_routes(app: FastAPI):
         return await get_roles_htmx(server_id, bot, current_user)
 
     @app.post("/htmx/add-option", response_class=HTMLResponse)
-    async def htmx_add_option(request: Request):
+    async def htmx_add_option(request: Request, current_user: DiscordUser = Depends(require_auth)):
         return await add_option_htmx(request)
 
     @app.delete("/htmx/remove-option", response_class=HTMLResponse)
-    async def htmx_remove_option():
+    async def htmx_remove_option(current_user: DiscordUser = Depends(require_auth)):
         return await remove_option_htmx()
 
     @app.post("/htmx/upload-image")
