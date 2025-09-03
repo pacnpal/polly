@@ -12,6 +12,7 @@ COPY polly/ ./polly/
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY migrate_database.py ./
+COPY .env ./
 
 # Ensure all template directories exist
 RUN mkdir -p templates/htmx
