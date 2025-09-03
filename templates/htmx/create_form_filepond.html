@@ -72,12 +72,12 @@
                             </ul>
                         </div>
                         <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" required>
-                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ default_emojis[loop.index0] }}">
+                        <input type="hidden" name="emoji{{ loop.index }}" value="{{ default_emojis[loop.index0] }}">
                     </div>
                     {% endfor %}
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm"
-                        hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend">
+                        hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend" hx-include="#options-container">
                     <i class="fas fa-plus me-1"></i>Add Option
                 </button>
             </div>
@@ -396,9 +396,13 @@
                     
                     // Update button text and hidden input
                     currentEmojiButton.textContent = emoji;
-                    const hiddenInput = currentEmojiButton.parentElement.querySelector(`input[name="emoji${optionNumber}"]`);
+                    // Fix DOM selector - hidden input is in the parent's parent (input-group)
+                    const hiddenInput = currentEmojiButton.closest('.input-group').querySelector(`input[name="emoji${optionNumber}"]`);
                     if (hiddenInput) {
                         hiddenInput.value = emoji;
+                        logger.debug && logger.debug(`✅ EMOJI PICKER - Updated emoji${optionNumber} to: ${emoji}`);
+                    } else {
+                        console.warn(`⚠️ EMOJI PICKER - Could not find hidden input for emoji${optionNumber}`);
                     }
                     
                     // Hide the picker

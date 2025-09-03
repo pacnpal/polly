@@ -321,15 +321,30 @@ class PollValidator:
             validated_data['open_time'] = open_time
             validated_data['close_time'] = close_time
 
+            # Validate emojis (CRITICAL FIX - this was missing!)
+            validated_data['emojis'] = PollValidator.validate_poll_emojis(
+                poll_data.get('emojis', []))
+
             # Validate boolean fields
             validated_data['anonymous'] = bool(
                 poll_data.get('anonymous', False))
+            validated_data['multiple_choice'] = bool(
+                poll_data.get('multiple_choice', False))
+
+            # Validate optional image message text
+            image_message_text = poll_data.get('image_message_text', '')
+            if image_message_text and isinstance(image_message_text, str):
+                validated_data['image_message_text'] = image_message_text.strip()
+            else:
+                validated_data['image_message_text'] = ''
 
             # Validate creator ID
             creator_id = poll_data.get('creator_id', '')
             if not creator_id or not isinstance(creator_id, str):
                 raise ValidationError("Creator ID is required", "creator_id")
             validated_data['creator_id'] = creator_id
+
+            logger.debug(f"✅ VALIDATOR - Emojis validated and included: {validated_data.get('emojis', [])}")
 
             return validated_data
 

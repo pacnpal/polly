@@ -23,6 +23,7 @@ from .poll_operations import BulletproofPollOperations
 from .error_handler import PollErrorHandler
 from .timezone_scheduler_fix import TimezoneAwareScheduler
 from .discord_emoji_handler import DiscordEmojiHandler
+from .emoji_pipeline_fix import get_unified_emoji_processor
 
 logger = logging.getLogger(__name__)
 
@@ -772,16 +773,50 @@ async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Dep
 
 
 async def add_option_htmx(request: Request):
-    """Add a new poll option input for HTMX"""
-    option_num = random.randint(3, 10)  # Simple way to get next option number
-    emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯']
-    emoji = emojis[min(option_num - 1, len(emojis) - 1)]
+    """Add a new poll option input for HTMX with proper sequential numbering"""
+    try:
+        form_data = await request.form()
+        
+        # Count existing options by looking at form data
+        # The form includes all current options when hx-include="#options-container" is used
+        existing_options = 0
+        for key in form_data.keys():
+            if key.startswith('option') and key[6:].isdigit():
+                option_number = int(key[6:])
+                existing_options = max(existing_options, option_number)
+        
+        # Next option number should be existing + 1
+        option_num = existing_options + 1
+        
+        # Ensure we don't exceed maximum options (10 total)
+        if option_num > 10:
+            logger.warning(f"Maximum options (10) reached, cannot add option {option_num}")
+            return ""  # Return empty to prevent adding more options
+            
+        default_emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯']
+        emoji = default_emojis[min(option_num - 1, len(default_emojis) - 1)]
+        
+        logger.debug(f"✅ ADD OPTION - Adding option {option_num} with emoji {emoji} (found {existing_options} existing options)")
 
-    return templates.TemplateResponse("htmx/components/poll_option.html", {
-        "request": request,
-        "emoji": emoji,
-        "option_num": option_num
-    })
+        return templates.TemplateResponse("htmx/components/poll_option.html", {
+            "request": request,
+            "emoji": emoji,
+            "option_num": option_num
+        })
+    except Exception as e:
+        logger.error(f"Error in add_option_htmx: {e}")
+        logger.exception("Full traceback for add_option_htmx error:")
+        
+        # Fallback: assume we're adding the 3rd option
+        option_num = 3
+        emoji = '🇨'
+        logger.debug(f"⚠️ ADD OPTION FALLBACK - Using option {option_num} with emoji {emoji}")
+        
+        return templates.TemplateResponse("htmx/components/poll_option.html", {
+            "request": request,
+            "emoji": emoji,
+            "option_num": option_num
+        })
 
 
 async def remove_option_htmx():
@@ -1266,68 +1301,25 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="Validation failed")
 
-        # Create Discord emoji handler
-        emoji_handler = DiscordEmojiHandler(bot)
-
-        # Get options and emojis using Discord native processing
+        # Use unified emoji processor for consistent handling
+        unified_processor = get_unified_emoji_processor(bot)
         options = validated_data['options']
-        emoji_inputs = []
-
-        print(
-            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
-        logger.info(
-            f"🔍 POLL CREATION DEBUG - Processing poll options for user {current_user.id}")
-
-        for i in range(1, len(options) + 1):
-            emoji_input = safe_get_form_data(form_data, f"emoji{i}")
-            emoji_inputs.append(emoji_input)
-            print(
-                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}' (type: {type(emoji_input)}, len: {len(emoji_input) if emoji_input else 0})")
-            logger.info(
-                f"🔍 POLL CREATION DEBUG - Option {i}: '{options[i-1]}' with emoji input '{emoji_input}' (type: {type(emoji_input)}, len: {len(emoji_input) if emoji_input else 0})")
-            
-            # Additional debugging for custom emoji format detection
-            if emoji_input and '<' in emoji_input and '>' in emoji_input:
-                print(f"🎭 POLL CREATION DEBUG - Detected custom emoji format in input: '{emoji_input}'")
-                logger.info(f"🎭 POLL CREATION DEBUG - Detected custom emoji format in input: '{emoji_input}'")
-
-        # Simple emoji validation - just use what the user provided and check for uniqueness
         server_id = validated_data['server_id']
-        emojis = []
         
-        print(f"🔍 SIMPLE EMOJI VALIDATION - Processing {len(emoji_inputs)} emoji inputs")
-        logger.info(f"🔍 SIMPLE EMOJI VALIDATION - Processing {len(emoji_inputs)} emoji inputs")
+        # Extract emoji inputs from form data
+        emoji_inputs = unified_processor.extract_emoji_inputs_from_form(form_data, len(options))
         
-        for i, emoji_input in enumerate(emoji_inputs):
-            # Use the emoji exactly as provided by the user, no processing
-            if emoji_input and emoji_input.strip():
-                emojis.append(emoji_input.strip())
-                print(f"✅ SIMPLE EMOJI VALIDATION - Option {i+1}: Using emoji '{emoji_input.strip()}' as-is")
-                logger.info(f"✅ SIMPLE EMOJI VALIDATION - Option {i+1}: Using emoji '{emoji_input.strip()}' as-is")
-            else:
-                # Only use defaults if no emoji provided
-                default_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                default_emoji = default_emojis[i] if i < len(default_emojis) else default_emojis[0]
-                emojis.append(default_emoji)
-                print(f"⚪ SIMPLE EMOJI VALIDATION - Option {i+1}: No emoji provided, using default '{default_emoji}'")
-                logger.info(f"⚪ SIMPLE EMOJI VALIDATION - Option {i+1}: No emoji provided, using default '{default_emoji}'")
-
-        print(f"📊 SIMPLE EMOJI VALIDATION - Final options: {options}")
-        print(f"😀 SIMPLE EMOJI VALIDATION - Final emojis: {emojis}")
-        logger.info(f"📊 SIMPLE EMOJI VALIDATION - Final options: {options}")
-        logger.info(f"😀 SIMPLE EMOJI VALIDATION - Final emojis: {emojis}")
-
-        # Simple uniqueness check - only validation we do
-        if len(set(emojis)) != len(emojis):
-            logger.warning(f"Duplicate emojis detected in poll creation: {emojis}")
-            print("❌ SIMPLE EMOJI VALIDATION - Duplicates found! Failing validation.")
+        # Process emojis using unified processor
+        emoji_success, emojis, emoji_error = await unified_processor.process_poll_emojis_unified(
+            emoji_inputs, int(server_id), "create"
+        )
+        
+        if not emoji_success:
+            logger.warning(f"Unified emoji processing failed for user {current_user.id}: {emoji_error}")
             return templates.TemplateResponse("htmx/components/alert_error.html", {
                 "request": request,
-                "message": "Each poll option must have a unique emoji. Please select different emojis for each option."
+                "message": emoji_error
             })
-        else:
-            print("✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
-            logger.info("✅ SIMPLE EMOJI VALIDATION - All emojis are unique, validation passed.")
 
         # Extract validated data
         name = validated_data['name']
@@ -1854,37 +1846,31 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
             if old_image_path:
                 await cleanup_image(str(old_image_path))
 
-        # Create Discord emoji handler
-        emoji_handler = DiscordEmojiHandler(bot)
-
-        # Get options and emojis using Discord native processing
+        # Use unified emoji processor for consistent handling
+        unified_processor = get_unified_emoji_processor(bot)
+        
+        # Get options from form data
         options = []
-        emoji_inputs = []
-        print(
-            f"🔍 POLL EDIT DEBUG - Processing poll options for poll {poll_id} update by user {current_user.id}")
-        logger.info(
-            f"🔍 POLL EDIT DEBUG - Processing poll options for poll {poll_id} update by user {current_user.id}")
-
         for i in range(1, 11):
             option = form_data.get(f"option{i}")
             if option:
                 option_text = str(option).strip()
                 options.append(option_text)
-                # Extract emoji from form data
-                emoji_input = safe_get_form_data(form_data, f"emoji{i}")
-                emoji_inputs.append(emoji_input)
-                print(
-                    f"🔍 POLL EDIT DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
-                logger.info(
-                    f"🔍 POLL EDIT DEBUG - Option {i}: '{option_text}' with emoji input '{emoji_input}'")
-
-        # Process all emojis using Discord native handler
-        emojis = await emoji_handler.process_poll_emojis(emoji_inputs, int(server_id) if server_id else 0)
-
-        print(f"📊 POLL EDIT DEBUG - Final options: {options}")
-        print(f"😀 POLL EDIT DEBUG - Final emojis: {emojis}")
-        logger.info(f"📊 POLL EDIT DEBUG - Final options: {options}")
-        logger.info(f"😀 POLL EDIT DEBUG - Final emojis: {emojis}")
+        
+        # Extract emoji inputs from form data
+        emoji_inputs = unified_processor.extract_emoji_inputs_from_form(form_data, len(options))
+        
+        # Process emojis using unified processor
+        emoji_success, emojis, emoji_error = await unified_processor.process_poll_emojis_unified(
+            emoji_inputs, int(server_id), "edit"
+        )
+        
+        if not emoji_success:
+            logger.warning(f"Unified emoji processing failed for poll {poll_id} edit: {emoji_error}")
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": emoji_error
+            })
 
         if len(options) < 2:
             logger.warning(
