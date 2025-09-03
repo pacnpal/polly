@@ -3,103 +3,451 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polly - Discord Poll Bot</title>
+    <title>Polly - Advanced Discord Poll Bot</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .feature-card {
+            transition: transform 0.2s ease-in-out;
+            border: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .hero-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4rem 0;
+        }
+        .tech-badge {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 0.25rem;
+            display: inline-block;
+        }
+        .stats-section {
+            background: #f8f9fa;
+            padding: 3rem 0;
+        }
+        .cta-section {
+            background: #343a40;
+            color: white;
+            padding: 4rem 0;
+        }
+    </style>
 </head>
-<body class="bg-light">
+<body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="/">
+            <a class="navbar-brand fw-bold" href="/">
                 <i class="fas fa-poll me-2"></i>Polly
+                <span class="badge bg-light text-primary ms-2">v0.2.0</span>
             </a>
             <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/login">
+                <a class="nav-link btn btn-outline-light" href="/login">
                     <i class="fab fa-discord me-1"></i>Login with Discord
                 </a>
             </div>
         </div>
     </nav>
 
-    <div class="container mt-5">
-        <div class="row justify-content-center">
-            <div class="col-lg-8">
-                <div class="text-center mb-5">
-                    <h1 class="display-4 mb-3">
-                        <i class="fas fa-poll text-primary me-3"></i>
-                        Welcome to Polly
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <h1 class="display-3 fw-bold mb-4">
+                        <i class="fas fa-poll me-3"></i>
+                        Advanced Discord Polling
                     </h1>
-                    <p class="lead text-muted">
-                        The ultimate Discord poll bot with advanced scheduling and management features
+                    <p class="lead mb-4">
+                        The most comprehensive Discord poll bot with enterprise-grade features, 
+                        real-time analytics, and a beautiful web dashboard. Built for communities that demand more.
                     </p>
-                </div>
-
-                <div class="row g-4 mb-5">
-                    <div class="col-md-4">
-                        <div class="card h-100 border-0 shadow-sm">
-                            <div class="card-body text-center">
-                                <i class="fas fa-calendar-alt fa-3x text-primary mb-3"></i>
-                                <h5 class="card-title">Smart Scheduling</h5>
-                                <p class="card-text">Schedule polls to open and close at specific times with calendar picker</p>
-                            </div>
-                        </div>
+                    <div class="mb-4">
+                        <span class="tech-badge"><i class="fab fa-python"></i> Python 3.11+</span>
+                        <span class="tech-badge"><i class="fas fa-rocket"></i> FastAPI</span>
+                        <span class="tech-badge"><i class="fas fa-code"></i> HTMX</span>
+                        <span class="tech-badge"><i class="fas fa-database"></i> Redis Cache</span>
+                        <span class="tech-badge"><i class="fab fa-docker"></i> Docker Ready</span>
+                        <span class="tech-badge"><i class="fas fa-shield-alt"></i> Admin Only</span>
                     </div>
-                    <div class="col-md-4">
-                        <div class="card h-100 border-0 shadow-sm">
-                            <div class="card-body text-center">
-                                <i class="fas fa-image fa-3x text-success mb-3"></i>
-                                <h5 class="card-title">Full-Size Images</h5>
-                                <p class="card-text">Upload and display full-size images with your polls, not tiny thumbnails</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card h-100 border-0 shadow-sm">
-                            <div class="card-body text-center">
-                                <i class="fas fa-shield-alt fa-3x text-warning mb-3"></i>
-                                <h5 class="card-title">Admin Only</h5>
-                                <p class="card-text">Only server administrators can create polls, ensuring quality control</p>
-                            </div>
-                        </div>
+                    <div class="d-flex gap-3">
+                        <a href="/login" class="btn btn-light btn-lg px-4">
+                            <i class="fab fa-discord me-2"></i>Get Started
+                        </a>
+                        <a href="#features" class="btn btn-outline-light btn-lg px-4">
+                            <i class="fas fa-info-circle me-2"></i>Learn More
+                        </a>
                     </div>
                 </div>
+                <div class="col-lg-4 text-center">
+                    <div class="bg-white bg-opacity-10 rounded-3 p-4">
+                        <i class="fas fa-chart-line fa-5x mb-3 text-warning"></i>
+                        <h4>Real-Time Analytics</h4>
+                        <p class="mb-0">Live vote tracking with instant updates</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
-                <div class="card border-0 shadow">
-                    <div class="card-body p-5">
-                        <h3 class="card-title text-center mb-4">Get Started</h3>
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h5>1. Login with Discord</h5>
-                                <p class="text-muted mb-3">Authenticate with your Discord account to access the dashboard</p>
-                                
-                                <h5>2. Create Polls</h5>
-                                <p class="text-muted mb-3">Use the web interface or Discord slash commands to create polls</p>
-                                
-                                <h5>3. Manage & Schedule</h5>
-                                <p class="text-muted mb-0">Set open/close times, upload images, and track results</p>
-                            </div>
-                            <div class="col-md-4 text-center">
-                                <a href="/login" class="btn btn-primary btn-lg">
-                                    <i class="fab fa-discord me-2"></i>
-                                    Login with Discord
-                                </a>
-                                <p class="small text-muted mt-2">
-                                    Requires server admin permissions
-                                </p>
-                            </div>
+    <!-- Stats Section -->
+    <section class="stats-section">
+        <div class="container">
+            <div class="row text-center">
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <i class="fas fa-users fa-3x text-primary"></i>
+                    </div>
+                    <h3 class="fw-bold">Admin Only</h3>
+                    <p class="text-muted">Secure poll creation restricted to server administrators</p>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <i class="fas fa-clock fa-3x text-success"></i>
+                    </div>
+                    <h3 class="fw-bold">Smart Scheduling</h3>
+                    <p class="text-muted">Timezone-aware poll scheduling with automatic management</p>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <i class="fas fa-tachometer-alt fa-3x text-warning"></i>
+                    </div>
+                    <h3 class="fw-bold">Lightning Fast</h3>
+                    <p class="text-muted">Redis caching and HTMX for instant interactions</p>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <i class="fas fa-mobile-alt fa-3x text-info"></i>
+                    </div>
+                    <h3 class="fw-bold">No JavaScript</h3>
+                    <p class="text-muted">Pure HTMX interface that works everywhere</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-5">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="display-5 fw-bold mb-3">Comprehensive Feature Set</h2>
+                <p class="lead text-muted">Everything you need for professional Discord polling</p>
+            </div>
+
+            <div class="row g-4 mb-5">
+                <!-- Core Polling Features -->
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-poll fa-3x text-primary mb-3"></i>
+                            <h5 class="card-title">Advanced Poll Creation</h5>
+                            <p class="card-text">Named polls with up to 10 custom options, full-size image uploads, custom emojis, and rich Discord embeds with real-time vote counts.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-calendar-alt fa-3x text-success mb-3"></i>
+                            <h5 class="card-title">Smart Scheduling System</h5>
+                            <p class="card-text">Calendar and time picker for precise scheduling, automatic poll opening/closing, timezone-aware system with background job processing.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-eye-slash fa-3x text-warning mb-3"></i>
+                            <h5 class="card-title">Anonymous Polls</h5>
+                            <p class="card-text">Hide results until poll ends, protect voter privacy while maintaining poll integrity and comprehensive analytics for administrators.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-list-check fa-3x text-info mb-3"></i>
+                            <h5 class="card-title">Multiple Choice Support</h5>
+                            <p class="card-text">Allow users to select multiple options, perfect for preference surveys, availability polls, and complex decision-making scenarios.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-at fa-3x text-danger mb-3"></i>
+                            <h5 class="card-title">Role Ping System</h5>
+                            <p class="card-text">Automatically ping specific roles when polls open or close, ensuring maximum participation and timely notifications for important decisions.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-image fa-3x text-purple mb-3"></i>
+                            <h5 class="card-title">Full-Size Images</h5>
+                            <p class="card-text">Upload and display full-size images (up to 8MB) with custom message text, not tiny thumbnails. Perfect for visual polls and comparisons.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4 mb-5">
+                <!-- Web Dashboard Features -->
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-tachometer-alt fa-3x text-primary mb-3"></i>
+                            <h5 class="card-title">Real-Time Dashboard</h5>
+                            <p class="card-text">Beautiful Bootstrap interface with HTMX for live updates without page refreshes. View poll history, results, and analytics in real-time.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-chart-bar fa-3x text-success mb-3"></i>
+                            <h5 class="card-title">Advanced Analytics</h5>
+                            <p class="card-text">Comprehensive vote tracking, user participation metrics, spreadsheet-style results view, and detailed CSV/JSON export capabilities.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-user-cog fa-3x text-warning mb-3"></i>
+                            <h5 class="card-title">User Preferences</h5>
+                            <p class="card-text">Remembers last used server, channel, timezone, and role settings. Smart defaults and priority timezone system for seamless poll creation.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-file-import fa-3x text-info mb-3"></i>
+                            <h5 class="card-title">JSON Import/Export</h5>
+                            <p class="card-text">Import polls from JSON files with comprehensive validation, export existing polls for backup or templating. Perfect for bulk operations.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-copy fa-3x text-danger mb-3"></i>
+                            <h5 class="card-title">Poll Templates</h5>
+                            <p class="card-text">Create templates from existing polls for quick reuse. Perfect for recurring polls like weekly meetings, team lunches, or regular surveys.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-mobile-alt fa-3x text-purple mb-3"></i>
+                            <h5 class="card-title">Mobile Responsive</h5>
+                            <p class="card-text">Fully responsive design that works perfectly on desktop, tablet, and mobile devices. Manage polls from anywhere with full functionality.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <!-- Technical Features -->
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-database fa-3x text-primary mb-3"></i>
+                            <h5 class="card-title">Redis Caching</h5>
+                            <p class="card-text">High-performance Redis integration for lightning-fast response times, user preference caching, and reduced database load with fault tolerance.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fas fa-globe fa-3x text-success mb-3"></i>
+                            <h5 class="card-title">Timezone Support</h5>
+                            <p class="card-text">Comprehensive timezone support with automatic DST handling, user-specific timezone preferences, and smart scheduling across global teams.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4 col-md-6">
+                    <div class="card feature-card h-100">
+                        <div class="card-body text-center p-4">
+                            <i class="fab fa-docker fa-3x text-warning mb-3"></i>
+                            <h5 class="card-title">Docker Deployment</h5>
+                            <p class="card-text">Complete Docker setup with Redis, Nginx reverse proxy, automatic health checks, and one-command deployment for production environments.</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <footer class="bg-dark text-light py-4 mt-5">
-        <div class="container text-center">
-            <p class="mb-0">
-                <i class="fas fa-poll me-2"></i>
-                Polly - Discord Poll Bot &copy; 2025
-            </p>
+    <!-- Discord Commands Section -->
+    <section class="py-5 bg-light">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="display-5 fw-bold mb-3">Discord Integration</h2>
+                <p class="lead text-muted">Seamless Discord bot with slash commands and web interface</p>
+            </div>
+
+            <div class="row align-items-center">
+                <div class="col-lg-6">
+                    <h3 class="fw-bold mb-4">Slash Commands</h3>
+                    <div class="bg-dark text-light p-4 rounded mb-4">
+                        <code>/quickpoll question:"What's for lunch?" option1:"Pizza" option2:"Burgers" option3:"Salad" anonymous:true</code>
+                    </div>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Quick poll creation directly in Discord</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Up to 5 options with anonymous option</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Automatic emoji reactions and vote counting</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Real-time embed updates as votes come in</li>
+                    </ul>
+                </div>
+                <div class="col-lg-6">
+                    <h3 class="fw-bold mb-4">Advanced Features</h3>
+                    <ul class="list-unstyled">
+                        <li class="mb-3">
+                            <i class="fas fa-shield-alt text-primary me-2"></i>
+                            <strong>Admin-Only Access:</strong> Only server administrators can create polls
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-envelope text-info me-2"></i>
+                            <strong>Vote Confirmations:</strong> Private DM confirmations for all votes
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-sync text-success me-2"></i>
+                            <strong>Live Updates:</strong> Poll embeds update in real-time as users vote
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-cog text-warning me-2"></i>
+                            <strong>Bulletproof Operations:</strong> Advanced error handling and recovery
+                        </li>
+                        <li class="mb-3">
+                            <i class="fas fa-smile text-danger me-2"></i>
+                            <strong>Custom Emojis:</strong> Support for server-specific custom emojis
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Technology Stack -->
+    <section class="py-5">
+        <div class="container">
+            <div class="text-center mb-5">
+                <h2 class="display-5 fw-bold mb-3">Modern Technology Stack</h2>
+                <p class="lead text-muted">Built with cutting-edge technologies for performance and reliability</p>
+            </div>
+
+            <div class="row text-center">
+                <div class="col-lg-3 col-md-6 mb-4">
+                    <div class="p-4">
+                        <i class="fab fa-python fa-4x text-primary mb-3"></i>
+                        <h5>Python 3.11+</h5>
+                        <p class="text-muted">Modern Python with FastAPI for high-performance async operations</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-4">
+                    <div class="p-4">
+                        <i class="fas fa-code fa-4x text-success mb-3"></i>
+                        <h5>HTMX</h5>
+                        <p class="text-muted">Dynamic UI without JavaScript - fast, reliable, and accessible</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-4">
+                    <div class="p-4">
+                        <i class="fas fa-database fa-4x text-warning mb-3"></i>
+                        <h5>Redis + SQLite</h5>
+                        <p class="text-muted">High-performance caching with reliable SQLite storage</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-4">
+                    <div class="p-4">
+                        <i class="fab fa-docker fa-4x text-info mb-3"></i>
+                        <h5>Docker Ready</h5>
+                        <p class="text-muted">Complete containerization with Redis, Nginx, and health checks</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Call to Action -->
+    <section class="cta-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <h2 class="display-5 fw-bold mb-3">Ready to Transform Your Discord Polling?</h2>
+                    <p class="lead mb-4">
+                        Join communities already using Polly for professional polling with advanced features, 
+                        real-time analytics, and enterprise-grade reliability.
+                    </p>
+                    <div class="d-flex flex-wrap gap-3">
+                        <a href="/login" class="btn btn-primary btn-lg px-4">
+                            <i class="fab fa-discord me-2"></i>Get Started Now
+                        </a>
+                        <a href="https://github.com/pacnpal/polly" class="btn btn-outline-light btn-lg px-4" target="_blank">
+                            <i class="fab fa-github me-2"></i>View on GitHub
+                        </a>
+                    </div>
+                </div>
+                <div class="col-lg-4 text-center">
+                    <div class="bg-white bg-opacity-10 rounded-3 p-4">
+                        <h4 class="mb-3">Quick Setup</h4>
+                        <div class="text-start">
+                            <p class="mb-2"><i class="fas fa-check text-success me-2"></i>Discord OAuth login</p>
+                            <p class="mb-2"><i class="fas fa-check text-success me-2"></i>Admin permission check</p>
+                            <p class="mb-2"><i class="fas fa-check text-success me-2"></i>Start creating polls</p>
+                            <p class="mb-0"><i class="fas fa-check text-success me-2"></i>Real-time analytics</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="bg-dark text-light py-4">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <p class="mb-0">
+                        <i class="fas fa-poll me-2"></i>
+                        <strong>Polly</strong> - Advanced Discord Poll Bot &copy; 2025
+                    </p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <div class="d-flex justify-content-md-end gap-3">
+                        <a href="https://github.com/pacnpal/polly" class="text-light" target="_blank">
+                            <i class="fab fa-github"></i> GitHub
+                        </a>
+                        <a href="/health" class="text-light">
+                            <i class="fas fa-heartbeat"></i> Status
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
     </footer>
 
