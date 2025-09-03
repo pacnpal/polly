@@ -15,12 +15,12 @@ chown -R $(id -u):$(id -g) static/uploads logs data 2>/dev/null || true
 
 # Run database migration if needed
 echo "Running database migration..."
-uv run python migrate_database.py
+uv run migrate_database.py
 
-# Run image message text column migration if needed
-echo "Running image message text column migration..."
-uv run python add_image_message_text_column.py
+# Running final dependency checks
+echo "Running final dependency checks..."
+uv sync
 
 # Start the application
 echo "Starting application..."
-exec uv run python -m polly.main
+exec uv run -m polly.main
