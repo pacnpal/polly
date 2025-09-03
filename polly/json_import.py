@@ -130,12 +130,17 @@ class PollJSONValidator:
                 warnings.append("Field 'image_message_text' must be less than 2000 characters - clearing image message")
         
         # Validate time fields - these generate warnings and get reset to defaults
+        current_time = datetime.now()
+        
         if 'open_time' in data and data['open_time']:
             if not isinstance(data['open_time'], str):
                 warnings.append("Field 'open_time' must be a string in ISO format - using default time")
             else:
                 try:
-                    datetime.fromisoformat(data['open_time'])
+                    open_dt = datetime.fromisoformat(data['open_time'])
+                    # Check if the date is in the past
+                    if open_dt <= current_time:
+                        warnings.append("Field 'open_time' is in the past - using default time (tomorrow at midnight)")
                 except ValueError:
                     warnings.append("Field 'open_time' must be in ISO format (YYYY-MM-DDTHH:MM) - using default time")
         
@@ -144,7 +149,10 @@ class PollJSONValidator:
                 warnings.append("Field 'close_time' must be a string in ISO format - using default time")
             else:
                 try:
-                    datetime.fromisoformat(data['close_time'])
+                    close_dt = datetime.fromisoformat(data['close_time'])
+                    # Check if the date is in the past
+                    if close_dt <= current_time:
+                        warnings.append("Field 'close_time' is in the past - using default time (24 hours after open time)")
                 except ValueError:
                     warnings.append("Field 'close_time' must be in ISO format (YYYY-MM-DDTHH:MM) - using default time")
         
@@ -154,12 +162,18 @@ class PollJSONValidator:
             try:
                 open_dt = datetime.fromisoformat(data['open_time'])
                 close_dt = datetime.fromisoformat(data['close_time'])
-                if close_dt <= open_dt:
-                    warnings.append("Close time must be after open time - using default times")
-                elif close_dt - open_dt < timedelta(minutes=1):
-                    warnings.append("Poll must run for at least 1 minute - using default times")
-                elif close_dt - open_dt > timedelta(days=30):
-                    warnings.append("Poll cannot run for more than 30 days - using default times")
+                
+                # Skip relationship validation if either time is in the past (already warned about)
+                open_in_past = open_dt <= current_time
+                close_in_past = close_dt <= current_time
+                
+                if not open_in_past and not close_in_past:
+                    if close_dt <= open_dt:
+                        warnings.append("Close time must be after open time - using default times")
+                    elif close_dt - open_dt < timedelta(minutes=1):
+                        warnings.append("Poll must run for at least 1 minute - using default times")
+                    elif close_dt - open_dt > timedelta(days=30):
+                        warnings.append("Poll cannot run for more than 30 days - using default times")
             except ValueError:
                 pass  # Time format errors already caught above
         
@@ -290,12 +304,17 @@ class PollJSONValidator:
             # Validate and process times
             open_time_valid = False
             close_time_valid = False
+            current_time = datetime.now()
             
             if 'open_time' in data and data['open_time'] and isinstance(data['open_time'], str):
                 try:
-                    datetime.fromisoformat(data['open_time'])
-                    processed_data['open_time'] = data['open_time']
-                    open_time_valid = True
+                    open_dt = datetime.fromisoformat(data['open_time'])
+                    # Check if time is in the past - if so, don't use it
+                    if open_dt > current_time:
+                        processed_data['open_time'] = data['open_time']
+                        open_time_valid = True
+                    else:
+                        processed_data['open_time'] = None
                 except ValueError:
                     processed_data['open_time'] = None
             else:
@@ -303,9 +322,13 @@ class PollJSONValidator:
             
             if 'close_time' in data and data['close_time'] and isinstance(data['close_time'], str):
                 try:
-                    datetime.fromisoformat(data['close_time'])
-                    processed_data['close_time'] = data['close_time']
-                    close_time_valid = True
+                    close_dt = datetime.fromisoformat(data['close_time'])
+                    # Check if time is in the past - if so, don't use it
+                    if close_dt > current_time:
+                        processed_data['close_time'] = data['close_time']
+                        close_time_valid = True
+                    else:
+                        processed_data['close_time'] = None
                 except ValueError:
                     processed_data['close_time'] = None
             else:
