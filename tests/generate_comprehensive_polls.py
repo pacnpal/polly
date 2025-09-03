@@ -63,12 +63,69 @@ from polly.background_tasks import get_scheduler
 from tests.test_image_generator import TestImageGenerator
 from tests.emoji_utils import get_random_emoji, get_random_emojis, get_random_poll_emojis, get_unique_random_emojis
 
-# Configure logging
+# Configure comprehensive logging with detailed formatting
+import psutil
+import traceback
+import time
+
+# Create detailed log formatter
+class DetailedFormatter(logging.Formatter):
+    def format(self, record):
+        # Add memory and timing info to each log record
+        process = psutil.Process()
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        cpu_percent = process.cpu_percent()
+        
+        # Add custom fields to the record
+        record.memory_mb = f"{memory_mb:.1f}MB"
+        record.cpu_percent = f"{cpu_percent:.1f}%"
+        record.thread_id = f"T{record.thread}"
+        
+        return super().format(record)
+
+# Setup comprehensive logging
+log_filename = f"poll_generation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,
+    format='%(asctime)s.%(msecs)03d | %(memory_mb)s | %(cpu_percent)s | %(thread_id)s | %(name)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(log_filename, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
 )
+
+# Apply detailed formatter
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(DetailedFormatter())
+
 logger = logging.getLogger(__name__)
+
+# Log system information at startup
+def log_system_info():
+    """Log comprehensive system information"""
+    logger.info("=" * 80)
+    logger.info("SYSTEM INFORMATION")
+    logger.info("=" * 80)
+    
+    # System specs
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"Platform: {sys.platform}")
+    logger.info(f"CPU count: {psutil.cpu_count()}")
+    logger.info(f"Total memory: {psutil.virtual_memory().total / 1024 / 1024 / 1024:.1f} GB")
+    logger.info(f"Available memory: {psutil.virtual_memory().available / 1024 / 1024 / 1024:.1f} GB")
+    
+    # Process info
+    process = psutil.Process()
+    logger.info(f"Process PID: {process.pid}")
+    logger.info(f"Process memory: {process.memory_info().rss / 1024 / 1024:.1f} MB")
+    logger.info(f"Process CPU: {process.cpu_percent():.1f}%")
+    
+    # Environment
+    logger.info(f"Working directory: {os.getcwd()}")
+    logger.info(f"Log file: {log_filename}")
+    
+    logger.info("=" * 80)
 
 class ComprehensivePollGenerator:
     """Generates comprehensive test polls covering all possible combinations"""
@@ -88,11 +145,36 @@ class ComprehensivePollGenerator:
         # Rate limiting - simple delay between polls
         self.delay_between_polls = delay_between_polls
         
+        # Detailed tracking
+        self.detailed_errors = []
+        self.timing_data = []
+        self.memory_snapshots = []
+        self.operation_counts = {
+            'database_operations': 0,
+            'image_operations': 0,
+            'emoji_operations': 0,
+            'discord_operations': 0,
+            'validation_operations': 0
+        }
+        
         # Test data - use provided IDs or defaults
         self.test_user_id = user_id or "123456789012345678"  # Mock Discord user ID
         self.test_server_id = server_id or "987654321098765432"  # Mock Discord server ID
         self.test_channel_id = channel_id or "111222333444555666"  # Mock Discord channel ID
         self.test_role_id = role_id or "777888999000111222"  # Mock Discord role ID
+        
+        # Log initialization details
+        logger.info("=" * 80)
+        logger.info("POLL GENERATOR INITIALIZATION")
+        logger.info("=" * 80)
+        logger.info(f"Dry run mode: {self.dry_run}")
+        logger.info(f"Poll limit: {self.limit if self.limit else 'No limit'}")
+        logger.info(f"Delay between polls: {self.delay_between_polls}s")
+        logger.info(f"Test user ID: {self.test_user_id}")
+        logger.info(f"Test server ID: {self.test_server_id}")
+        logger.info(f"Test channel ID: {self.test_channel_id}")
+        logger.info(f"Test role ID: {self.test_role_id}")
+        logger.info("=" * 80)
         
         # Sample poll content
         self.poll_names = [

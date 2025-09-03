@@ -14,3 +14,4 @@ polly/_pycache_
 polly/__pycache__/discord_utils.cpython-313.pyc
 polly/__pycache__/main.cpython-313.pyc
 uv.lock
+tests/__pycache__/
