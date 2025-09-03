@@ -613,23 +613,40 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
 
         # Check if role ping is enabled and prepare content
         message_content = None
+        role_ping_attempted = False
         if getattr(poll, 'ping_role_enabled', False) and getattr(poll, 'ping_role_id', None):
             role_id = str(getattr(poll, 'ping_role_id'))
             role_name = str(getattr(poll, 'ping_role_name', 'Unknown Role'))
             message_content = f"<@&{role_id}> 📊 **Poll '{getattr(poll, 'name', '')}' is now open!**"
+            role_ping_attempted = True
             logger.info(f"🔔 POSTING POLL {poll.id} - Will ping role {role_name} ({role_id})")
 
-        # Post message with debugging
+        # Post message with debugging and graceful error handling for role pings
         logger.info(
             f"📤 POSTING POLL {poll.id} - Sending message to {channel.name}")
-        if message_content:
-            message = await channel.send(content=message_content, embed=embed)
-            logger.info(
-                f"✅ POSTING POLL {poll.id} - Message sent with role ping, ID: {message.id}")
-        else:
-            message = await channel.send(embed=embed)
-            logger.info(
-                f"✅ POSTING POLL {poll.id} - Message sent successfully, ID: {message.id}")
+        
+        try:
+            if message_content:
+                message = await channel.send(content=message_content, embed=embed)
+                logger.info(
+                    f"✅ POSTING POLL {poll.id} - Message sent with role ping, ID: {message.id}")
+            else:
+                message = await channel.send(embed=embed)
+                logger.info(
+                    f"✅ POSTING POLL {poll.id} - Message sent successfully, ID: {message.id}")
+        except discord.Forbidden as role_error:
+            if role_ping_attempted:
+                # Role ping failed due to permissions, try without role ping
+                logger.warning(f"⚠️ POSTING POLL {poll.id} - Role ping failed due to permissions, posting without role ping: {role_error}")
+                try:
+                    message = await channel.send(embed=embed)
+                    logger.info(f"✅ POSTING POLL {poll.id} - Message sent without role ping (fallback), ID: {message.id}")
+                except Exception as fallback_error:
+                    logger.error(f"❌ POSTING POLL {poll.id} - Fallback message posting also failed: {fallback_error}")
+                    raise fallback_error
+            else:
+                # Not a role ping issue, re-raise the error
+                raise role_error
 
         # Add reactions for voting with debugging
         poll_emojis = poll.emojis
@@ -929,14 +946,31 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
 
         # Check if role ping is enabled and prepare content
         message_content = f"📊 **Poll '{poll_name}' has ended!**"
+        role_ping_attempted = False
         if getattr(poll, 'ping_role_enabled', False) and getattr(poll, 'ping_role_id', None):
             role_id = str(getattr(poll, 'ping_role_id'))
             role_name = str(getattr(poll, 'ping_role_name', 'Unknown Role'))
             message_content = f"<@&{role_id}> {message_content}"
+            role_ping_attempted = True
             logger.info(f"🔔 POLL RESULTS {getattr(poll, 'id')} - Will ping role {role_name} ({role_id}) for poll closure")
 
-        # Post results message
-        await channel.send(content=message_content, embed=embed)
+        # Post results message with graceful error handling for role pings
+        try:
+            await channel.send(content=message_content, embed=embed)
+        except discord.Forbidden as role_error:
+            if role_ping_attempted:
+                # Role ping failed due to permissions, try without role ping
+                logger.warning(f"⚠️ POLL RESULTS {getattr(poll, 'id')} - Role ping failed due to permissions, posting without role ping: {role_error}")
+                try:
+                    fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
+                    await channel.send(content=fallback_content, embed=embed)
+                    logger.info(f"✅ POLL RESULTS {getattr(poll, 'id')} - Results posted without role ping (fallback)")
+                except Exception as fallback_error:
+                    logger.error(f"❌ POLL RESULTS {getattr(poll, 'id')} - Fallback results posting also failed: {fallback_error}")
+                    raise fallback_error
+            else:
+                # Not a role ping issue, re-raise the error
+                raise role_error
 
         logger.info(f"Posted final results for poll {getattr(poll, 'id')}")
         return True
@@ -1078,7 +1112,7 @@ async def send_vote_confirmation_dm(bot: commands.Bot, poll: Poll, user_id: str,
 
 
 async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, Any]]:
-    """Get roles for a guild that can be mentioned/pinged"""
+    """Get roles for a guild that can be mentioned/pinged by the bot"""
     roles = []
     
     if not bot or not bot.guilds:
@@ -1091,21 +1125,54 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
             logger.warning(f"Guild {guild_id} not found")
             return roles
         
-        # Get roles that can be mentioned (excluding @everyone and managed roles)
+        # Check if bot has admin permissions in this guild
+        if not bot.user:
+            logger.warning("Bot user is None")
+            return roles
+            
+        bot_member = guild.get_member(bot.user.id)
+        if not bot_member:
+            logger.warning(f"Bot not found as member in guild {guild.name}")
+            return roles
+        
+        bot_has_admin = bot_member.guild_permissions.administrator
+        bot_can_mention_everyone = bot_member.guild_permissions.mention_everyone
+        
+        logger.debug(f"Bot permissions in {guild.name}: admin={bot_has_admin}, mention_everyone={bot_can_mention_everyone}")
+        
+        # Get roles based on bot's permissions
         for role in guild.roles:
             try:
-                # Skip @everyone role and managed roles (like bot roles)
-                if role.name == "@everyone" or role.managed:
+                # Always skip @everyone role
+                if role.name == "@everyone":
                     continue
                 
-                # Only include roles that can be mentioned
-                if role.mentionable or role.permissions.administrator:
+                # Skip managed roles (like bot roles) unless bot has admin
+                if role.managed and not bot_has_admin:
+                    continue
+                
+                # Determine if bot can ping this role
+                can_ping_role = False
+                
+                if bot_has_admin:
+                    # Bot with admin can ping any role (except @everyone)
+                    can_ping_role = True
+                elif role.mentionable:
+                    # Bot can ping mentionable roles
+                    can_ping_role = True
+                elif bot_can_mention_everyone and not role.managed:
+                    # Bot with mention_everyone can ping non-managed roles
+                    can_ping_role = True
+                
+                if can_ping_role:
                     roles.append({
                         'id': str(role.id),
                         'name': role.name,
                         'color': str(role.color) if role.color != discord.Color.default() else None,
                         'position': role.position,
-                        'mentionable': role.mentionable
+                        'mentionable': role.mentionable,
+                        'managed': role.managed,
+                        'can_ping': True  # All roles in this list can be pinged by the bot
                     })
             except Exception as e:
                 logger.warning(f"Error processing role {role.name}: {e}")
@@ -1114,7 +1181,7 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
         # Sort roles by position (higher position = higher in hierarchy)
         roles.sort(key=lambda x: x.get('position', 0), reverse=True)
         
-        logger.debug(f"Found {len(roles)} mentionable roles in guild {guild.name}")
+        logger.debug(f"Found {len(roles)} pingable roles in guild {guild.name} (bot_admin={bot_has_admin})")
         return roles
         
     except Exception as e:
