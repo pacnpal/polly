@@ -62,10 +62,11 @@
             <div class="mb-3">
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
+                    {% set default_emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯'] %}
                     {% for option in poll.options %}
                     <div class="input-group mb-2">
                         <div class="btn-group">
-                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else "🔸" }}</button>
+                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}</button>
                             <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
                                     data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
                                 <span class="visually-hidden">Discord Emojis</span>
@@ -75,7 +76,7 @@
                             </ul>
                         </div>
                         <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option }}" {% if loop.index <= 2 %}required{% endif %}>
-                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else "🔸" }}">
+                        <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}">
                         {% if loop.index > 2 %}
                         <button type="button" class="btn btn-outline-danger"
                                 hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">

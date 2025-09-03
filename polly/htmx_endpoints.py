@@ -1233,6 +1233,27 @@ async def create_poll_htmx(request: Request, bot, scheduler, current_user: Disco
 
     try:
         form_data = await request.form()
+        
+        # RAW FORM DATA DEBUGGING - OUTPUT IMMEDIATELY
+        print(f"🔍 RAW FORM DATA DEBUG - Poll creation by user {current_user.id}")
+        print(f"🔍 RAW FORM DATA DEBUG - Form data keys: {list(form_data.keys())}")
+        logger.info(f"🔍 RAW FORM DATA DEBUG - Poll creation by user {current_user.id}")
+        logger.info(f"🔍 RAW FORM DATA DEBUG - Form data keys: {list(form_data.keys())}")
+        
+        # Log ALL form data values
+        for key, value in form_data.items():
+            print(f"🔍 RAW FORM DATA DEBUG - {key}: '{value}' (type: {type(value)})")
+            logger.info(f"🔍 RAW FORM DATA DEBUG - {key}: '{value}' (type: {type(value)})")
+        
+        # Specifically focus on emoji inputs
+        emoji_keys = [key for key in form_data.keys() if key.startswith('emoji')]
+        print(f"🔍 RAW FORM DATA DEBUG - Found {len(emoji_keys)} emoji keys: {emoji_keys}")
+        logger.info(f"🔍 RAW FORM DATA DEBUG - Found {len(emoji_keys)} emoji keys: {emoji_keys}")
+        
+        for emoji_key in emoji_keys:
+            emoji_value = form_data.get(emoji_key)
+            print(f"🔍 RAW FORM DATA DEBUG - {emoji_key} = '{emoji_value}' (len: {len(str(emoji_value)) if emoji_value else 0})")
+            logger.info(f"🔍 RAW FORM DATA DEBUG - {emoji_key} = '{emoji_value}' (len: {len(str(emoji_value)) if emoji_value else 0})")
 
         # Validate form data
         is_valid, validation_errors, validated_data = validate_poll_form_data(
@@ -1761,6 +1782,27 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
             })
 
         form_data = await request.form()
+        
+        # RAW FORM DATA DEBUGGING - OUTPUT IMMEDIATELY
+        print(f"🔍 RAW FORM DATA DEBUG - Poll {poll_id} edit by user {current_user.id}")
+        print(f"🔍 RAW FORM DATA DEBUG - Form data keys: {list(form_data.keys())}")
+        logger.info(f"🔍 RAW FORM DATA DEBUG - Poll {poll_id} edit by user {current_user.id}")
+        logger.info(f"🔍 RAW FORM DATA DEBUG - Form data keys: {list(form_data.keys())}")
+        
+        # Log ALL form data values
+        for key, value in form_data.items():
+            print(f"🔍 RAW FORM DATA DEBUG - {key}: '{value}' (type: {type(value)})")
+            logger.info(f"🔍 RAW FORM DATA DEBUG - {key}: '{value}' (type: {type(value)})")
+        
+        # Specifically focus on emoji inputs
+        emoji_keys = [key for key in form_data.keys() if key.startswith('emoji')]
+        print(f"🔍 RAW FORM DATA DEBUG - Found {len(emoji_keys)} emoji keys: {emoji_keys}")
+        logger.info(f"🔍 RAW FORM DATA DEBUG - Found {len(emoji_keys)} emoji keys: {emoji_keys}")
+        
+        for emoji_key in emoji_keys:
+            emoji_value = form_data.get(emoji_key)
+            print(f"🔍 RAW FORM DATA DEBUG - {emoji_key} = '{emoji_value}' (len: {len(str(emoji_value)) if emoji_value else 0})")
+            logger.info(f"🔍 RAW FORM DATA DEBUG - {emoji_key} = '{emoji_value}' (len: {len(str(emoji_value)) if emoji_value else 0})")
 
         # Validate form data using the same validation function
         is_valid, validation_errors, validated_data = validate_poll_form_data(
