@@ -148,6 +148,7 @@ async def on_reaction_add(reaction, user):
 
     # Check if this is a poll message
     db = get_db_session()
+    poll = None  # Initialize poll variable
     try:
         poll = db.query(Poll).filter(Poll.message_id ==
                                      str(reaction.message.id)).first()
@@ -206,6 +207,18 @@ async def on_reaction_add(reaction, user):
                 logger.debug(
                     f"✅ Multiple choice non-anonymous vote {vote_action}, keeping reaction for user {user.id} on poll {poll_id}")
 
+            # Send DM confirmation to the voter
+            try:
+                from .discord_utils import send_vote_confirmation_dm
+                dm_sent = await send_vote_confirmation_dm(bot, poll, str(user.id), option_index, vote_action)
+                if dm_sent:
+                    logger.debug(f"✅ Vote confirmation DM sent to user {user.id} for poll {poll_id}")
+                else:
+                    logger.debug(f"⚠️ Vote confirmation DM not sent to user {user.id} (DMs disabled or error)")
+            except Exception as dm_error:
+                logger.warning(f"⚠️ Failed to send vote confirmation DM to user {user.id}: {dm_error}")
+                # Don't fail the vote process if DM fails
+
             # Always update poll embed for live updates (key requirement)
             try:
                 await update_poll_message(bot, poll)
@@ -226,7 +239,7 @@ async def on_reaction_add(reaction, user):
         # Handle unexpected voting errors with bot owner notification
         try:
             poll_id_for_error = TypeSafeColumn.get_int(
-                poll, 'id', 0) if 'poll' in locals() and poll else 0
+                poll, 'id', 0) if poll else 0
             error_msg = await PollErrorHandler.handle_vote_error(
                 e, poll_id_for_error, str(user.id), bot
             )

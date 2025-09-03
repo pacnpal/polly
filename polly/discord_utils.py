@@ -11,6 +11,7 @@ import logging
 import pytz
 
 from .database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
+from .error_handler import notify_error_async
 
 logger = logging.getLogger(__name__)
 
@@ -924,6 +925,134 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
         await notify_error_async(e, "Poll Results Posting", poll_id=getattr(poll, 'id'))
+        return False
+
+
+async def send_vote_confirmation_dm(bot: commands.Bot, poll: Poll, user_id: str, option_index: int, vote_action: str) -> bool:
+    """
+    Send a DM to the user confirming their vote with poll information.
+    
+    Args:
+        bot: Discord bot instance
+        poll: Poll object
+        user_id: Discord user ID who voted
+        option_index: Index of the option they voted for
+        vote_action: Action taken ("added", "removed", "updated", "created")
+    
+    Returns:
+        bool: True if DM was sent successfully, False otherwise
+    """
+    try:
+        # Get the user object
+        user = bot.get_user(int(user_id))
+        if not user:
+            try:
+                user = await bot.fetch_user(int(user_id))
+            except (discord.NotFound, discord.HTTPException):
+                logger.warning(f"Could not find user {user_id} for vote confirmation DM")
+                return False
+        
+        if not user:
+            logger.warning(f"User {user_id} not found for vote confirmation DM")
+            return False
+        
+        # Create confirmation embed
+        poll_name = str(getattr(poll, 'name', ''))
+        poll_question = str(getattr(poll, 'question', ''))
+        selected_option = poll.options[option_index] if option_index < len(poll.options) else "Unknown Option"
+        selected_emoji = poll.emojis[option_index] if option_index < len(poll.emojis) else POLL_EMOJIS[option_index]
+        
+        # Determine action message
+        if vote_action == "added":
+            action_text = "✅ **Vote Added**"
+            action_description = f"You voted for: {selected_emoji} **{selected_option}**"
+        elif vote_action == "removed":
+            action_text = "❌ **Vote Removed**"
+            action_description = f"You removed your vote for: {selected_emoji} **{selected_option}**"
+        elif vote_action == "updated":
+            action_text = "🔄 **Vote Updated**"
+            action_description = f"You changed your vote to: {selected_emoji} **{selected_option}**"
+        elif vote_action == "created":
+            action_text = "✅ **Vote Recorded**"
+            action_description = f"You voted for: {selected_emoji} **{selected_option}**"
+        else:
+            action_text = "📊 **Vote Confirmed**"
+            action_description = f"Your vote: {selected_emoji} **{selected_option}**"
+        
+        # Create embed with poll information
+        embed = discord.Embed(
+            title=f"🗳️ Vote Confirmation",
+            description=action_description,
+            color=0x00ff00,  # Green for confirmation
+            timestamp=datetime.now(pytz.UTC)
+        )
+        
+        # Add poll details
+        embed.add_field(
+            name="📊 Poll",
+            value=f"**{poll_name}**\n{poll_question}",
+            inline=False
+        )
+        
+        # Add all poll options for reference
+        options_text = ""
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            if i == option_index:
+                # Highlight the selected option
+                options_text += f"{emoji} **{option}** ← Your choice\n"
+            else:
+                options_text += f"{emoji} {option}\n"
+        
+        embed.add_field(
+            name="📝 All Options",
+            value=options_text,
+            inline=False
+        )
+        
+        # Add poll type information
+        poll_anonymous = bool(getattr(poll, 'anonymous', False))
+        poll_multiple_choice = bool(getattr(poll, 'multiple_choice', False))
+        
+        poll_info = []
+        if poll_anonymous:
+            poll_info.append("🔒 Anonymous")
+        if poll_multiple_choice:
+            poll_info.append("☑️ Multiple Choice")
+        
+        if poll_info:
+            embed.add_field(
+                name="ℹ️ Poll Type",
+                value=" • ".join(poll_info),
+                inline=True
+            )
+        
+        # Add server and channel info
+        server_name = str(getattr(poll, 'server_name', 'Unknown Server'))
+        channel_name = str(getattr(poll, 'channel_name', 'Unknown Channel'))
+        embed.add_field(
+            name="📍 Location",
+            value=f"**{server_name}** → #{channel_name}",
+            inline=True
+        )
+        
+        embed.set_footer(text="Vote confirmation • Created by Polly")
+        
+        # Send the DM
+        await user.send(embed=embed)
+        
+        logger.info(f"✅ Sent vote confirmation DM to user {user_id} for poll {getattr(poll, 'id')}")
+        return True
+        
+    except discord.Forbidden:
+        logger.info(f"⚠️ User {user_id} has DMs disabled, cannot send vote confirmation")
+        return False
+    except discord.HTTPException as e:
+        logger.warning(f"⚠️ Failed to send vote confirmation DM to user {user_id}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error sending vote confirmation DM to user {user_id}: {e}")
+        await notify_error_async(e, "Vote Confirmation DM", user_id=user_id, poll_id=getattr(poll, 'id', 'unknown'))
         return False
 
 
