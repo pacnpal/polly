@@ -12,7 +12,7 @@ chmod 755 logs 2>/dev/null || echo "Warning: Could not change logs directory per
 chmod 755 data 2>/dev/null || echo "Warning: Could not change data directory permissions (mounted volume)"
 
 # Ensure the application can write to these directories
-chown -R $(id -u):$(id -g) /app static/uploads logs data 2>/dev/null || true
+chown -R $(id -u):$(id -g) /app static/uploads logs data 
 
 # Run database migration if needed
 echo "Running database migration..."
