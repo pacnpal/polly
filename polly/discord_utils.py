@@ -11,7 +11,6 @@ import logging
 import pytz
 
 from .database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
-from .error_handler import notify_error_async
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +41,6 @@ async def update_guild_cache(bot: commands.Bot, guild: discord.Guild):
 
     except Exception as e:
         logger.error(f"Error updating guild cache: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-        from .error_handler import notify_error
-        notify_error(e, "Guild Cache Update", guild_id=str(
-            guild.id), guild_name=guild.name)
         db.rollback()
     finally:
         db.close()
@@ -76,10 +71,6 @@ async def update_channels_cache(bot: commands.Bot, guild: discord.Guild):
 
     except Exception as e:
         logger.error(f"Error updating channel cache: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-        from .error_handler import notify_error
-        notify_error(e, "Channel Cache Update", guild_id=str(
-            guild.id), guild_name=guild.name)
         db.rollback()
     finally:
         db.close()
@@ -143,10 +134,6 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
                             except Exception as e:
                                 logger.warning(
                                     f"Error checking permissions for channel {channel.name}: {e}")
-                                # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                                from .error_handler import notify_error
-                                notify_error(
-                                    e, "Channel Permission Check", channel_name=channel.name, guild_name=guild.name)
                                 continue
 
                     # Sort channels by position
@@ -161,19 +148,11 @@ async def get_user_guilds_with_channels(bot: commands.Bot, user_id: str) -> List
                 except Exception as e:
                     logger.error(
                         f"Error processing guild data for {guild.name}: {e}")
-                    # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                    from .error_handler import notify_error
-                    notify_error(e, "Guild Data Processing",
-                                 guild_name=guild.name, user_id=user_id)
                     continue
 
         except Exception as e:
             logger.error(
                 f"Unexpected error processing guild {getattr(guild, 'name', 'Unknown')}: {e}")
-            # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-            from .error_handler import notify_error
-            notify_error(e, "Guild Processing", guild_name=getattr(
-                guild, 'name', 'Unknown'), user_id=user_id)
             continue
 
     return user_guilds
@@ -473,8 +452,6 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         logger.error(
             f"❌ POSTING POLL {poll_id} - Validation system error: {validation_error}")
         # Continue with posting but log the validation failure
-        from .error_handler import notify_error_async
-        await notify_error_async(validation_error, "Poll Validation System Error", poll_id=poll_id)
 
     logger.debug(
         f"Poll details: name='{getattr(poll, 'name', '')}', server_id={getattr(poll, 'server_id', '')}, channel_id={getattr(poll, 'channel_id', '')}")
@@ -829,9 +806,6 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
 
     except Exception as e:
         logger.error(f"Error updating poll message {poll.id}: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Message Update", poll_id=getattr(poll, 'id'))
         return False
 
 
@@ -990,9 +964,6 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
 
     except Exception as e:
         logger.error(f"Error posting poll results {poll.id}: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Results Posting", poll_id=getattr(poll, 'id'))
         return False
 
 
@@ -1115,7 +1086,6 @@ async def send_vote_confirmation_dm(bot: commands.Bot, poll: Poll, user_id: str,
         return False
     except Exception as e:
         logger.error(f"❌ Error sending vote confirmation DM to user {user_id}: {e}")
-        await notify_error_async(e, "Vote Confirmation DM", user_id=user_id, poll_id=getattr(poll, 'id', 'unknown'))
         return False
 
 
@@ -1194,8 +1164,6 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
         
     except Exception as e:
         logger.error(f"Error getting roles for guild {guild_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Guild Roles Retrieval", guild_id=guild_id)
         return roles
 
 

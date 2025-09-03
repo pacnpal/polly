@@ -140,9 +140,26 @@ class BotOwnerLogHandler(logging.Handler):
             if notification['exc_info']:
                 exc_type, exc_value, exc_traceback = notification['exc_info']
                 if exc_type and exc_value:
+                    import traceback
+                    # Get full traceback
+                    tb_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+                    full_traceback = ''.join(tb_lines)
+                    
                     embed.add_field(
                         name="Exception",
                         value=f"**Type:** {exc_type.__name__}\n**Details:** {str(exc_value)[:500]}",
+                        inline=False
+                    )
+                    
+                    # Add full traceback (truncated if too long for Discord)
+                    if len(full_traceback) > 1024:
+                        traceback_preview = full_traceback[:1000] + "\n... (truncated)"
+                    else:
+                        traceback_preview = full_traceback
+                    
+                    embed.add_field(
+                        name="Full Traceback",
+                        value=f"```python\n{traceback_preview}\n```",
                         inline=False
                     )
             

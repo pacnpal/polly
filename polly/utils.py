@@ -28,8 +28,6 @@ async def cleanup_poll_images(poll_id: int) -> None:
                 await cleanup_image(image_path)
     except Exception as e:
         logger.error(f"Error cleaning up poll {poll_id} images: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Poll Image Cleanup", poll_id=poll_id)
     finally:
         db.close()
 
@@ -43,8 +41,6 @@ async def cleanup_image(image_path: str) -> bool:
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Image Cleanup", image_path=image_path)
     return False
 
 
@@ -69,8 +65,6 @@ async def validate_image_file(image_file) -> Tuple[bool, str, Optional[bytes]]:
         return True, "", content
     except Exception as e:
         logger.error(f"Error validating image file: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Image File Validation")
         return False, "Error processing image file", None
 
 
@@ -92,8 +86,6 @@ async def save_image_file(content: bytes, filename: str) -> Optional[str]:
         return image_path
     except Exception as e:
         logger.error(f"Error saving image file: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Image File Saving", filename=filename)
         return None
 
 
@@ -107,8 +99,6 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         return str(value).strip()
     except Exception as e:
         logger.warning(f"Error extracting form data for key '{key}': {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Form Data Extraction", key=key, default=default)
         return default
 
 
@@ -147,8 +137,6 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         return "UTC"
     except Exception as e:
         logger.error(f"Error validating timezone '{timezone_str}': {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Timezone Validation", timezone_str=timezone_str)
         return "UTC"
 
 
@@ -190,9 +178,6 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
             return dt.astimezone(pytz.UTC)
         except Exception as fallback_error:
             logger.error(f"Fallback datetime parsing failed: {fallback_error}")
-            from .error_handler import notify_error
-            notify_error(fallback_error, "Fallback Datetime Parsing",
-                         datetime_str=datetime_str, timezone_str=timezone_str)
             # Last resort: return current time
             return datetime.now(pytz.UTC)
 
@@ -212,9 +197,6 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
     except Exception as e:
         logger.error(
             f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Datetime Formatting", dt=str(
-            dt), user_timezone=user_timezone)
         # Fallback to UTC
         return dt.strftime('%b %d, %I:%M %p UTC')
 
@@ -319,8 +301,6 @@ def get_user_preferences(user_id: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "User Preferences Retrieval", user_id=user_id)
         return {
             "last_server_id": None,
             "last_channel_id": None,
@@ -364,9 +344,6 @@ def save_user_preferences(user_id: str, server_id: Optional[str] = None,
             f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "User Preferences Saving", user_id=user_id,
-                     server_id=server_id, channel_id=channel_id, timezone=timezone)
         db.rollback()
     finally:
         db.close()

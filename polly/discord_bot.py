@@ -12,7 +12,7 @@ from discord.ext import commands
 
 from .database import get_db_session, Poll, POLL_EMOJIS, TypeSafeColumn
 from .discord_utils import create_poll_embed, update_poll_message, user_has_admin_permissions
-from .error_handler import PollErrorHandler, notify_error_async, setup_automatic_bot_owner_notifications, set_bot_for_automatic_notifications
+from .error_handler import PollErrorHandler, setup_automatic_bot_owner_notifications, set_bot_for_automatic_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ async def on_ready():
     """Bot ready event"""
     logger.info(f'{bot.user} has connected to Discord!')
     
-    # Initialize automatic bot owner notifications for WARNING+ level logs
+    # Initialize automatic bot owner notifications for WARNING+ level logs AFTER bot is ready
     try:
         setup_automatic_bot_owner_notifications()
         set_bot_for_automatic_notifications(bot)
@@ -48,9 +48,8 @@ async def on_ready():
         synced = await bot.tree.sync()
         logger.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
+        # Removed manual notification - automatic system will handle this
         logger.error(f"Failed to sync commands: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Discord Command Sync")
 
 
 @bot.tree.command(name="quickpoll", description="Create a quick poll in the current channel")
@@ -144,8 +143,8 @@ async def create_quick_poll_command(
         )
 
     except Exception as e:
+        # Removed manual notification - automatic system will handle this
         logger.error(f"Error creating poll: {e}")
-        await notify_error_async(e, "Quick Poll Creation", question=question, user_id=str(interaction.user.id))
         if not interaction.response.is_done():
             await interaction.response.send_message("❌ Error creating poll. Please try again.", ephemeral=True)
         else:
@@ -253,7 +252,7 @@ async def on_reaction_add(reaction, user):
             # Reaction stays so user can try again
 
     except Exception as e:
-        # Handle unexpected voting errors with bot owner notification
+        # Handle unexpected voting errors - removed manual notifications, automatic system will handle
         try:
             poll_id_for_error = TypeSafeColumn.get_int(
                 poll, 'id', 0) if poll else 0
@@ -261,13 +260,9 @@ async def on_reaction_add(reaction, user):
                 e, poll_id_for_error, str(user.id), bot
             )
             logger.error(f"Error handling vote: {error_msg}")
-            await notify_error_async(e, "Reaction Vote Handling Critical Error",
-                                     poll_id=poll_id_for_error, user_id=str(user.id))
         except Exception as error_handling_error:
             logger.error(
                 f"Critical error in vote error handling: {error_handling_error}")
-            await notify_error_async(error_handling_error, "Vote Error Handler Failure",
-                                     user_id=str(user.id))
     finally:
         db.close()
 

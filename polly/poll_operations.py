@@ -19,7 +19,7 @@ import aiofiles
 from PIL import Image
 
 from .validators import PollValidator, VoteValidator
-from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation, notify_error_async
+from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
 from .database import get_db_session, Poll, Vote, TypeSafeColumn
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,6 @@ class BulletproofImageHandler:
                     return {"success": False, "error": "Could not verify file type"}
             except Exception as e:
                 logger.warning(f"MIME type detection failed: {e}")
-                await notify_error_async(e, "MIME Type Detection", filename=filename)
                 return {"success": False, "error": "Could not verify file type"}
 
             # Step 4: Image integrity validation using PIL
@@ -85,7 +84,6 @@ class BulletproofImageHandler:
                         return {"success": False, "error": "Invalid image dimensions"}
 
             except Exception as e:
-                await notify_error_async(e, "Image Integrity Validation", filename=filename)
                 return {"success": False, "error": f"Invalid or corrupted image: {str(e)}"}
 
             # Step 5: Generate secure filename
@@ -103,7 +101,6 @@ class BulletproofImageHandler:
                     return {"success": False, "error": "File save verification failed"}
 
             except Exception as e:
-                await notify_error_async(e, "Image File Saving", filename=filename, file_path=str(file_path))
                 # Cleanup on failure
                 if file_path.exists():
                     try:
@@ -124,7 +121,6 @@ class BulletproofImageHandler:
 
         except Exception as e:
             logger.error(f"Image validation failed: {e}")
-            await notify_error_async(e, "Image Validation", filename=filename)
             return {"success": False, "error": f"Image processing failed: {str(e)}"}
 
     @critical_operation("image_cleanup")
@@ -137,7 +133,6 @@ class BulletproofImageHandler:
                 return True
         except Exception as e:
             logger.error(f"Failed to cleanup image {file_path}: {e}")
-            await notify_error_async(e, "Image Cleanup", file_path=file_path)
         return False
 
 
@@ -179,7 +174,6 @@ class BulletproofPollOperations:
             try:
                 validated_data = PollValidator.validate_poll_data(poll_data)
             except Exception as e:
-                await notify_error_async(e, "Poll Data Validation", user_id=user_id, poll_data=poll_data)
                 return {
                     "success": False,
                     "error": f"Validation failed: {str(e)}",
@@ -306,7 +300,6 @@ class BulletproofPollOperations:
                     db.close()
 
             except Exception as e:
-                await notify_error_async(e, "Poll Database Creation", user_id=user_id, poll_data=poll_data)
                 await self._cleanup_on_failure(poll_id, image_info)
                 return {
                     "success": False,
@@ -335,7 +328,6 @@ class BulletproofPollOperations:
                     db.close()
             except Exception as e:
                 logger.error(f"Failed to update poll with Discord IDs: {e}")
-                await notify_error_async(e, "Poll Discord ID Update", poll_id=poll_id, user_id=user_id)
                 # Don't fail the entire operation for this
 
             return {
@@ -349,7 +341,6 @@ class BulletproofPollOperations:
 
         except Exception as e:
             logger.error(f"Bulletproof poll creation failed: {e}")
-            await notify_error_async(e, "Bulletproof Poll Creation", user_id=user_id, poll_data=poll_data)
             poll_id_int = int(poll_id) if poll_id is not None else None
             await self._cleanup_on_failure(poll_id_int, image_info, discord_image_message_id, discord_poll_message_id)
             return {
@@ -380,7 +371,6 @@ class BulletproofPollOperations:
                 await asyncio.gather(*cleanup_tasks, return_exceptions=True)
             except Exception as e:
                 logger.error(f"Cleanup failed: {e}")
-                await notify_error_async(e, "Bulletproof Cleanup", poll_id=poll_id)
 
     async def _cleanup_database_record(self, poll_id: int):
         """Remove poll record from database."""
@@ -395,7 +385,6 @@ class BulletproofPollOperations:
                 db.close()
         except Exception as e:
             logger.error(f"Failed to cleanup database record {poll_id}: {e}")
-            await notify_error_async(e, "Database Record Cleanup", poll_id=poll_id)
 
     @critical_operation("bulletproof_vote_collection")
     async def bulletproof_vote_collection(self, poll_id: int, user_id: str,
@@ -435,7 +424,6 @@ class BulletproofPollOperations:
                             poll, user_id, option_index)
                     except Exception as e:
                         db.rollback()
-                        await notify_error_async(e, "Vote Data Validation", poll_id=poll_id, user_id=user_id, option_index=option_index)
                         return {"success": False, "error": str(e)}
 
                     # Step 2: Bulletproof vote recording with multiple choice support
@@ -511,13 +499,6 @@ class BulletproofPollOperations:
                         if verification_vote:
                             logger.error(
                                 f"Vote removal verification failed for poll {poll_id}, user {user_id}")
-                            await notify_error_async(
-                                Exception("Vote removal verification failed"),
-                                "Vote Removal Verification",
-                                poll_id=poll_id,
-                                user_id=user_id,
-                                option_index=option_index
-                            )
                             return {"success": False, "error": "Vote removal verification failed"}
                     else:
                         # For added/updated votes, verify the vote exists with correct option
@@ -540,13 +521,6 @@ class BulletproofPollOperations:
                         if not verification_vote or verification_vote.option_index != option_index:
                             logger.error(
                                 f"Vote verification failed for poll {poll_id}, user {user_id}")
-                            await notify_error_async(
-                                Exception("Vote verification failed"),
-                                "Vote Verification",
-                                poll_id=poll_id,
-                                user_id=user_id,
-                                option_index=option_index
-                            )
                             return {"success": False, "error": "Vote verification failed"}
 
                     logger.info(
@@ -569,7 +543,6 @@ class BulletproofPollOperations:
                 logger.error(
                     f"Vote collection attempt {retry_count} failed: {e}")
                 if retry_count >= max_retries:
-                    await notify_error_async(e, "Bulletproof Vote Collection", poll_id=poll_id, user_id=user_id, option_index=option_index, retry_count=retry_count)
                     return {
                         "success": False,
                         "error": f"Vote collection failed after {max_retries} attempts: {str(e)}"
@@ -622,7 +595,6 @@ class BulletproofPollOperations:
 
         except Exception as e:
             logger.error(f"Poll closure failed: {e}")
-            await notify_error_async(e, "Bulletproof Poll Closure", poll_id=poll_id, reason=reason)
             return {
                 "success": False,
                 "error": f"Poll closure failed: {str(e)}"
@@ -649,8 +621,6 @@ class BulletproofPollOperations:
         except Exception as e:
             poll_id = TypeSafeColumn.get_int(poll, 'id')
             logger.error(f"Failed to generate results for poll {poll_id}: {e}")
-            from .error_handler import notify_error
-            notify_error(e, "Poll Results Generation", poll_id=poll_id)
             return {
                 "poll_id": poll_id,
                 "error": f"Failed to generate results: {str(e)}"
@@ -667,7 +637,6 @@ async def cleanup_image(image_path: str) -> bool:
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
-        await notify_error_async(e, "Image Cleanup", image_path=image_path)
     return False
 
 
@@ -682,6 +651,5 @@ async def cleanup_poll_images(poll_id: int) -> None:
                 await cleanup_image(image_path)
     except Exception as e:
         logger.error(f"Error cleaning up poll {poll_id} images: {e}")
-        await notify_error_async(e, "Poll Image Cleanup", poll_id=poll_id)
     finally:
         db.close()

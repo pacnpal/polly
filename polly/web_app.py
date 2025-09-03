@@ -21,7 +21,7 @@ from .auth import (
 )
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
-from .error_handler import notify_error_async, setup_automatic_bot_owner_notifications
+from .error_handler import setup_automatic_bot_owner_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,6 @@ def get_user_preferences(user_id: str) -> dict:
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "User Preferences Retrieval", user_id=user_id)
         return {
             "last_server_id": None,
             "last_channel_id": None,
@@ -94,9 +92,6 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
             f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "User Preferences Saving", user_id=user_id,
-                     server_id=server_id, channel_id=channel_id, timezone=timezone)
         db.rollback()
     finally:
         db.close()
@@ -106,15 +101,9 @@ async def start_background_tasks():
     """Start all background tasks"""
     from .background_tasks import start_scheduler, start_reaction_safeguard
     from .discord_bot import start_bot
-    
-    # Initialize automatic bot owner notifications for WARNING+ level logs
-    try:
-        setup_automatic_bot_owner_notifications()
-        logger.info("✅ Automatic bot owner notifications initialized for WARNING+ level logs")
-    except Exception as e:
-        logger.error(f"Failed to initialize automatic bot owner notifications: {e}")
 
     # Start background tasks
+    # Note: Automatic bot owner notifications are initialized in discord_bot.py after bot is ready
     asyncio.create_task(start_scheduler())
     asyncio.create_task(start_bot())
     asyncio.create_task(start_reaction_safeguard())
@@ -211,7 +200,6 @@ def add_core_routes(app: FastAPI):
 
         except Exception as e:
             logger.error(f"Auth callback error: {e}")
-            await notify_error_async(e, "Discord OAuth Callback", code=code)
             return HTMLResponse("Authentication failed", status_code=400)
 
     @app.get("/dashboard", response_class=HTMLResponse)
@@ -232,7 +220,6 @@ def add_core_routes(app: FastAPI):
         except Exception as e:
             logger.error(
                 f"Error getting user guilds for {current_user.id}: {e}")
-            await notify_error_async(e, "Dashboard Guild Retrieval", user_id=current_user.id)
             user_guilds = []
 
         return templates.TemplateResponse("dashboard_htmx.html", {

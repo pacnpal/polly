@@ -13,7 +13,7 @@ import discord
 from .database import get_db_session, Poll, Vote, TypeSafeColumn
 from .discord_utils import post_poll_to_channel, update_poll_message
 from .timezone_scheduler_fix import TimezoneAwareScheduler
-from .error_handler import PollErrorHandler, notify_error_async
+from .error_handler import PollErrorHandler
 
 # Track failed message fetch attempts for polls during runtime
 # Format: {poll_id: {"count": int, "first_failure": datetime, "last_attempt": datetime}}
@@ -68,7 +68,6 @@ async def close_poll(poll_id: int):
                     db.close()
             except Exception as results_error:
                 logger.error(f"Error posting results for poll {poll_id}: {results_error}")
-                await notify_error_async(results_error, "Poll Results Posting After Closure", poll_id=poll_id)
 
     except Exception as e:
         # Handle unexpected closure errors with bot owner notification
@@ -212,7 +211,6 @@ async def cleanup_polls_with_deleted_messages():
             f"❌ MESSAGE CLEANUP - Critical error during message cleanup: {e}")
         logger.exception("Full traceback for message cleanup error:")
         db.rollback()
-        await notify_error_async(e, "Message Cleanup Critical Error")
     finally:
         db.close()
         logger.debug("🔄 MESSAGE CLEANUP - Database connection closed")
@@ -464,8 +462,6 @@ async def reaction_safeguard_task():
                             poll_id = TypeSafeColumn.get_int(poll, 'id')
                             logger.error(
                                 f"❌ Safeguard: Error getting channel {poll_channel_id} for poll {poll_id}: {channel_error}")
-                            await notify_error_async(channel_error, "Safeguard Channel Access",
-                                                     poll_id=poll_id, channel_id=poll_channel_id)
                             continue
 
                         try:
@@ -593,8 +589,6 @@ async def reaction_safeguard_task():
                                             logger.error(
                                                 f"❌ Safeguard: Error deleting poll {poll_id}: {delete_error}")
                                             db.rollback()
-                                            await notify_error_async(delete_error, "Safeguard Poll Deletion After Retries",
-                                                                     poll_id=poll_id, poll_name=poll_name, attempts=MAX_FETCH_RETRIES)
                                         continue
                                     else:
                                         # Still within retry limit, continue to next poll
@@ -605,8 +599,6 @@ async def reaction_safeguard_task():
                             poll_id = TypeSafeColumn.get_int(poll, 'id')
                             logger.error(
                                 f"❌ Safeguard: Error fetching message {poll_message_id} for poll {poll_id}: {fetch_error}")
-                            await notify_error_async(fetch_error, "Safeguard Message Fetch",
-                                                     poll_id=poll_id, message_id=poll_message_id)
                             continue
 
                         # Check each reaction on the message
@@ -676,28 +668,20 @@ async def reaction_safeguard_task():
                                                         except Exception as update_error:
                                                             logger.error(
                                                                 f"❌ Safeguard: Failed to update poll message for poll {poll_id}: {update_error}")
-                                                            await notify_error_async(update_error, "Safeguard Poll Message Update",
-                                                                                     poll_id=poll_id, user_id=str(user.id))
                                                     else:
                                                         # Vote failed - leave reaction for user to try again
                                                         logger.error(
                                                             f"❌ Safeguard: Vote FAILED for user {user.id} on poll {poll_id}: {result['error']}")
-                                                        await notify_error_async(Exception(result['error']), "Safeguard Vote Processing Failed",
-                                                                                 poll_id=poll_id, user_id=str(user.id), option_index=option_index)
 
                                                 except Exception as vote_error:
                                                     logger.error(
                                                         f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {poll_id}: {vote_error}")
-                                                    await notify_error_async(vote_error, "Safeguard Vote Processing Critical Error",
-                                                                             poll_id=poll_id, user_id=str(user.id), option_index=option_index)
 
                                         except Exception as user_error:
                                             poll_id = TypeSafeColumn.get_int(
                                                 poll, 'id')
                                             logger.error(
                                                 f"❌ Safeguard: Error processing user {user.id} reaction on poll {poll_id}: {user_error}")
-                                            await notify_error_async(user_error, "Safeguard User Processing Error",
-                                                                     poll_id=poll_id, user_id=str(user.id))
                                             continue
 
                                 except Exception as users_error:
@@ -705,40 +689,32 @@ async def reaction_safeguard_task():
                                         poll, 'id')
                                     logger.error(
                                         f"❌ Safeguard: Error iterating reaction users for poll {poll_id}: {users_error}")
-                                    await notify_error_async(users_error, "Safeguard Reaction Users Iteration",
-                                                             poll_id=poll_id, emoji=str(reaction.emoji))
                                     continue
 
                             except Exception as reaction_error:
                                 poll_id = TypeSafeColumn.get_int(poll, 'id')
                                 logger.error(
                                     f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {poll_id}: {reaction_error}")
-                                await notify_error_async(reaction_error, "Safeguard Reaction Processing",
-                                                         poll_id=poll_id, emoji=str(reaction.emoji))
                                 continue
 
                     except Exception as poll_error:
                         poll_id = TypeSafeColumn.get_int(poll, 'id')
                         logger.error(
                             f"❌ Safeguard: Error processing poll {poll_id}: {poll_error}")
-                        await notify_error_async(poll_error, "Safeguard Poll Processing", poll_id=poll_id)
                         continue
 
             except Exception as db_error:
                 logger.error(f"❌ Safeguard: Database error: {db_error}")
-                await notify_error_async(db_error, "Safeguard Database Error")
             finally:
                 try:
                     db.close()
                 except Exception as close_error:
                     logger.error(
                         f"❌ Safeguard: Error closing database: {close_error}")
-                    await notify_error_async(close_error, "Safeguard Database Close Error")
 
         except Exception as e:
             logger.error(
                 f"❌ Safeguard: Critical error in reaction safeguard task: {e}")
-            await notify_error_async(e, "Safeguard Task Critical Error")
             # Continue running even if there's an error
             continue
 
@@ -751,7 +727,6 @@ async def start_reaction_safeguard():
         logger.info("✅ Reaction safeguard task started successfully")
     except Exception as e:
         logger.error(f"❌ Failed to start reaction safeguard task: {e}")
-        await notify_error_async(e, "Safeguard Task Startup Error")
         raise e  # Re-raise to ensure the application knows the safeguard failed to start
 
 

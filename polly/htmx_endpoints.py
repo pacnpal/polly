@@ -39,8 +39,6 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         return str(value).strip()
     except Exception as e:
         logger.warning(f"Error extracting form data for key '{key}': {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Form Data Extraction", key=key, default=default)
         return default
 
 
@@ -210,8 +208,6 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         return "UTC"
     except Exception as e:
         logger.error(f"Error validating timezone '{timezone_str}': {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Timezone Validation", timezone_str=timezone_str)
         return "UTC"
 
 
@@ -253,9 +249,6 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
             return dt.astimezone(pytz.UTC)
         except Exception as fallback_error:
             logger.error(f"Fallback datetime parsing failed: {fallback_error}")
-            from .error_handler import notify_error
-            notify_error(fallback_error, "Fallback Datetime Parsing",
-                         datetime_str=datetime_str, timezone_str=timezone_str)
             # Last resort: return current time
             return datetime.now(pytz.UTC)
 
@@ -281,8 +274,6 @@ async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
         return True, "", content
     except Exception as e:
         logger.error(f"Error validating image file: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Image File Validation")
         return False, "Error processing image file", None
 
 
@@ -304,8 +295,6 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
         return image_path
     except Exception as e:
         logger.error(f"Error saving image file: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Image File Saving", filename=filename)
         return None
 
 
@@ -318,8 +307,6 @@ async def cleanup_image(image_path: str) -> bool:
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Image Cleanup", image_path=str(image_path))
     return False
 
 
@@ -344,8 +331,6 @@ def get_user_preferences(user_id: str) -> dict:
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "User Preferences Retrieval", user_id=user_id)
         return {
             "last_server_id": None,
             "last_channel_id": None,
@@ -390,9 +375,6 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
             f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}, role={role_id}")
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "User Preferences Saving", user_id=user_id,
-                     server_id=server_id, channel_id=channel_id, role_id=role_id, timezone=timezone)
         db.rollback()
     finally:
         db.close()
@@ -413,9 +395,6 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
     except Exception as e:
         logger.error(
             f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
-        from .error_handler import notify_error
-        notify_error(e, "Datetime Formatting", dt=str(
-            dt), user_timezone=user_timezone)
         # Fallback to UTC
         return dt.strftime('%b %d, %I:%M %p UTC')
 
@@ -697,12 +676,10 @@ async def get_create_form_htmx(request: Request, bot, current_user: DiscordUser 
         # Ensure user_guilds is always a valid list
         if user_guilds is None:
             user_guilds = []
-    except Exception as e:
-        logger.error(
-            f"Error getting user guilds for create form for {current_user.id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Create Form Guild Retrieval", user_id=current_user.id)
-        user_guilds = []
+        except Exception as e:
+            logger.error(
+                f"Error getting user guilds for create form for {current_user.id}: {e}")
+            user_guilds = []
 
     # Get user preferences
     user_prefs = get_user_preferences(current_user.id)
@@ -782,8 +759,6 @@ async def get_create_form_template_htmx(poll_id: int, request: Request, bot, cur
                 user_guilds = []
         except Exception as e:
             logger.error(f"Error getting user guilds for template form for {current_user.id}: {e}")
-            from .error_handler import notify_error_async
-            await notify_error_async(e, "Template Form Guild Retrieval", user_id=current_user.id)
             user_guilds = []
 
         # Get user preferences
@@ -901,8 +876,6 @@ async def get_create_form_template_htmx(poll_id: int, request: Request, bot, cur
 
     except Exception as e:
         logger.error(f"Error creating template from poll {poll_id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Template Creation", poll_id=poll_id, user_id=current_user.id)
         return templates.TemplateResponse("htmx/components/alert_error.html", {
             "request": request,
             "message": f"Error loading template: {str(e)}"
@@ -1067,8 +1040,6 @@ async def upload_image_htmx(request: Request, current_user: DiscordUser = Depend
 
     except Exception as e:
         logger.error(f"Error in FilePond image upload: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "FilePond Image Upload", user_id=current_user.id)
         return {"error": "Server error processing image"}, 500
 
 
@@ -1085,8 +1056,6 @@ async def remove_image_htmx(request: Request, current_user: DiscordUser = Depend
 
     except Exception as e:
         logger.error(f"Error removing image: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "FilePond Image Removal", user_id=current_user.id)
         return {"error": "Server error removing image"}, 500
 
 
@@ -1138,8 +1107,6 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
 
     except Exception as e:
         logger.error(f"Error saving settings for user {current_user.id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "User Settings Save", user_id=current_user.id)
 
         return templates.TemplateResponse("htmx/components/alert_error.html", {
             "request": request,
@@ -1718,8 +1685,6 @@ async def get_poll_details_htmx(poll_id: int, request: Request, current_user: Di
         })
     except Exception as e:
         logger.error(f"Error getting poll details for poll {poll_id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Details Retrieval", poll_id=poll_id, user_id=current_user.id)
         return templates.TemplateResponse("htmx/components/alert_error.html", {
             "request": request,
             "message": f"Error loading poll details: {str(e)}"
@@ -2033,8 +1998,6 @@ async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordU
 
     except Exception as e:
         logger.error(f"Error closing poll {poll_id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Closure", poll_id=poll_id, user_id=current_user.id)
         db.rollback()
         return templates.TemplateResponse("htmx/components/alert_error.html", {
             "request": request,
@@ -2086,8 +2049,6 @@ async def delete_poll_htmx(poll_id: int, request: Request, current_user: Discord
 
     except Exception as e:
         logger.error(f"Error deleting poll {poll_id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Deletion", poll_id=poll_id, user_id=current_user.id)
         db.rollback()
         return templates.TemplateResponse("htmx/components/alert_error.html", {
             "request": request,
@@ -2176,8 +2137,6 @@ async def get_poll_edit_form(poll_id: int, request: Request, bot, current_user: 
                 })
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(f"Error formatting timezone {tz_name}: {e}")
-                from .error_handler import notify_error
-                notify_error(e, "Timezone Formatting", tz_name=tz_name)
                 timezones.append({
                     "name": tz_name,
                     "display": tz_name
@@ -2435,8 +2394,6 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
 
     except Exception as e:
         logger.error(f"Error updating poll {poll_id}: {e}")
-        from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Update", poll_id=poll_id, user_id=current_user.id)
         db.rollback()
         return templates.TemplateResponse("htmx/components/alert_error.html", {
             "request": request,

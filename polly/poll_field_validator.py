@@ -9,7 +9,6 @@ import json
 import pytz
 
 from .database import get_db_session, Poll, TypeSafeColumn
-from .error_handler import notify_error_async
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +107,6 @@ class PollFieldValidator:
         except Exception as e:
             logger.error(
                 f"❌ FIELD VALIDATION - Critical error during validation of poll {poll_id}: {e}")
-            await notify_error_async(e, "Poll Field Validation Critical Error", poll_id=poll_id)
             validation_results["success"] = False
             validation_results["errors"].append(
                 f"Critical validation error: {str(e)}")
@@ -501,7 +499,6 @@ class PollFieldValidator:
         except Exception as e:
             logger.error(
                 f"❌ FIELD VALIDATION - Error applying fallbacks for poll {poll.id}: {e}")
-            await notify_error_async(e, "Poll Field Validation Fallback Error", poll_id=poll.id)
 
     @staticmethod
     async def _notify_owner_of_validation_failure(poll: Poll, results: Dict[str, Any], bot_instance):
@@ -546,4 +543,3 @@ class PollFieldValidator:
         except Exception as e:
             logger.error(
                 f"❌ FIELD VALIDATION - Error notifying owner of validation failure: {e}")
-            await notify_error_async(e, "Poll Validation Owner Notification Error", poll_id=poll.id)
