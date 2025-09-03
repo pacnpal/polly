@@ -295,25 +295,43 @@ async def restore_scheduled_jobs():
                 logger.debug(
                     f"Poll {poll_id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}")
 
+                # Get poll times as actual datetime objects using TypeSafeColumn
+                poll_open_time = poll.open_time
+                poll_close_time = poll.close_time
+                
+                # Ensure we have valid datetime objects
+                if not isinstance(poll_open_time, datetime) or not isinstance(poll_close_time, datetime):
+                    logger.error(f"❌ SCHEDULER RESTORE - Invalid datetime objects for poll {poll_id}")
+                    continue
+                
+                # Ensure poll times are timezone-aware for comparison
+                if poll_open_time.tzinfo is None:
+                    poll_open_time = pytz.UTC.localize(poll_open_time)
+                    logger.debug(f"🕐 SCHEDULER RESTORE - Localized naive open_time to UTC for poll {poll_id}")
+                
+                if poll_close_time.tzinfo is None:
+                    poll_close_time = pytz.UTC.localize(poll_close_time)
+                    logger.debug(f"🕐 SCHEDULER RESTORE - Localized naive close_time to UTC for poll {poll_id}")
+
                 # All polls should be scheduled only - no immediate posting during restore
                 # Schedule poll to open at its designated time
-                time_until_open = (poll.open_time - now).total_seconds()
+                time_until_open = (poll_open_time - now).total_seconds()
 
-                if poll.open_time <= now:
+                if poll_open_time <= now:
                     logger.info(
                         f"📅 SCHEDULER RESTORE - Poll {poll_id} is overdue by {abs(time_until_open):.0f} seconds, scheduling for immediate posting")
                 else:
                     logger.info(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to open in {time_until_open:.0f} seconds at {poll.open_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to open in {time_until_open:.0f} seconds at {poll_open_time}")
 
                 # Use timezone-aware scheduler for restoration
                 tz_scheduler = TimezoneAwareScheduler(scheduler)
                 poll_timezone = TypeSafeColumn.get_string(
                     poll, 'timezone', 'UTC')
 
-                # Schedule poll opening
+                # Schedule poll opening (use the timezone-aware datetime)
                 success_open = tz_scheduler.schedule_poll_opening(
-                    poll_id, poll.open_time, poll_timezone, post_poll_to_channel, bot
+                    poll_id, poll_open_time, poll_timezone, post_poll_to_channel, bot
                 )
                 if success_open:
                     logger.debug(
@@ -323,13 +341,13 @@ async def restore_scheduled_jobs():
                         f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {poll_id}")
 
                 # Always schedule poll to close (whether it's active or scheduled)
-                if poll.close_time > now:
-                    time_until_close = (poll.close_time - now).total_seconds()
+                if poll_close_time > now:
+                    time_until_close = (poll_close_time - now).total_seconds()
                     logger.debug(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to close in {time_until_close:.0f} seconds at {poll.close_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to close in {time_until_close:.0f} seconds at {poll_close_time}")
 
                     success_close = tz_scheduler.schedule_poll_closing(
-                        poll_id, poll.close_time, poll_timezone, close_poll
+                        poll_id, poll_close_time, poll_timezone, close_poll
                     )
                     if success_close:
                         logger.debug(
@@ -339,7 +357,7 @@ async def restore_scheduled_jobs():
                             f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {poll_id}")
                 else:
                     # Poll should have already closed
-                    time_overdue = (now - poll.close_time).total_seconds()
+                    time_overdue = (now - poll_close_time).total_seconds()
                     logger.warning(
                         f"⏰ SCHEDULER RESTORE - Poll {poll_id} close time is {time_overdue:.0f} seconds overdue, closing now")
 
