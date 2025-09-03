@@ -50,7 +50,7 @@ class DiscordEmojiHandler:
                 logger.info(f"🎯 EMOJI HANDLER DEBUG - First emoji: {emojis[0].name} (ID: {emojis[0].id})")
             else:
                 print("⚠️ EMOJI HANDLER DEBUG - No emojis found in guild")
-                logger.warning("⚠️ EMOJI HANDLER DEBUG - No emojis found in guild")
+                logger.info("⚠️ EMOJI HANDLER DEBUG - No emojis found in guild")
 
             logger.debug(
                 f"Found {len(emojis)} custom emojis in guild {guild.name}")
@@ -494,7 +494,7 @@ class DiscordEmojiHandler:
                     f"📋 EMOJI HANDLER DEBUG - Sample emoji data structure: {sample_emoji}")
             else:
                 print("⚠️ EMOJI HANDLER DEBUG - No emojis in final list")
-                logger.warning(
+                logger.info(
                     "⚠️ EMOJI HANDLER DEBUG - No emojis in final list")
 
             logger.debug(
