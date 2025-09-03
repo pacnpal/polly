@@ -671,13 +671,123 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
         poll_name = poll_data.get('name', 'Unknown Poll')
         logger.info(f"✅ JSON IMPORT - User {current_user.id} successfully imported: '{poll_name}' from {filename}")
         
-        # Return success with the imported data as template data
-        # This will redirect to the create form with pre-filled data
-        return templates.TemplateResponse("htmx/components/alert_success.html", {
+        # Instead of redirecting, directly return the create form with pre-filled data
+        # Get user's guilds with channels with error handling
+        try:
+            user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+            if user_guilds is None:
+                user_guilds = []
+        except Exception as e:
+            logger.error(f"Error getting user guilds for JSON import form for {current_user.id}: {e}")
+            user_guilds = []
+
+        # Get user preferences
+        user_prefs = get_user_preferences(current_user.id)
+        
+        # Get priority timezone for new poll creation
+        priority_timezone = get_priority_timezone_for_user(current_user.id)
+
+        # Get timezones - priority timezone first
+        common_timezones = [
+            priority_timezone, "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
+            "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+        ]
+        # Remove duplicates while preserving order
+        seen = set()
+        common_timezones = [tz for tz in common_timezones if not (tz in seen or seen.add(tz))]
+
+        # Set default times in priority timezone if not provided in JSON
+        user_tz = pytz.timezone(priority_timezone)
+        now = datetime.now(user_tz)
+
+        # Check if JSON has times, otherwise use defaults
+        if 'open_time' in poll_data and poll_data['open_time']:
+            # JSON has times - convert them to local format for the form
+            try:
+                # Parse the datetime from JSON (should be in ISO format)
+                if isinstance(poll_data['open_time'], str):
+                    open_time_dt = datetime.fromisoformat(poll_data['open_time'].replace('Z', '+00:00'))
+                else:
+                    open_time_dt = poll_data['open_time']
+                
+                # Convert to user timezone for display
+                if open_time_dt.tzinfo is None:
+                    open_time_dt = pytz.UTC.localize(open_time_dt)
+                open_time_local = open_time_dt.astimezone(user_tz)
+                default_open_time = open_time_local.strftime('%Y-%m-%dT%H:%M')
+            except Exception as e:
+                logger.warning(f"Error parsing JSON open_time: {e}, using default")
+                # Fallback to default
+                next_day = now.date() + timedelta(days=1)
+                open_time_dt = datetime.combine(next_day, datetime.min.time())
+                open_time_dt = user_tz.localize(open_time_dt)
+                default_open_time = open_time_dt.strftime('%Y-%m-%dT%H:%M')
+        else:
+            # Default start time should be next day at 12:00AM (midnight)
+            next_day = now.date() + timedelta(days=1)
+            open_time_dt = datetime.combine(next_day, datetime.min.time())
+            open_time_dt = user_tz.localize(open_time_dt)
+            default_open_time = open_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+        # Handle close time similarly
+        if 'close_time' in poll_data and poll_data['close_time']:
+            try:
+                if isinstance(poll_data['close_time'], str):
+                    close_time_dt = datetime.fromisoformat(poll_data['close_time'].replace('Z', '+00:00'))
+                else:
+                    close_time_dt = poll_data['close_time']
+                
+                if close_time_dt.tzinfo is None:
+                    close_time_dt = pytz.UTC.localize(close_time_dt)
+                close_time_local = close_time_dt.astimezone(user_tz)
+                default_close_time = close_time_local.strftime('%Y-%m-%dT%H:%M')
+            except Exception as e:
+                logger.warning(f"Error parsing JSON close_time: {e}, using default")
+                # Fallback: 24 hours after open time
+                close_time_dt = open_time_dt + timedelta(hours=24)
+                default_close_time = close_time_dt.strftime('%Y-%m-%dT%H:%M')
+        else:
+            # Close time should be 24 hours after open time
+            close_time_dt = open_time_dt + timedelta(hours=24)
+            default_close_time = close_time_dt.strftime('%Y-%m-%dT%H:%M')
+
+        # Prepare timezone data for template
+        timezones = []
+        for tz in common_timezones:
+            try:
+                tz_obj = pytz.timezone(tz)
+                offset = datetime.now(tz_obj).strftime('%z')
+                if offset and len(offset) >= 5:
+                    offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
+                else:
+                    offset_formatted = "UTC+00:00"
+                timezones.append({
+                    "name": tz,
+                    "display": f"{tz} ({offset_formatted})"
+                })
+            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
+                logger.warning(f"Error formatting timezone {tz}: {e}")
+                timezones.append({
+                    "name": tz,
+                    "display": tz
+                })
+
+        logger.info(f"🔍 JSON IMPORT - Returning create form with imported data for poll '{poll_name}'")
+        
+        # Return the create form directly with the imported JSON data pre-filled
+        return templates.TemplateResponse("htmx/create_form_filepond.html", {
             "request": request,
-            "message": f"JSON imported successfully! Poll '{poll_name}' is ready to create.",
-            "redirect_url": f"/htmx/create-form-json-import",
-            "json_data": poll_data  # Pass the data for the next form
+            "guilds": user_guilds,
+            "timezones": timezones,
+            "open_time": default_open_time,
+            "close_time": default_close_time,
+            "user_preferences": user_prefs,
+            "priority_timezone": priority_timezone,
+            "default_emojis": POLL_EMOJIS,
+            "template_data": poll_data,  # Pass the imported JSON data to pre-fill form
+            "is_template": False,
+            "is_json_import": True,  # Flag to indicate this is from JSON import
+            "success_message": f"JSON imported successfully! Poll '{poll_name}' data has been loaded into the form."
         })
         
     except Exception as e:
