@@ -796,7 +796,27 @@
         {% if template_data %}
         function preFillTemplateData() {
             const templateData = {{ template_data|tojson }};
-            console.log('Pre-filling template data:', templateData);
+            
+            // COMPREHENSIVE TEMPLATE DATA DEBUGGING
+            console.log('🔍 TEMPLATE JS DEBUG - Raw template data:', templateData);
+            console.log('🔍 TEMPLATE JS DEBUG - Template data type:', typeof templateData);
+            console.log('🔍 TEMPLATE JS DEBUG - Template data keys:', templateData ? Object.keys(templateData) : 'null/undefined');
+            
+            if (templateData) {
+                console.log('🔍 TEMPLATE JS DEBUG - name:', templateData.name);
+                console.log('🔍 TEMPLATE JS DEBUG - question:', templateData.question);
+                console.log('🔍 TEMPLATE JS DEBUG - options:', templateData.options, 'type:', typeof templateData.options, 'length:', templateData.options ? templateData.options.length : 'null');
+                console.log('🔍 TEMPLATE JS DEBUG - emojis:', templateData.emojis, 'type:', typeof templateData.emojis, 'length:', templateData.emojis ? templateData.emojis.length : 'null');
+                console.log('🔍 TEMPLATE JS DEBUG - server_id:', templateData.server_id);
+                console.log('🔍 TEMPLATE JS DEBUG - channel_id:', templateData.channel_id);
+                console.log('🔍 TEMPLATE JS DEBUG - anonymous:', templateData.anonymous);
+                console.log('🔍 TEMPLATE JS DEBUG - multiple_choice:', templateData.multiple_choice);
+                console.log('🔍 TEMPLATE JS DEBUG - ping_role_enabled:', templateData.ping_role_enabled);
+                console.log('🔍 TEMPLATE JS DEBUG - ping_role_id:', templateData.ping_role_id);
+            } else {
+                console.log('🔍 TEMPLATE JS DEBUG - No template data available');
+                return;
+            }
 
             // Pre-fill server selection
             if (templateData.server_id) {

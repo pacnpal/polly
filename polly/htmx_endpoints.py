@@ -812,21 +812,62 @@ async def get_create_form_template_htmx(poll_id: int, request: Request, bot, cur
                     "display": tz
                 })
 
-        # Extract template data from source poll
+        # Extract template data from source poll with detailed debugging
+        logger.info(f"🔍 TEMPLATE DEBUG - Starting template data extraction from poll {poll_id}")
+        print(f"🔍 TEMPLATE DEBUG - Starting template data extraction from poll {poll_id}")
+        
+        # Extract each field individually with debugging
+        source_name = TypeSafeColumn.get_string(source_poll, 'name')
+        source_question = TypeSafeColumn.get_string(source_poll, 'question')
+        source_options = source_poll.options
+        source_emojis = source_poll.emojis
+        source_server_id = TypeSafeColumn.get_string(source_poll, 'server_id')
+        source_channel_id = TypeSafeColumn.get_string(source_poll, 'channel_id')
+        source_anonymous = TypeSafeColumn.get_bool(source_poll, 'anonymous', False)
+        source_multiple_choice = TypeSafeColumn.get_bool(source_poll, 'multiple_choice', False)
+        source_ping_role_enabled = TypeSafeColumn.get_bool(source_poll, 'ping_role_enabled', False)
+        source_ping_role_id = TypeSafeColumn.get_string(source_poll, 'ping_role_id', "")
+        
+        # Log each extracted value
+        logger.info(f"🔍 TEMPLATE DEBUG - source_name: '{source_name}'")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_question: '{source_question}'")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_options: {source_options} (type: {type(source_options)}, len: {len(source_options) if source_options else 0})")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_emojis: {source_emojis} (type: {type(source_emojis)}, len: {len(source_emojis) if source_emojis else 0})")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_server_id: '{source_server_id}'")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_channel_id: '{source_channel_id}'")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_anonymous: {source_anonymous}")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_multiple_choice: {source_multiple_choice}")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_ping_role_enabled: {source_ping_role_enabled}")
+        logger.info(f"🔍 TEMPLATE DEBUG - source_ping_role_id: '{source_ping_role_id}'")
+        
+        # Also print to console for immediate visibility
+        print(f"🔍 TEMPLATE DEBUG - source_name: '{source_name}'")
+        print(f"🔍 TEMPLATE DEBUG - source_question: '{source_question}'")
+        print(f"🔍 TEMPLATE DEBUG - source_options: {source_options} (type: {type(source_options)}, len: {len(source_options) if source_options else 0})")
+        print(f"🔍 TEMPLATE DEBUG - source_emojis: {source_emojis} (type: {type(source_emojis)}, len: {len(source_emojis) if source_emojis else 0})")
+        print(f"🔍 TEMPLATE DEBUG - source_server_id: '{source_server_id}'")
+        print(f"🔍 TEMPLATE DEBUG - source_channel_id: '{source_channel_id}'")
+        print(f"🔍 TEMPLATE DEBUG - source_anonymous: {source_anonymous}")
+        print(f"🔍 TEMPLATE DEBUG - source_multiple_choice: {source_multiple_choice}")
+        print(f"🔍 TEMPLATE DEBUG - source_ping_role_enabled: {source_ping_role_enabled}")
+        print(f"🔍 TEMPLATE DEBUG - source_ping_role_id: '{source_ping_role_id}'")
+        
         template_data = {
-            "name": f"Copy of {TypeSafeColumn.get_string(source_poll, 'name')}",
-            "question": TypeSafeColumn.get_string(source_poll, 'question'),
-            "options": source_poll.options,  # Use the property method
-            "emojis": source_poll.emojis,    # Use the property method
-            "server_id": TypeSafeColumn.get_string(source_poll, 'server_id'),
-            "channel_id": TypeSafeColumn.get_string(source_poll, 'channel_id'),
-            "anonymous": TypeSafeColumn.get_bool(source_poll, 'anonymous', False),
-            "multiple_choice": TypeSafeColumn.get_bool(source_poll, 'multiple_choice', False),
-            "ping_role_enabled": TypeSafeColumn.get_bool(source_poll, 'ping_role_enabled', False),
-            "ping_role_id": TypeSafeColumn.get_string(source_poll, 'ping_role_id', ""),
+            "name": f"Copy of {source_name}",
+            "question": source_question,
+            "options": source_options,
+            "emojis": source_emojis,
+            "server_id": source_server_id,
+            "channel_id": source_channel_id,
+            "anonymous": source_anonymous,
+            "multiple_choice": source_multiple_choice,
+            "ping_role_enabled": source_ping_role_enabled,
+            "ping_role_id": source_ping_role_id,
             # Note: Intentionally NOT copying image_path or image_message_text as requested
         }
 
+        logger.info(f"🔍 TEMPLATE DEBUG - Final template_data: {template_data}")
+        print(f"🔍 TEMPLATE DEBUG - Final template_data: {template_data}")
         logger.info(f"Template data extracted from poll {poll_id}: {len(template_data['options'])} options, server={template_data['server_id']}")
 
         return templates.TemplateResponse("htmx/create_form_filepond.html", {
