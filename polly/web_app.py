@@ -330,6 +330,18 @@ def add_htmx_routes(app: FastAPI):
         bot = get_bot_instance()
         return await get_guild_emojis_htmx(server_id, bot, current_user)
 
+    @app.get("/htmx/poll/{poll_id}/dashboard", response_class=HTMLResponse)
+    async def htmx_poll_dashboard(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        from .htmx_endpoints import get_poll_dashboard_htmx
+        bot = get_bot_instance()
+        return await get_poll_dashboard_htmx(poll_id, request, bot, current_user)
+
+    @app.get("/htmx/poll/{poll_id}/export-csv")
+    async def htmx_export_poll_csv(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+        from .htmx_endpoints import export_poll_csv
+        bot = get_bot_instance()
+        return await export_poll_csv(poll_id, request, bot, current_user)
+
 
 # Create the app instance
 app = create_app()

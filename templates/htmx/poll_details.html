@@ -130,3 +130,19 @@
         </div>
     </div>
 </div>
+
+<!-- Live Results Dashboard -->
+<div id="poll-dashboard-container" 
+     hx-get="/htmx/poll/{{ poll.id }}/dashboard" 
+     hx-trigger="load" 
+     hx-swap="innerHTML">
+    <!-- Dashboard will load here -->
+    <div class="card mt-4">
+        <div class="card-body text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading dashboard...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading live results dashboard...</p>
+        </div>
+    </div>
+</div>

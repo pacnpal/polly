@@ -1553,6 +1553,206 @@ async def get_poll_results_realtime_htmx(poll_id: int, request: Request, current
         db.close()
 
 
+async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Get poll dashboard with spreadsheet-style live results for HTMX"""
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            return templates.TemplateResponse("htmx/components/alert_error.html", {
+                "request": request,
+                "message": "Poll not found or access denied"
+            })
+
+        # Get all votes for this poll with user information
+        votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
+        
+        # Get poll data safely
+        options = poll.options
+        emojis = poll.emojis
+        is_anonymous = TypeSafeColumn.get_bool(poll, 'anonymous', False)
+        
+        # Prepare vote data with Discord usernames
+        vote_data = []
+        unique_users = set()
+        
+        for vote in votes:
+            try:
+                user_id = TypeSafeColumn.get_string(vote, 'user_id')
+                option_index = TypeSafeColumn.get_int(vote, 'option_index')
+                voted_at = TypeSafeColumn.get_datetime(vote, 'voted_at')
+                
+                # Get Discord user information
+                username = "Unknown User"
+                avatar_url = None
+                
+                if bot and user_id:
+                    try:
+                        discord_user = await bot.fetch_user(int(user_id))
+                        if discord_user:
+                            username = discord_user.display_name or discord_user.name
+                            avatar_url = discord_user.avatar.url if discord_user.avatar else None
+                    except Exception as e:
+                        logger.warning(f"Could not fetch Discord user {user_id}: {e}")
+                        username = f"User {user_id[:8]}..."
+                
+                # Get option details
+                option_text = options[option_index] if option_index < len(options) else "Unknown Option"
+                emoji = emojis[option_index] if option_index < len(emojis) else POLL_EMOJIS[min(option_index, len(POLL_EMOJIS) - 1)]
+                
+                vote_data.append({
+                    'user_id': user_id,
+                    'username': username,
+                    'avatar_url': avatar_url,
+                    'option_index': option_index,
+                    'option_text': option_text,
+                    'emoji': emoji,
+                    'voted_at': voted_at,
+                    'is_unique': user_id not in unique_users
+                })
+                
+                unique_users.add(user_id)
+                
+            except Exception as e:
+                logger.error(f"Error processing vote data: {e}")
+                continue
+        
+        # Get summary statistics
+        total_votes = len(votes)
+        unique_voters = len(unique_users)
+        results = poll.get_results()
+        
+        return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
+            "request": request,
+            "poll": poll,
+            "vote_data": vote_data,
+            "total_votes": total_votes,
+            "unique_voters": unique_voters,
+            "results": results,
+            "options": options,
+            "emojis": emojis,
+            "is_anonymous": is_anonymous,
+            "format_datetime_for_user": format_datetime_for_user
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting poll dashboard for poll {poll_id}: {e}")
+        return templates.TemplateResponse("htmx/components/alert_error.html", {
+            "request": request,
+            "message": f"Error loading poll dashboard: {str(e)}"
+        })
+    finally:
+        db.close()
+
+
+async def export_poll_csv(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
+    """Export poll results as CSV"""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    
+    db = get_db_session()
+    try:
+        poll = db.query(Poll).filter(Poll.id == poll_id,
+                                     Poll.creator_id == current_user.id).first()
+        if not poll:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Poll not found or access denied")
+
+        # Get all votes for this poll
+        votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
+        
+        # Get poll data
+        options = poll.options
+        emojis = poll.emojis
+        poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown Poll')
+        
+        # Create CSV content
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Poll Name',
+            'Voter Username', 
+            'Voter ID',
+            'Option Selected',
+            'Option Index',
+            'Emoji',
+            'Vote Time (UTC)',
+            'Vote Time (Local)'
+        ])
+        
+        # Get user timezone for local time display
+        user_prefs = get_user_preferences(current_user.id)
+        user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+        
+        # Write vote data
+        for vote in votes:
+            try:
+                user_id = TypeSafeColumn.get_string(vote, 'user_id')
+                option_index = TypeSafeColumn.get_int(vote, 'option_index')
+                voted_at = TypeSafeColumn.get_datetime(vote, 'voted_at')
+                
+                # Get Discord username
+                username = "Unknown User"
+                if bot and user_id:
+                    try:
+                        discord_user = await bot.fetch_user(int(user_id))
+                        if discord_user:
+                            username = discord_user.display_name or discord_user.name
+                    except Exception as e:
+                        logger.warning(f"Could not fetch Discord user {user_id}: {e}")
+                        username = f"User {user_id[:8]}..."
+                
+                # Get option details
+                option_text = options[option_index] if option_index < len(options) else "Unknown Option"
+                emoji = emojis[option_index] if option_index < len(emojis) else POLL_EMOJIS[min(option_index, len(POLL_EMOJIS) - 1)]
+                
+                # Format times
+                utc_time = 'Unknown'
+                local_time = 'Unknown'
+                if voted_at and isinstance(voted_at, datetime):
+                    utc_time = voted_at.strftime('%Y-%m-%d %H:%M:%S UTC')
+                    local_time = format_datetime_for_user(voted_at, user_timezone)
+                
+                writer.writerow([
+                    poll_name,
+                    username,
+                    user_id,
+                    option_text,
+                    option_index,
+                    emoji,
+                    utc_time,
+                    local_time
+                ])
+                
+            except Exception as e:
+                logger.error(f"Error processing vote for CSV export: {e}")
+                continue
+        
+        # Prepare response
+        output.seek(0)
+        
+        # Create filename
+        safe_poll_name = "".join(c for c in poll_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        filename = f"poll_results_{safe_poll_name}_{poll_id}.csv"
+        
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type='text/csv',
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting CSV for poll {poll_id}: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Error exporting CSV: {str(e)}")
+    finally:
+        db.close()
+
+
 async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
     """Close an active poll via HTMX"""
     logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
