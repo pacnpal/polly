@@ -451,7 +451,23 @@ class ComprehensivePollGenerator:
                 return True, f"Created poll {poll_id}"
             else:
                 error_msg = result.get("error", "Unknown error")
-                logger.error(f"❌ Failed to create poll {combination['id']}: {error_msg}")
+                step = result.get("step", "unknown")
+                
+                # Provide more helpful error messages for common issues
+                if "Channel" in error_msg and "not found" in error_msg:
+                    logger.error(f"❌ Discord channel issue for poll {combination['id']}: {error_msg}")
+                    logger.error(f"   💡 This usually means:")
+                    logger.error(f"   - The bot is not connected to Discord")
+                    logger.error(f"   - The bot is not in the server containing this channel")
+                    logger.error(f"   - The channel ID is incorrect")
+                    logger.error(f"   - The bot doesn't have permission to see the channel")
+                    logger.error(f"   📝 Try using --dry-run to test without Discord validation")
+                elif step == "discord_validation":
+                    logger.error(f"❌ Discord validation failed for poll {combination['id']}: {error_msg}")
+                    logger.error(f"   💡 Check bot permissions and server access")
+                else:
+                    logger.error(f"❌ Failed to create poll {combination['id']} at step '{step}': {error_msg}")
+                
                 return False, error_msg
                 
         except Exception as e:

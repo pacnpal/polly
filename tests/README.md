@@ -197,6 +197,55 @@ Total unique combinations used: 156
 
 The `random` emoji type provides much more variety by selecting from extended pools of 40+ emojis in each category.
 
+#### Testing and Troubleshooting
+
+**Common Issues:**
+
+1. **"Channel not found" errors**: This usually means:
+   - The Discord bot is not running or connected
+   - The bot is not in the server containing the specified channel
+   - The channel ID is incorrect
+   - The bot lacks permissions to see the channel
+
+   **Solutions:**
+   ```bash
+   # Test without Discord validation first
+   uv run tests/generate_comprehensive_polls.py --dry-run --limit 5
+   
+   # Use mock IDs for testing (default behavior)
+   uv run tests/generate_comprehensive_polls.py --dry-run
+   
+   # Verify your channel ID is correct
+   uv run tests/generate_comprehensive_polls.py --channel-id "YOUR_CHANNEL_ID" --dry-run --limit 1
+   ```
+
+2. **Bot permission issues**: Ensure your Discord bot has:
+   - `Send Messages` permission
+   - `Embed Links` permission  
+   - `Add Reactions` permission
+   - `Attach Files` permission (for image polls)
+
+3. **Database errors**: The script uses SQLite by default. Ensure:
+   - The database file is writable
+   - No other processes are locking the database
+   - Sufficient disk space is available
+
+**Testing Recommendations:**
+
+```bash
+# Start with a small dry run to verify configuration
+uv run tests/generate_comprehensive_polls.py --dry-run --limit 10
+
+# Test with your actual Discord IDs but in dry-run mode
+uv run tests/generate_comprehensive_polls.py --server-id "YOUR_SERVER" --channel-id "YOUR_CHANNEL" --dry-run --limit 5
+
+# Run a small batch of real polls to verify everything works
+uv run tests/generate_comprehensive_polls.py --server-id "YOUR_SERVER" --channel-id "YOUR_CHANNEL" --limit 5
+
+# Full comprehensive testing (only after verifying smaller tests work)
+uv run tests/generate_comprehensive_polls.py --server-id "YOUR_SERVER" --channel-id "YOUR_CHANNEL"
+```
+
 ### Other Poll Generation Tools
 
 ```bash
