@@ -155,11 +155,14 @@ async def on_reaction_add(reaction, user):
         if not poll or TypeSafeColumn.get_string(poll, 'status') != "active":
             return
 
-        # Check if emoji is valid poll option
-        if str(reaction.emoji) not in POLL_EMOJIS:
+        # Check if emoji is valid poll option using the poll's actual emojis
+        poll_emojis = poll.emojis if poll.emojis else POLL_EMOJIS
+        reaction_emoji = str(reaction.emoji)
+        
+        if reaction_emoji not in poll_emojis:
             return
 
-        option_index = POLL_EMOJIS.index(str(reaction.emoji))
+        option_index = poll_emojis.index(reaction_emoji)
         if option_index >= len(poll.options):
             return
 
