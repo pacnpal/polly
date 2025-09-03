@@ -920,7 +920,24 @@
         }
 
         // Call pre-fill function after DOM is ready
-        document.addEventListener('DOMContentLoaded', preFillTemplateData);
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔍 TEMPLATE JS DEBUG - DOMContentLoaded event fired, calling preFillTemplateData');
+            preFillTemplateData();
+        });
+        
+        // Also call immediately if DOM is already ready
+        if (document.readyState === 'loading') {
+            console.log('🔍 TEMPLATE JS DEBUG - DOM still loading, waiting for DOMContentLoaded');
+        } else {
+            console.log('🔍 TEMPLATE JS DEBUG - DOM already ready, calling preFillTemplateData immediately');
+            preFillTemplateData();
+        }
+        {% else %}
+        console.log('🔍 TEMPLATE JS DEBUG - NO template_data in Jinja context - this is NOT a template creation');
+        function preFillTemplateData() {
+            console.log('🔍 TEMPLATE JS DEBUG - preFillTemplateData called but no template data available');
+            return;
+        }
         {% endif %}
 })();
 </script>
