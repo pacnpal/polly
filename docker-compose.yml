@@ -12,7 +12,6 @@ services:
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
       - SECRET_KEY=${SECRET_KEY}
-      - REDIS_URL=redis://:polly_redis_password_2024@redis:6379/0
     volumes:
       - ./data:/app/data
       - ./static/uploads:/app/static/uploads
