@@ -1,6 +1,6 @@
 [project]
 name = "polly"
-version = "0.1.0"
+version = "0.2.0"
 description = "Discord poll bot with web interface"
 authors = [{name = "Polly Team"}]
 requires-python = ">=3.11"
