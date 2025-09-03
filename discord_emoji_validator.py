@@ -382,9 +382,9 @@ async def emoji_help_command(ctx):
 
 if __name__ == "__main__":
     # Load bot token from environment variables using python-decouple
-    # Create a .env file in the same directory with: DISCORD_BOT_TOKEN=your_actual_token_here
+    # Create a .env file in the same directory with: DISCORD_TOKEN=your_actual_token_here
     try:
-        TOKEN = config('DISCORD_BOT_TOKEN')
+        TOKEN = config('DISCORD_TOKEN')
         
         if not TOKEN:
             raise ValueError("Bot token is empty")
@@ -398,7 +398,7 @@ if __name__ == "__main__":
         print("\n📋 Setup Instructions:")
         print("1. Install python-decouple: pip install python-decouple")
         print("2. Create a .env file in the same directory as this script")
-        print("3. Add this line to your .env file: DISCORD_BOT_TOKEN=your_actual_token_here")
+        print("3. Add this line to your .env file: DISCORD_TOKEN=your_actual_token_here")
         print("4. Get your token from: https://discord.com/developers/applications")
         print("5. Make sure to add .env to your .gitignore file for security!")
 
