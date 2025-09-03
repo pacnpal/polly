@@ -249,19 +249,28 @@ def get_common_timezones() -> List[Dict[str, str]]:
         # South America
         "America/Lima", "America/Bogota", "America/Santiago", "America/Caracas",
 
-        # Other
-        "GMT", "EST", "CST", "MST", "PST"
+        # Other - Remove ambiguous timezone abbreviations that cause errors
+        "GMT"
     ]
 
     timezones = []
     for tz_name in common_timezones:
         try:
+            # Validate timezone exists first
             tz_obj = pytz.timezone(tz_name)
-            offset = datetime.now(tz_obj).strftime('%z')
-            # Format offset nicely
-            if offset:
-                offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
-            else:
+            
+            # Get current offset safely
+            try:
+                current_time = datetime.now(tz_obj)
+                offset = current_time.strftime('%z')
+                
+                # Format offset nicely
+                if offset and len(offset) >= 5:
+                    offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
+                else:
+                    offset_formatted = "UTC+00:00"
+            except Exception as offset_error:
+                logger.debug(f"Could not get offset for timezone {tz_name}: {offset_error}")
                 offset_formatted = "UTC"
 
             # Create a more readable display name
@@ -270,14 +279,20 @@ def get_common_timezones() -> List[Dict[str, str]]:
                 "name": tz_name,
                 "display": f"{display_name} ({offset_formatted})"
             })
-        except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
-            logger.warning(f"Error formatting timezone {tz_name}: {e}")
+            
+        except pytz.UnknownTimeZoneError:
+            logger.debug(f"Unknown timezone skipped: {tz_name}")
+            # Skip unknown timezones instead of adding them with errors
+            continue
+        except Exception as e:
+            logger.debug(f"Error processing timezone {tz_name}: {e}")
+            # Fallback: add timezone with just its name
             timezones.append({
                 "name": tz_name,
                 "display": tz_name
             })
 
-    # Sort by offset for better UX
+    # Sort by display name for better UX
     timezones.sort(key=lambda x: x['display'])
     return timezones
 

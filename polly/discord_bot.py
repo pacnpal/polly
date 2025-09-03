@@ -12,7 +12,7 @@ from discord.ext import commands
 
 from .database import get_db_session, Poll, POLL_EMOJIS, TypeSafeColumn
 from .discord_utils import create_poll_embed, update_poll_message, user_has_admin_permissions
-from .error_handler import PollErrorHandler, notify_error_async
+from .error_handler import PollErrorHandler, notify_error_async, setup_automatic_bot_owner_notifications, set_bot_for_automatic_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,14 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 async def on_ready():
     """Bot ready event"""
     logger.info(f'{bot.user} has connected to Discord!')
+    
+    # Initialize automatic bot owner notifications for WARNING+ level logs
+    try:
+        setup_automatic_bot_owner_notifications()
+        set_bot_for_automatic_notifications(bot)
+        logger.info("✅ Automatic bot owner notifications initialized for WARNING+ level logs")
+    except Exception as e:
+        logger.error(f"Failed to initialize automatic bot owner notifications: {e}")
 
     # Sync slash commands
     try:

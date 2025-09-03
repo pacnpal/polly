@@ -18,6 +18,205 @@ from .validators import ValidationError
 
 logger = logging.getLogger(__name__)
 
+
+class BotOwnerLogHandler(logging.Handler):
+    """Custom logging handler that automatically notifies bot owner for WARNING+ level logs"""
+    
+    def __init__(self, level=logging.WARNING):
+        super().__init__(level)
+        self.bot = None
+        self._notification_queue = asyncio.Queue() if hasattr(asyncio, 'Queue') else None
+        self._processing_task = None
+        
+    def set_bot(self, bot: commands.Bot):
+        """Set the bot instance for notifications"""
+        self.bot = bot
+        # Start processing task if not already running
+        if self._notification_queue and not self._processing_task:
+            try:
+                loop = asyncio.get_event_loop()
+                self._processing_task = loop.create_task(self._process_notifications())
+            except RuntimeError:
+                # No event loop running yet, will be started later
+                pass
+    
+    def emit(self, record: logging.LogRecord):
+        """Handle log record and queue notification if needed"""
+        if not self.bot or not self._notification_queue:
+            return
+            
+        # Skip if this is already a notification-related log to prevent recursion
+        if 'bot owner notification' in record.getMessage().lower():
+            return
+            
+        # Only process WARNING and above
+        if record.levelno < logging.WARNING:
+            return
+            
+        try:
+            # Queue the notification for async processing
+            self._notification_queue.put_nowait({
+                'level': record.levelname,
+                'message': record.getMessage(),
+                'module': record.module,
+                'funcName': record.funcName,
+                'lineno': record.lineno,
+                'timestamp': datetime.fromtimestamp(record.created, tz=pytz.UTC),
+                'exc_info': record.exc_info
+            })
+        except Exception:
+            # Don't let logging errors crash the application
+            pass
+    
+    async def _process_notifications(self):
+        """Process queued notifications asynchronously"""
+        while True:
+            try:
+                if not self._notification_queue:
+                    await asyncio.sleep(1)
+                    continue
+                    
+                # Wait for notification with timeout
+                try:
+                    notification = await asyncio.wait_for(
+                        self._notification_queue.get(), 
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                
+                # Send notification to bot owner
+                await self._send_log_notification(notification)
+                
+            except Exception as e:
+                # Don't let notification errors crash the processing loop
+                print(f"Error in log notification processing: {e}")
+                await asyncio.sleep(1)
+    
+    async def _send_log_notification(self, notification: Dict[str, Any]):
+        """Send log notification to bot owner"""
+        try:
+            if not self.bot or not self.bot.is_ready():
+                return
+                
+            bot_owner_id = get_bot_owner_id()
+            if not bot_owner_id:
+                return
+                
+            owner = await self.bot.fetch_user(int(bot_owner_id))
+            if not owner:
+                return
+            
+            # Determine color based on log level
+            level = notification['level']
+            if level == 'CRITICAL':
+                color = 0xFF0000  # Red
+                emoji = "🚨"
+            elif level == 'ERROR':
+                color = 0xFF4500  # Orange Red
+                emoji = "❌"
+            elif level == 'WARNING':
+                color = 0xFFA500  # Orange
+                emoji = "⚠️"
+            else:
+                color = 0x808080  # Gray
+                emoji = "ℹ️"
+            
+            # Create embed
+            embed = discord.Embed(
+                title=f"{emoji} {level} Log Alert",
+                description=notification['message'][:2000],  # Discord limit
+                color=color,
+                timestamp=notification['timestamp']
+            )
+            
+            embed.add_field(
+                name="Location",
+                value=f"**Module:** {notification['module']}\n**Function:** {notification['funcName']}\n**Line:** {notification['lineno']}",
+                inline=False
+            )
+            
+            # Add exception info if available
+            if notification['exc_info']:
+                exc_type, exc_value, exc_traceback = notification['exc_info']
+                if exc_type and exc_value:
+                    embed.add_field(
+                        name="Exception",
+                        value=f"**Type:** {exc_type.__name__}\n**Details:** {str(exc_value)[:500]}",
+                        inline=False
+                    )
+            
+            embed.set_footer(text="Polly Auto-Log Monitor")
+            
+            # Send DM with retry logic
+            for attempt in range(2):
+                try:
+                    await owner.send(embed=embed)
+                    break
+                except discord.Forbidden:
+                    # Bot owner has DMs disabled
+                    break
+                except discord.HTTPException:
+                    if attempt == 1:
+                        break
+                    await asyncio.sleep(1)
+                    
+        except Exception:
+            # Don't let notification errors crash anything
+            pass
+
+
+# Global log handler instance
+_bot_owner_log_handler = None
+
+
+def setup_automatic_bot_owner_notifications():
+    """Set up automatic bot owner notifications for WARNING+ level logs"""
+    global _bot_owner_log_handler
+    
+    if _bot_owner_log_handler:
+        return _bot_owner_log_handler
+    
+    # Create and configure the handler
+    _bot_owner_log_handler = BotOwnerLogHandler(level=logging.WARNING)
+    
+    # Add to root logger to catch all WARNING+ logs
+    root_logger = logging.getLogger()
+    root_logger.addHandler(_bot_owner_log_handler)
+    
+    # Also add to polly-specific loggers
+    polly_logger = logging.getLogger('polly')
+    polly_logger.addHandler(_bot_owner_log_handler)
+    
+    return _bot_owner_log_handler
+
+
+def set_bot_for_automatic_notifications(bot: commands.Bot):
+    """Set the bot instance for automatic notifications"""
+    global _bot_owner_log_handler
+    
+    if not _bot_owner_log_handler:
+        _bot_owner_log_handler = setup_automatic_bot_owner_notifications()
+    
+    _bot_owner_log_handler.set_bot(bot)
+    
+    # Start processing task if we have an event loop
+    try:
+        if not _bot_owner_log_handler._processing_task:
+            loop = asyncio.get_event_loop()
+            _bot_owner_log_handler._processing_task = loop.create_task(
+                _bot_owner_log_handler._process_notifications()
+            )
+    except RuntimeError:
+        # No event loop yet, will be started when bot is ready
+        pass
+
+
+def get_automatic_notification_handler():
+    """Get the automatic notification handler instance"""
+    global _bot_owner_log_handler
+    return _bot_owner_log_handler
+
 # Get bot owner ID from environment (loaded dynamically to ensure .env is loaded)
 
 

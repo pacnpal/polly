@@ -340,50 +340,54 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     inline=False
                 )
 
-    # Add timing information with timezone support
-    if poll_status == "scheduled":
-        # Only show opens time for scheduled polls, with timezone-specific time
-        poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
-        if poll_timezone and poll_timezone != 'UTC':
-            try:
-                tz = pytz.timezone(poll_timezone)
-                local_open = poll.open_time.astimezone(tz)
-                embed.add_field(
-                    name=f"Opens ({poll_timezone})",
-                    value=local_open.strftime("%Y-%m-%d %I:%M %p"),
-                    inline=True
-                )
-            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
-                logger.warning(
-                    f"Error formatting timezone {poll_timezone}: {e}")
-                # Fallback to UTC
-                embed.add_field(
-                    name="Opens (UTC)",
-                    value=poll.open_time.strftime("%Y-%m-%d %I:%M %p"),
-                    inline=True
-                )
+        # Add timing information with timezone support
+        if poll_status == "scheduled":
+            # Only show opens time for scheduled polls, with timezone-specific time
+            poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
+            if poll_timezone and poll_timezone != 'UTC':
+                try:
+                    # Validate and normalize timezone first
+                    from .utils import validate_and_normalize_timezone
+                    normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                    tz = pytz.timezone(normalized_tz)
+                    local_open = poll.open_time.astimezone(tz)
+                    embed.add_field(
+                        name=f"Opens ({normalized_tz})",
+                        value=local_open.strftime("%Y-%m-%d %I:%M %p"),
+                        inline=True
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not format timezone {poll_timezone}: {e}")
+                    # Fallback to UTC
+                    embed.add_field(
+                        name="Opens (UTC)",
+                        value=poll.open_time.strftime("%Y-%m-%d %I:%M %p"),
+                        inline=True
+                    )
 
-    # Show close time for scheduled and active polls
-    if poll_status in ["scheduled", "active"]:
-        poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
-        if poll_timezone and poll_timezone != 'UTC':
-            try:
-                tz = pytz.timezone(poll_timezone)
-                local_close = poll.close_time.astimezone(tz)
-                embed.add_field(
-                    name=f"Closes ({poll_timezone})",
-                    value=local_close.strftime("%Y-%m-%d %I:%M %p"),
-                    inline=True
-                )
-            except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
-                logger.warning(
-                    f"Error formatting timezone {poll_timezone}: {e}")
-                # Fallback to UTC
-                embed.add_field(
-                    name="Closes (UTC)",
-                    value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
-                    inline=True
-                )
+        # Show close time for scheduled and active polls
+        if poll_status in ["scheduled", "active"]:
+            poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
+            if poll_timezone and poll_timezone != 'UTC':
+                try:
+                    # Validate and normalize timezone first
+                    from .utils import validate_and_normalize_timezone
+                    normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                    tz = pytz.timezone(normalized_tz)
+                    local_close = poll.close_time.astimezone(tz)
+                    embed.add_field(
+                        name=f"Closes ({normalized_tz})",
+                        value=local_close.strftime("%Y-%m-%d %I:%M %p"),
+                        inline=True
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not format timezone {poll_timezone}: {e}")
+                    # Fallback to UTC
+                    embed.add_field(
+                        name="Closes (UTC)",
+                        value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
+                        inline=True
+                    )
 
     # Add poll info in footer without Poll ID
     embed.set_footer(text="Created by Polly")

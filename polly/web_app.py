@@ -21,7 +21,7 @@ from .auth import (
 )
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
-from .error_handler import notify_error_async
+from .error_handler import notify_error_async, setup_automatic_bot_owner_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,13 @@ async def start_background_tasks():
     """Start all background tasks"""
     from .background_tasks import start_scheduler, start_reaction_safeguard
     from .discord_bot import start_bot
+    
+    # Initialize automatic bot owner notifications for WARNING+ level logs
+    try:
+        setup_automatic_bot_owner_notifications()
+        logger.info("✅ Automatic bot owner notifications initialized for WARNING+ level logs")
+    except Exception as e:
+        logger.error(f"Failed to initialize automatic bot owner notifications: {e}")
 
     # Start background tasks
     asyncio.create_task(start_scheduler())
