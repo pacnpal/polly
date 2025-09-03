@@ -28,6 +28,7 @@ EXPOSE 8000
 # Create entrypoint script
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
+RUN chmod 755 static/uploads logs data static
 
 # Run the application with migration
 CMD ["./docker-entrypoint.sh"]
