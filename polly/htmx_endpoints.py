@@ -529,12 +529,25 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
     logger.info(f"🔍 JSON IMPORT - User {current_user.id} starting JSON import process")
     
     try:
-        form_data = await request.form()
+        # Try to get form data with better error handling
+        try:
+            form_data = await request.form()
+        except Exception as form_error:
+            logger.error(f"❌ JSON IMPORT - User {current_user.id} form parsing error: {form_error}")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
+                "request": request,
+                "message": "Error parsing form data. Please try again."
+            })
         
         # Debug: Log all form data keys to see what's actually being sent
         form_keys = list(form_data.keys())
         logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} form data keys: {form_keys}")
         print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} form data keys: {form_keys}")
+        
+        # Log form data values for debugging
+        for key, value in form_data.items():
+            logger.info(f"🔍 JSON IMPORT DEBUG - {key}: {type(value)} - {getattr(value, 'filename', 'no filename attr') if hasattr(value, 'filename') else str(value)[:100]}")
+            print(f"🔍 JSON IMPORT DEBUG - {key}: {type(value)} - {getattr(value, 'filename', 'no filename attr') if hasattr(value, 'filename') else str(value)[:100]}")
         
         json_file = form_data.get("json_file")
         
@@ -543,34 +556,37 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
         print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file type: {type(json_file)}")
         
         if json_file:
-            logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {dir(json_file)}")
-            print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {dir(json_file)}")
+            logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {[attr for attr in dir(json_file) if not attr.startswith('_')]}")
+            print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {[attr for attr in dir(json_file) if not attr.startswith('_')]}")
         
         # Enhanced file detection - check for file object and content
         if not json_file:
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} no json_file in form data")
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} attempted import without selecting file")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please select a JSON file to import"
             })
         
-        # Check if it's a proper file upload object
-        if not hasattr(json_file, 'read'):
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} json_file is not a file object: {type(json_file)}")
+        # Check if it's a proper file upload object (Starlette UploadFile)
+        from starlette.datastructures import UploadFile
+        if not isinstance(json_file, UploadFile):
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} json_file is not an UploadFile: {type(json_file)}")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
-                "message": "Invalid file upload. Please try selecting the file again."
+                "message": "Invalid file upload format. Please try selecting the file again."
             })
         
         # Get filename - handle cases where filename might be None or empty
         filename = getattr(json_file, 'filename', None)
-        if not filename:
-            # Try to get filename from content_disposition or use a default
-            filename = "uploaded_file.json"
-            logger.info(f"🔍 JSON IMPORT - User {current_user.id} no filename provided, using default: {filename}")
-        else:
-            filename = str(filename)
-            logger.info(f"🔍 JSON IMPORT - User {current_user.id} uploading file: {filename}")
+        if not filename or not filename.strip():
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} uploaded file with no filename")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
+                "request": request,
+                "message": "Please select a valid JSON file with a filename"
+            })
+        
+        filename = str(filename).strip()
+        logger.info(f"🔍 JSON IMPORT - User {current_user.id} uploading file: {filename}")
         
         # Validate file type
         if not filename.lower().endswith('.json'):
@@ -580,16 +596,33 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
                 "message": "Please upload a valid JSON file (.json extension required)"
             })
         
-        # Read file content
+        # Check if file has content method
+        if not hasattr(json_file, 'read') or not callable(getattr(json_file, 'read')):
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} json_file does not have read method")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
+                "request": request,
+                "message": "Invalid file object. Please try selecting the file again."
+            })
+        
+        # Read file content with better error handling
         try:
             file_content = await json_file.read()
             file_size = len(file_content)
             logger.info(f"🔍 JSON IMPORT - User {current_user.id} file read successfully: {file_size} bytes")
+            
+            # Check if file is empty
+            if file_size == 0:
+                logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} uploaded empty file")
+                return templates.TemplateResponse("htmx/components/inline_error.html", {
+                    "request": request,
+                    "message": "The uploaded file is empty. Please select a valid JSON file."
+                })
+                
         except Exception as e:
             logger.error(f"❌ JSON IMPORT - User {current_user.id} file read error: {e}")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
-                "message": "Error reading the uploaded file"
+                "message": "Error reading the uploaded file. Please try again."
             })
         
         # Get user timezone for processing

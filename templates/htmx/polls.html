@@ -7,12 +7,12 @@
                 <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
                     <i class="fas fa-plus me-1"></i>Create Poll
                 </button>
+                <!-- JSON Import Button -->
                 <button class="btn btn-outline-primary" onclick="document.getElementById('json-import-file').click()">
                     <i class="fas fa-upload me-1"></i>Import JSON
                 </button>
             </div>
         </div>
-        
         <!-- Inline Error/Success Display Area -->
         <div id="inline-messages"></div>
         
@@ -23,26 +23,66 @@
         <script>
         function importJsonFile(input) {
             if (input.files && input.files[0]) {
-                const formData = new FormData();
-                formData.append('json_file', input.files[0]);
+                const file = input.files[0];
                 
-                // Use fetch instead of htmx.ajax for file uploads
+                // Validate file type
+                if (!file.name.toLowerCase().endsWith('.json')) {
+                    document.getElementById('inline-messages').innerHTML = 
+                        '<div class="alert alert-danger">Please select a valid JSON file (.json extension required)</div>';
+                    input.value = '';
+                    return;
+                }
+                
+                // Show loading message
+                document.getElementById('inline-messages').innerHTML = 
+                    '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Importing JSON file...</div>';
+                
+                const formData = new FormData();
+                formData.append('json_file', file);
+                
+                // Debug logging
+                console.log('🔍 JSON IMPORT DEBUG - File selected:', file.name, 'Size:', file.size, 'Type:', file.type);
+                console.log('🔍 JSON IMPORT DEBUG - FormData created, sending to /htmx/import-json');
+                
+                // Use fetch with proper error handling
                 fetch('/htmx/import-json', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    // Don't set Content-Type header - let browser set it with boundary for multipart
                 })
-                .then(response => response.text())
+                .then(response => {
+                    console.log('🔍 JSON IMPORT DEBUG - Response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.text();
+                })
                 .then(html => {
-                    document.getElementById('inline-messages').innerHTML = html;
+                    console.log('🔍 JSON IMPORT DEBUG - Response received, updating UI');
+                    // Check if the response contains the create form (successful import)
+                    if (html.includes('hx-post="/htmx/create-poll"')) {
+                        // Successful import - replace main content with the pre-filled form
+                        document.getElementById('main-content').innerHTML = html;
+                        // Clear any inline messages since we're showing the form
+                        document.getElementById('inline-messages').innerHTML = '';
+                    } else {
+                        // Error response - show in inline messages
+                        document.getElementById('inline-messages').innerHTML = html;
+                    }
                 })
                 .catch(error => {
-                    console.error('Error:', error);
+                    console.error('🔍 JSON IMPORT DEBUG - Error:', error);
                     document.getElementById('inline-messages').innerHTML = 
-                        '<div class="alert alert-danger">Error uploading file. Please try again.</div>';
+                        `<div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Error uploading file: ${error.message}. Please try again.
+                        </div>`;
                 });
                 
                 // Reset the input
                 input.value = '';
+            } else {
+                console.log('🔍 JSON IMPORT DEBUG - No file selected');
             }
         }
         </script>

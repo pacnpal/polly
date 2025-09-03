@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class PollJSONValidator:
-    """Validates and processes poll JSON data"""
+    """Validates and processes poll JSON data with graceful error handling"""
     
     REQUIRED_FIELDS = ['name', 'question', 'options']
     OPTIONAL_FIELDS = [
@@ -23,203 +23,308 @@ class PollJSONValidator:
     ]
     
     @staticmethod
-    def validate_json_structure(data: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate the basic structure of the JSON data"""
-        errors = []
+    def validate_json_structure_graceful(data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+        """Gracefully validate JSON data - only fail on critical errors, warn on field issues"""
+        critical_errors = []  # These prevent import
+        warnings = []         # These reset fields but allow import
         
         # Check if data is a dictionary
         if not isinstance(data, dict):
-            errors.append("JSON must be an object/dictionary")
-            return False, errors
+            critical_errors.append("JSON must be an object/dictionary")
+            return False, critical_errors, warnings
         
-        # Check required fields
+        # Check required fields - these are critical
         for field in PollJSONValidator.REQUIRED_FIELDS:
             if field not in data:
-                errors.append(f"Missing required field: '{field}'")
+                critical_errors.append(f"Missing required field: '{field}'")
             elif not data[field]:
-                errors.append(f"Required field '{field}' cannot be empty")
+                critical_errors.append(f"Required field '{field}' cannot be empty")
         
-        # Validate field types and values
-        if 'name' in data:
+        # Validate required field types and values - these are critical
+        if 'name' in data and data['name']:
             if not isinstance(data['name'], str):
-                errors.append("Field 'name' must be a string")
+                critical_errors.append("Field 'name' must be a string")
             elif len(data['name'].strip()) < 3:
-                errors.append("Field 'name' must be at least 3 characters long")
+                critical_errors.append("Field 'name' must be at least 3 characters long")
             elif len(data['name'].strip()) > 255:
-                errors.append("Field 'name' must be less than 255 characters")
+                critical_errors.append("Field 'name' must be less than 255 characters")
         
-        if 'question' in data:
+        if 'question' in data and data['question']:
             if not isinstance(data['question'], str):
-                errors.append("Field 'question' must be a string")
+                critical_errors.append("Field 'question' must be a string")
             elif len(data['question'].strip()) < 5:
-                errors.append("Field 'question' must be at least 5 characters long")
+                critical_errors.append("Field 'question' must be at least 5 characters long")
             elif len(data['question'].strip()) > 2000:
-                errors.append("Field 'question' must be less than 2000 characters")
+                critical_errors.append("Field 'question' must be less than 2000 characters")
         
-        if 'options' in data:
+        if 'options' in data and data['options']:
             if not isinstance(data['options'], list):
-                errors.append("Field 'options' must be an array/list")
+                critical_errors.append("Field 'options' must be an array/list")
             elif len(data['options']) < 2:
-                errors.append("At least 2 options are required")
+                critical_errors.append("At least 2 options are required")
             elif len(data['options']) > 10:
-                errors.append("Maximum 10 options allowed")
+                critical_errors.append("Maximum 10 options allowed")
             else:
+                # Check individual options - these are critical
                 for i, option in enumerate(data['options']):
                     if not isinstance(option, str):
-                        errors.append(f"Option {i+1} must be a string")
+                        critical_errors.append(f"Option {i+1} must be a string")
                     elif not option.strip():
-                        errors.append(f"Option {i+1} cannot be empty")
+                        critical_errors.append(f"Option {i+1} cannot be empty")
                     elif len(option.strip()) > 500:
-                        errors.append(f"Option {i+1} must be less than 500 characters")
+                        critical_errors.append(f"Option {i+1} must be less than 500 characters")
         
-        # Validate optional fields
-        if 'emojis' in data:
+        # Validate optional fields - these generate warnings and get reset
+        if 'emojis' in data and data['emojis']:
             if not isinstance(data['emojis'], list):
-                errors.append("Field 'emojis' must be an array/list")
+                warnings.append("Field 'emojis' must be an array/list - using default emojis")
             elif len(data['emojis']) > 10:
-                errors.append("Maximum 10 emojis allowed")
+                warnings.append("Maximum 10 emojis allowed - using default emojis")
             else:
+                invalid_emojis = []
                 for i, emoji in enumerate(data['emojis']):
                     if not isinstance(emoji, str):
-                        errors.append(f"Emoji {i+1} must be a string")
+                        invalid_emojis.append(f"emoji {i+1}")
                     elif not emoji.strip():
-                        errors.append(f"Emoji {i+1} cannot be empty")
+                        invalid_emojis.append(f"emoji {i+1}")
+                if invalid_emojis:
+                    warnings.append(f"Invalid emojis found ({', '.join(invalid_emojis)}) - using default emojis")
         
         if 'server_id' in data and data['server_id']:
             if not isinstance(data['server_id'], str):
-                errors.append("Field 'server_id' must be a string")
+                warnings.append("Field 'server_id' must be a string - will need to select server manually")
         
         if 'channel_id' in data and data['channel_id']:
             if not isinstance(data['channel_id'], str):
-                errors.append("Field 'channel_id' must be a string")
+                warnings.append("Field 'channel_id' must be a string - will need to select channel manually")
         
         if 'timezone' in data and data['timezone']:
             if not isinstance(data['timezone'], str):
-                errors.append("Field 'timezone' must be a string")
+                warnings.append("Field 'timezone' must be a string - using default timezone")
             else:
                 try:
                     pytz.timezone(data['timezone'])
                 except pytz.UnknownTimeZoneError:
-                    errors.append(f"Invalid timezone: '{data['timezone']}'")
+                    warnings.append(f"Invalid timezone '{data['timezone']}' - using default timezone")
         
-        if 'anonymous' in data:
+        if 'anonymous' in data and data['anonymous'] is not None:
             if not isinstance(data['anonymous'], bool):
-                errors.append("Field 'anonymous' must be a boolean (true/false)")
+                warnings.append("Field 'anonymous' must be a boolean (true/false) - setting to false")
         
-        if 'multiple_choice' in data:
+        if 'multiple_choice' in data and data['multiple_choice'] is not None:
             if not isinstance(data['multiple_choice'], bool):
-                errors.append("Field 'multiple_choice' must be a boolean (true/false)")
+                warnings.append("Field 'multiple_choice' must be a boolean (true/false) - setting to false")
         
-        if 'ping_role_enabled' in data:
+        if 'ping_role_enabled' in data and data['ping_role_enabled'] is not None:
             if not isinstance(data['ping_role_enabled'], bool):
-                errors.append("Field 'ping_role_enabled' must be a boolean (true/false)")
+                warnings.append("Field 'ping_role_enabled' must be a boolean (true/false) - setting to false")
         
         if 'ping_role_id' in data and data['ping_role_id']:
             if not isinstance(data['ping_role_id'], str):
-                errors.append("Field 'ping_role_id' must be a string")
+                warnings.append("Field 'ping_role_id' must be a string - clearing role ping settings")
         
         if 'image_message_text' in data and data['image_message_text']:
             if not isinstance(data['image_message_text'], str):
-                errors.append("Field 'image_message_text' must be a string")
+                warnings.append("Field 'image_message_text' must be a string - clearing image message")
             elif len(data['image_message_text'].strip()) > 2000:
-                errors.append("Field 'image_message_text' must be less than 2000 characters")
+                warnings.append("Field 'image_message_text' must be less than 2000 characters - clearing image message")
         
-        # Validate time fields if present
+        # Validate time fields - these generate warnings and get reset to defaults
         if 'open_time' in data and data['open_time']:
             if not isinstance(data['open_time'], str):
-                errors.append("Field 'open_time' must be a string in ISO format (YYYY-MM-DDTHH:MM)")
+                warnings.append("Field 'open_time' must be a string in ISO format - using default time")
             else:
                 try:
                     datetime.fromisoformat(data['open_time'])
                 except ValueError:
-                    errors.append("Field 'open_time' must be in ISO format (YYYY-MM-DDTHH:MM)")
+                    warnings.append("Field 'open_time' must be in ISO format (YYYY-MM-DDTHH:MM) - using default time")
         
         if 'close_time' in data and data['close_time']:
             if not isinstance(data['close_time'], str):
-                errors.append("Field 'close_time' must be a string in ISO format (YYYY-MM-DDTHH:MM)")
+                warnings.append("Field 'close_time' must be a string in ISO format - using default time")
             else:
                 try:
                     datetime.fromisoformat(data['close_time'])
                 except ValueError:
-                    errors.append("Field 'close_time' must be in ISO format (YYYY-MM-DDTHH:MM)")
+                    warnings.append("Field 'close_time' must be in ISO format (YYYY-MM-DDTHH:MM) - using default time")
         
-        # Validate time relationship if both times are present
+        # Validate time relationship if both times are present and valid
         if ('open_time' in data and data['open_time'] and 
             'close_time' in data and data['close_time']):
             try:
                 open_dt = datetime.fromisoformat(data['open_time'])
                 close_dt = datetime.fromisoformat(data['close_time'])
                 if close_dt <= open_dt:
-                    errors.append("Field 'close_time' must be after 'open_time'")
+                    warnings.append("Close time must be after open time - using default times")
                 elif close_dt - open_dt < timedelta(minutes=1):
-                    errors.append("Poll must run for at least 1 minute")
+                    warnings.append("Poll must run for at least 1 minute - using default times")
                 elif close_dt - open_dt > timedelta(days=30):
-                    errors.append("Poll cannot run for more than 30 days")
+                    warnings.append("Poll cannot run for more than 30 days - using default times")
             except ValueError:
                 pass  # Time format errors already caught above
         
-        return len(errors) == 0, errors
+        # Only fail if there are critical errors
+        return len(critical_errors) == 0, critical_errors, warnings
     
     @staticmethod
-    def process_json_data(data: Dict[str, Any], user_timezone: str = "US/Eastern") -> Dict[str, Any]:
-        """Process and normalize JSON data for poll creation"""
+    def process_json_data_graceful(data: Dict[str, Any], warnings: List[str], user_timezone: str = "US/Eastern") -> Dict[str, Any]:
+        """Process and normalize JSON data with graceful field resetting based on warnings"""
         processed_data = {}
         
-        # Process required fields
+        # Process required fields (these should always be valid if we got this far)
         processed_data['name'] = data['name'].strip()
         processed_data['question'] = data['question'].strip()
         processed_data['options'] = [option.strip() for option in data['options']]
         
-        # Process optional fields with defaults
-        processed_data['emojis'] = data.get('emojis', [])
-        processed_data['server_id'] = data.get('server_id', '')
-        processed_data['channel_id'] = data.get('channel_id', '')
-        processed_data['anonymous'] = data.get('anonymous', False)
-        processed_data['multiple_choice'] = data.get('multiple_choice', False)
-        processed_data['ping_role_enabled'] = data.get('ping_role_enabled', False)
-        processed_data['ping_role_id'] = data.get('ping_role_id', '')
-        processed_data['image_message_text'] = data.get('image_message_text', '')
-        
-        # Process timezone
-        timezone_str = data.get('timezone', user_timezone)
-        try:
-            pytz.timezone(timezone_str)
-            processed_data['timezone'] = timezone_str
-        except pytz.UnknownTimeZoneError:
-            logger.warning(f"Invalid timezone '{timezone_str}', using {user_timezone}")
-            processed_data['timezone'] = user_timezone
-        
-        # Process times - if not provided, set defaults
-        if 'open_time' in data and data['open_time']:
-            try:
-                processed_data['open_time'] = data['open_time']
-            except ValueError:
-                logger.warning(f"Invalid open_time format: {data['open_time']}")
-                processed_data['open_time'] = None
-        else:
-            processed_data['open_time'] = None
-        
-        if 'close_time' in data and data['close_time']:
-            try:
-                processed_data['close_time'] = data['close_time']
-            except ValueError:
-                logger.warning(f"Invalid close_time format: {data['close_time']}")
-                processed_data['close_time'] = None
-        else:
-            processed_data['close_time'] = None
-        
-        # Ensure emojis list matches options length
-        if len(processed_data['emojis']) < len(processed_data['options']):
+        # Process emojis - reset to defaults if warnings indicate issues
+        emoji_warnings = [w for w in warnings if 'emoji' in w.lower()]
+        if emoji_warnings or not isinstance(data.get('emojis'), list):
+            # Use default emojis
             from .database import POLL_EMOJIS
-            # Fill missing emojis with defaults
-            for i in range(len(processed_data['emojis']), len(processed_data['options'])):
+            processed_data['emojis'] = []
+            for i in range(len(processed_data['options'])):
                 if i < len(POLL_EMOJIS):
                     processed_data['emojis'].append(POLL_EMOJIS[i])
                 else:
                     processed_data['emojis'].append('❓')
-        elif len(processed_data['emojis']) > len(processed_data['options']):
-            # Trim excess emojis
-            processed_data['emojis'] = processed_data['emojis'][:len(processed_data['options'])]
+        else:
+            # Use provided emojis, but validate each one
+            emojis = data.get('emojis', [])
+            processed_emojis = []
+            from .database import POLL_EMOJIS
+            
+            for i, emoji in enumerate(emojis):
+                if i >= len(processed_data['options']):
+                    break  # Don't add more emojis than options
+                
+                if isinstance(emoji, str) and emoji.strip():
+                    processed_emojis.append(emoji.strip())
+                else:
+                    # Use default emoji for invalid ones
+                    if i < len(POLL_EMOJIS):
+                        processed_emojis.append(POLL_EMOJIS[i])
+                    else:
+                        processed_emojis.append('❓')
+            
+            # Fill remaining with defaults if needed
+            while len(processed_emojis) < len(processed_data['options']):
+                i = len(processed_emojis)
+                if i < len(POLL_EMOJIS):
+                    processed_emojis.append(POLL_EMOJIS[i])
+                else:
+                    processed_emojis.append('❓')
+            
+            processed_data['emojis'] = processed_emojis
+        
+        # Process server_id - reset if warnings indicate issues
+        server_warnings = [w for w in warnings if 'server_id' in w.lower()]
+        if server_warnings or not isinstance(data.get('server_id'), str):
+            processed_data['server_id'] = ''
+        else:
+            processed_data['server_id'] = data.get('server_id', '').strip()
+        
+        # Process channel_id - reset if warnings indicate issues
+        channel_warnings = [w for w in warnings if 'channel_id' in w.lower()]
+        if channel_warnings or not isinstance(data.get('channel_id'), str):
+            processed_data['channel_id'] = ''
+        else:
+            processed_data['channel_id'] = data.get('channel_id', '').strip()
+        
+        # Process timezone - reset if warnings indicate issues
+        timezone_warnings = [w for w in warnings if 'timezone' in w.lower()]
+        if timezone_warnings:
+            processed_data['timezone'] = user_timezone
+        else:
+            timezone_str = data.get('timezone', user_timezone)
+            try:
+                pytz.timezone(timezone_str)
+                processed_data['timezone'] = timezone_str
+            except pytz.UnknownTimeZoneError:
+                processed_data['timezone'] = user_timezone
+        
+        # Process boolean fields - reset if warnings indicate issues
+        anonymous_warnings = [w for w in warnings if 'anonymous' in w.lower()]
+        if anonymous_warnings or not isinstance(data.get('anonymous'), bool):
+            processed_data['anonymous'] = False
+        else:
+            processed_data['anonymous'] = data.get('anonymous', False)
+        
+        multiple_choice_warnings = [w for w in warnings if 'multiple_choice' in w.lower()]
+        if multiple_choice_warnings or not isinstance(data.get('multiple_choice'), bool):
+            processed_data['multiple_choice'] = False
+        else:
+            processed_data['multiple_choice'] = data.get('multiple_choice', False)
+        
+        ping_role_warnings = [w for w in warnings if 'ping_role' in w.lower()]
+        if ping_role_warnings:
+            processed_data['ping_role_enabled'] = False
+            processed_data['ping_role_id'] = ''
+        else:
+            if isinstance(data.get('ping_role_enabled'), bool):
+                processed_data['ping_role_enabled'] = data.get('ping_role_enabled', False)
+            else:
+                processed_data['ping_role_enabled'] = False
+            
+            if processed_data['ping_role_enabled'] and isinstance(data.get('ping_role_id'), str):
+                processed_data['ping_role_id'] = data.get('ping_role_id', '').strip()
+            else:
+                processed_data['ping_role_id'] = ''
+        
+        # Process image message text - reset if warnings indicate issues
+        image_message_warnings = [w for w in warnings if 'image_message' in w.lower()]
+        if image_message_warnings or not isinstance(data.get('image_message_text'), str):
+            processed_data['image_message_text'] = ''
+        else:
+            text = data.get('image_message_text', '').strip()
+            if len(text) <= 2000:
+                processed_data['image_message_text'] = text
+            else:
+                processed_data['image_message_text'] = ''
+        
+        # Process times - reset if warnings indicate issues
+        time_warnings = [w for w in warnings if 'time' in w.lower()]
+        if time_warnings:
+            processed_data['open_time'] = None
+            processed_data['close_time'] = None
+        else:
+            # Validate and process times
+            open_time_valid = False
+            close_time_valid = False
+            
+            if 'open_time' in data and data['open_time'] and isinstance(data['open_time'], str):
+                try:
+                    datetime.fromisoformat(data['open_time'])
+                    processed_data['open_time'] = data['open_time']
+                    open_time_valid = True
+                except ValueError:
+                    processed_data['open_time'] = None
+            else:
+                processed_data['open_time'] = None
+            
+            if 'close_time' in data and data['close_time'] and isinstance(data['close_time'], str):
+                try:
+                    datetime.fromisoformat(data['close_time'])
+                    processed_data['close_time'] = data['close_time']
+                    close_time_valid = True
+                except ValueError:
+                    processed_data['close_time'] = None
+            else:
+                processed_data['close_time'] = None
+            
+            # Validate time relationship if both are valid
+            if open_time_valid and close_time_valid:
+                try:
+                    open_dt = datetime.fromisoformat(processed_data['open_time'])
+                    close_dt = datetime.fromisoformat(processed_data['close_time'])
+                    if (close_dt <= open_dt or 
+                        close_dt - open_dt < timedelta(minutes=1) or 
+                        close_dt - open_dt > timedelta(days=30)):
+                        # Invalid time relationship, reset both
+                        processed_data['open_time'] = None
+                        processed_data['close_time'] = None
+                except ValueError:
+                    processed_data['open_time'] = None
+                    processed_data['close_time'] = None
         
         return processed_data
 
@@ -229,7 +334,7 @@ class PollJSONImporter:
     
     @staticmethod
     async def import_from_json_file(file_content: bytes, user_timezone: str = "US/Eastern") -> Tuple[bool, Optional[Dict[str, Any]], List[str]]:
-        """Import poll data from JSON file content"""
+        """Import poll data from JSON file content with graceful error handling"""
         errors = []
         
         try:
@@ -247,17 +352,20 @@ class PollJSONImporter:
                 errors.append(f"Invalid JSON format: {str(e)}")
                 return False, None, errors
             
-            # Validate JSON structure
-            is_valid, validation_errors = PollJSONValidator.validate_json_structure(data)
+            # Use graceful validation - only fail on critical errors
+            is_valid, critical_errors, warnings = PollJSONValidator.validate_json_structure_graceful(data)
             if not is_valid:
-                errors.extend(validation_errors)
+                # Critical errors prevent import
+                errors.extend(critical_errors)
                 return False, None, errors
             
-            # Process and normalize data
-            processed_data = PollJSONValidator.process_json_data(data, user_timezone)
+            # Process and normalize data with graceful field resetting
+            processed_data = PollJSONValidator.process_json_data_graceful(data, warnings, user_timezone)
             
-            logger.info(f"✅ JSON IMPORT - Successfully processed poll: '{processed_data['name']}'")
-            return True, processed_data, []
+            logger.info(f"✅ JSON IMPORT - Successfully processed poll: '{processed_data['name']}' with {len(warnings)} warnings")
+            
+            # Return success with warnings as "errors" (they're actually warnings for the UI)
+            return True, processed_data, warnings
             
         except Exception as e:
             logger.error(f"Unexpected error importing JSON: {e}")

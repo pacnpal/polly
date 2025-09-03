@@ -1,5 +1,14 @@
 <h2><i class="fas fa-plus me-2"></i>{% if is_template %}Create Poll from Template{% else %}Create New Poll{% endif %}</h2>
 
+<!-- Success/Warning Messages for JSON Import -->
+{% if is_json_import and success_message %}
+<div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
+    <i class="fas fa-check-circle me-2"></i>
+    <div style="white-space: pre-line;">{{ success_message }}</div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
 <form hx-post="/htmx/create-poll" hx-target="#main-content" hx-encoding="multipart/form-data" 
       hx-indicator="#loading-indicator">
     <div class="card">
@@ -37,10 +46,10 @@
                         <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
                         <select class="form-select" id="server-select" name="server_id" required
                                 hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
-                                hx-trigger="change, {% if user_preferences and user_preferences.last_server_id %}load{% endif %}">
+                                hx-trigger="change, {% if (template_data and template_data.server_id) or (user_preferences and user_preferences.last_server_id) %}load{% endif %}">
                             <option value="">Select a server...</option>
                             {% for guild in guilds %}
-                            <option value="{{ guild.id }}" {% if user_preferences and guild.id|string == user_preferences.last_server_id|string %}selected{% endif %}>{{ guild.name|e }}</option>
+                            <option value="{{ guild.id }}" {% if (template_data and guild.id|string == template_data.server_id|string) or (not template_data and user_preferences and guild.id|string == user_preferences.last_server_id|string) %}selected{% endif %}>{{ guild.name|e }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -58,22 +67,41 @@
             <div class="mb-3">
                 <label class="form-label">Poll Options <span class="text-danger">*</span></label>
                 <div id="options-container">
-                    {% for i in range(2) %}
-                    <div class="input-group mb-2">
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ default_emojis[loop.index0] }}</button>
-                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
-                                    data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
-                                <span class="visually-hidden">Discord Emojis</span>
-                            </button>
-                            <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ loop.index }}">
-                                <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
-                            </ul>
+                    {% if template_data and template_data.options %}
+                        {% for option in template_data.options %}
+                        <div class="input-group mb-2">
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ template_data.emojis[loop.index0] if template_data.emojis and loop.index0 < template_data.emojis|length else default_emojis[loop.index0] }}</button>
+                                <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                        data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
+                                    <span class="visually-hidden">Discord Emojis</span>
+                                </button>
+                                <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ loop.index }}">
+                                    <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                                </ul>
+                            </div>
+                            <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" required value="{{ option|e }}">
+                            <input type="hidden" name="emoji{{ loop.index }}" value="{{ template_data.emojis[loop.index0] if template_data.emojis and loop.index0 < template_data.emojis|length else default_emojis[loop.index0] }}">
                         </div>
-                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" required>
-                        <input type="hidden" name="emoji{{ loop.index }}" value="{{ default_emojis[loop.index0] }}">
-                    </div>
-                    {% endfor %}
+                        {% endfor %}
+                    {% else %}
+                        {% for i in range(2) %}
+                        <div class="input-group mb-2">
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ default_emojis[loop.index0] }}</button>
+                                <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                                        data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
+                                    <span class="visually-hidden">Discord Emojis</span>
+                                </button>
+                                <ul class="dropdown-menu discord-emoji-dropdown" data-option="{{ loop.index }}">
+                                    <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
+                                </ul>
+                            </div>
+                            <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" required>
+                            <input type="hidden" name="emoji{{ loop.index }}" value="{{ default_emojis[loop.index0] }}">
+                        </div>
+                        {% endfor %}
+                    {% endif %}
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm"
                         hx-post="/htmx/add-option" hx-target="#options-container" hx-swap="beforeend" hx-include="#options-container">
@@ -150,7 +178,7 @@
 
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true">
+                    <input class="form-check-input" type="checkbox" id="anonymous-poll" name="anonymous" value="true" {% if template_data and template_data.anonymous %}checked{% endif %}>
                     <label class="form-check-label" for="anonymous-poll">
                         <i class="fas fa-eye-slash me-1"></i>Anonymous Poll
                         <small class="text-muted d-block">Hide results until poll ends</small>
@@ -160,7 +188,7 @@
 
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="multiple-choice-poll" name="multiple_choice" value="true">
+                    <input class="form-check-input" type="checkbox" id="multiple-choice-poll" name="multiple_choice" value="true" {% if template_data and template_data.multiple_choice %}checked{% endif %}>
                     <label class="form-check-label" for="multiple-choice-poll">
                         <i class="fas fa-list-check me-1"></i>Multiple Choice
                         <small class="text-muted d-block">Allow users to select multiple options</small>
@@ -171,7 +199,7 @@
             <!-- Role Ping Section -->
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="ping-role-enabled" name="ping_role_enabled" value="true">
+                    <input class="form-check-input" type="checkbox" id="ping-role-enabled" name="ping_role_enabled" value="true" {% if template_data and template_data.ping_role_enabled %}checked{% endif %}>
                     <label class="form-check-label" for="ping-role-enabled">
                         <i class="fas fa-at me-1"></i>Ping a role when poll is opened and closed?
                         <small class="text-muted d-block">Notify a specific role when the poll starts and ends</small>
@@ -179,7 +207,7 @@
                 </div>
                 
                 <!-- Role Selection (initially hidden) -->
-                <div id="role-selection-container" class="mt-3" style="display: none;">
+                <div id="role-selection-container" class="mt-3" style="display: {% if template_data and template_data.ping_role_enabled %}block{% else %}none{% endif %};">
                     <label for="role-select" class="form-label">Select Role to Ping</label>
                     <select class="form-select" id="role-select" name="ping_role_id"
                             hx-get="/htmx/roles" hx-target="#role-select" hx-include="[name='server_id']"
