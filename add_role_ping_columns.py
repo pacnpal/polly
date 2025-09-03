@@ -17,7 +17,7 @@ def migrate_database():
         print(f"Database file {db_path} not found. No migration needed for new installations.")
         return True
     
-    print(f"Starting database migration for role ping feature...")
+    print("Starting database migration for role ping feature...")
     print(f"Database: {db_path}")
     print(f"Time: {datetime.now()}")
     
@@ -78,7 +78,7 @@ def migrate_database():
         cursor.execute("PRAGMA table_info(user_preferences)")
         prefs_columns = [column[1] for column in cursor.fetchall()]
         
-        print(f"\nVerification:")
+        print("\nVerification:")
         print(f"Polls table columns: {len(polls_columns)} total")
         print(f"User preferences columns: {len(prefs_columns)} total")
         
@@ -89,14 +89,14 @@ def migrate_database():
         missing_prefs = [col for col in required_prefs_columns if col not in prefs_columns]
         
         if missing_polls or missing_prefs:
-            print(f"❌ Migration incomplete!")
+            print("❌ Migration incomplete!")
             if missing_polls:
                 print(f"Missing polls columns: {missing_polls}")
             if missing_prefs:
                 print(f"Missing user_preferences columns: {missing_prefs}")
             return False
         else:
-            print(f"✅ All required columns present")
+            print("✅ All required columns present")
             return True
         
     except sqlite3.Error as e:

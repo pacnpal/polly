@@ -661,22 +661,31 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             f"📝 POSTING POLL {poll.id} - Retrieved options from database: {poll_options}")
         logger.debug(
             f"😀 POSTING POLL {poll.id} - Adding {len(poll.options)} reactions")
+        
+        # Import emoji handler for Unicode emoji preparation
+        from .discord_emoji_handler import DiscordEmojiHandler
+        emoji_handler = DiscordEmojiHandler(bot)
+        
         for i in range(len(poll.options)):
             emoji = poll.emojis[i] if i < len(
                 poll.emojis or []) else POLL_EMOJIS[i]
+            
+            # Prepare emoji for reaction (handles Unicode emoji variation selectors)
+            prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji)
+            
             try:
-                await message.add_reaction(emoji)
+                await message.add_reaction(prepared_emoji)
                 print(
-                    f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}: '{poll.options[i]}'")
+                    f"✅ POSTING POLL {poll.id} - Added reaction {prepared_emoji} (original: {emoji}) for option {i}: '{poll.options[i]}'")
                 logger.info(
-                    f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}: '{poll.options[i]}'")
+                    f"✅ POSTING POLL {poll.id} - Added reaction {prepared_emoji} (original: {emoji}) for option {i}: '{poll.options[i]}'")
                 logger.debug(
-                    f"✅ POSTING POLL {poll.id} - Added reaction {emoji} for option {i}")
+                    f"✅ POSTING POLL {poll.id} - Added reaction {prepared_emoji} for option {i}")
             except Exception as reaction_error:
                 print(
-                    f"❌ POSTING POLL {poll.id} - Failed to add reaction {emoji}: {reaction_error}")
+                    f"❌ POSTING POLL {poll.id} - Failed to add reaction {prepared_emoji} (original: {emoji}): {reaction_error}")
                 logger.error(
-                    f"❌ POSTING POLL {poll.id} - Failed to add reaction {emoji}: {reaction_error}")
+                    f"❌ POSTING POLL {poll.id} - Failed to add reaction {prepared_emoji} (original: {emoji}): {reaction_error}")
 
         # Update poll with message ID
         poll_id = getattr(poll, 'id')
@@ -1019,24 +1028,19 @@ async def send_vote_confirmation_dm(bot: commands.Bot, poll: Poll, user_id: str,
         
         # Determine action message
         if vote_action == "added":
-            action_text = "✅ **Vote Added**"
             action_description = f"You voted for: {selected_emoji} **{selected_option}**"
         elif vote_action == "removed":
-            action_text = "❌ **Vote Removed**"
             action_description = f"You removed your vote for: {selected_emoji} **{selected_option}**"
         elif vote_action == "updated":
-            action_text = "🔄 **Vote Updated**"
             action_description = f"You changed your vote to: {selected_emoji} **{selected_option}**"
         elif vote_action == "created":
-            action_text = "✅ **Vote Recorded**"
             action_description = f"You voted for: {selected_emoji} **{selected_option}**"
         else:
-            action_text = "📊 **Vote Confirmed**"
             action_description = f"Your vote: {selected_emoji} **{selected_option}**"
         
         # Create embed with poll information
         embed = discord.Embed(
-            title=f"🗳️ Vote Confirmation",
+            title="🗳️ Vote Confirmation",
             description=action_description,
             color=0x00ff00,  # Green for confirmation
             timestamp=datetime.now(pytz.UTC)

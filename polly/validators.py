@@ -120,12 +120,23 @@ class PollValidator:
         return valid_options
 
     @staticmethod
-    def validate_poll_emojis(emojis: List[str]) -> List[str]:
+    def validate_poll_emojis(emojis: List[str], bot_instance=None) -> List[str]:
         """Validate and sanitize poll emojis using the emoji library for reliable validation"""
         if not emojis or not isinstance(emojis, list):
             return []  # Empty emojis list is valid, will use defaults
 
         valid_emojis = []
+        
+        # Import emoji handler for Unicode emoji preparation
+        emoji_handler = None
+        if bot_instance:
+            try:
+                from .discord_emoji_handler import DiscordEmojiHandler
+                emoji_handler = DiscordEmojiHandler(bot_instance)
+                logger.debug("✅ EMOJI VALIDATION - Emoji handler initialized for reaction preparation")
+            except Exception as e:
+                logger.warning(f"⚠️ EMOJI VALIDATION - Could not initialize emoji handler: {e}")
+        
         for i, emoji_text in enumerate(emojis):
             if not emoji_text or not isinstance(emoji_text, str):
                 continue  # Skip empty/invalid emojis
@@ -134,44 +145,90 @@ class PollValidator:
             if not emoji_text:
                 continue
 
-            # 1. Validate Discord custom emoji format: <:name:id> or <a:name:id>
-            discord_emoji_pattern = r'^<a?:[a-zA-Z0-9_]+:\d+>$'
-            if re.match(discord_emoji_pattern, emoji_text):
-                valid_emojis.append(emoji_text)
-                logger.debug(f"✅ EMOJI VALIDATION - Discord custom emoji validated: {emoji_text}")
-                continue
-
-            # 2. Use the emoji library for reliable Unicode emoji validation
             try:
-                import emoji
-                
-                # Check if it's a single emoji
-                if emoji.is_emoji(emoji_text):
+                # 1. Validate Discord custom emoji format: <:name:id> or <a:name:id>
+                discord_emoji_pattern = r'^<a?:[a-zA-Z0-9_]+:\d+>$'
+                if re.match(discord_emoji_pattern, emoji_text):
                     valid_emojis.append(emoji_text)
-                    logger.debug(f"✅ EMOJI VALIDATION - Single emoji validated: {emoji_text}")
+                    logger.debug(f"✅ EMOJI VALIDATION - Discord custom emoji validated: {emoji_text}")
                     continue
-                
-                # Check if it's a string containing only emoji characters
-                if emoji.purely_emoji(emoji_text):
-                    valid_emojis.append(emoji_text)
-                    logger.debug(f"✅ EMOJI VALIDATION - Pure emoji string validated: {emoji_text}")
-                    continue
-                
-                # Check if it contains any emoji and is reasonably short
-                emoji_count = emoji.emoji_count(emoji_text)
-                if emoji_count > 0 and len(emoji_text) <= 10:
-                    valid_emojis.append(emoji_text)
-                    logger.debug(f"✅ EMOJI VALIDATION - Text with {emoji_count} emoji(s) validated: {emoji_text}")
-                    continue
-                
-                # If emoji library says it's not an emoji, log and skip
-                logger.warning(f"⚠️ EMOJI VALIDATION - Not recognized as emoji by library, skipping: {emoji_text}")
-                
-            except Exception as e:
-                # If emoji library fails, be lenient and include it anyway
-                valid_emojis.append(emoji_text)
-                logger.warning(f"⚠️ EMOJI VALIDATION - Error using emoji library for '{emoji_text}', including anyway: {e}")
 
+                # 2. Use the emoji library for reliable Unicode emoji validation
+                try:
+                    import emoji
+                    
+                    # Check if it's a single emoji
+                    if emoji.is_emoji(emoji_text):
+                        # Prepare Unicode emoji for Discord reactions
+                        if emoji_handler:
+                            try:
+                                prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji_text)
+                                valid_emojis.append(prepared_emoji)
+                                logger.debug(f"✅ EMOJI VALIDATION - Single emoji validated and prepared: '{emoji_text}' -> '{prepared_emoji}'")
+                            except Exception as prep_error:
+                                logger.warning(f"⚠️ EMOJI VALIDATION - Error preparing emoji '{emoji_text}': {prep_error}")
+                                valid_emojis.append(emoji_text)  # Use original if preparation fails
+                        else:
+                            valid_emojis.append(emoji_text)
+                            logger.debug(f"✅ EMOJI VALIDATION - Single emoji validated (no preparation): {emoji_text}")
+                        continue
+                    
+                    # Check if it's a string containing only emoji characters
+                    if emoji.purely_emoji(emoji_text):
+                        # Prepare Unicode emoji for Discord reactions
+                        if emoji_handler:
+                            try:
+                                prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji_text)
+                                valid_emojis.append(prepared_emoji)
+                                logger.debug(f"✅ EMOJI VALIDATION - Pure emoji string validated and prepared: '{emoji_text}' -> '{prepared_emoji}'")
+                            except Exception as prep_error:
+                                logger.warning(f"⚠️ EMOJI VALIDATION - Error preparing emoji '{emoji_text}': {prep_error}")
+                                valid_emojis.append(emoji_text)  # Use original if preparation fails
+                        else:
+                            valid_emojis.append(emoji_text)
+                            logger.debug(f"✅ EMOJI VALIDATION - Pure emoji string validated (no preparation): {emoji_text}")
+                        continue
+                    
+                    # Check if it contains any emoji and is reasonably short
+                    emoji_count = emoji.emoji_count(emoji_text)
+                    if emoji_count > 0 and len(emoji_text) <= 10:
+                        # Prepare Unicode emoji for Discord reactions
+                        if emoji_handler:
+                            try:
+                                prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji_text)
+                                valid_emojis.append(prepared_emoji)
+                                logger.debug(f"✅ EMOJI VALIDATION - Text with {emoji_count} emoji(s) validated and prepared: '{emoji_text}' -> '{prepared_emoji}'")
+                            except Exception as prep_error:
+                                logger.warning(f"⚠️ EMOJI VALIDATION - Error preparing emoji '{emoji_text}': {prep_error}")
+                                valid_emojis.append(emoji_text)  # Use original if preparation fails
+                        else:
+                            valid_emojis.append(emoji_text)
+                            logger.debug(f"✅ EMOJI VALIDATION - Text with {emoji_count} emoji(s) validated (no preparation): {emoji_text}")
+                        continue
+                    
+                    # If emoji library says it's not an emoji, log and skip
+                    logger.warning(f"⚠️ EMOJI VALIDATION - Not recognized as emoji by library, skipping: {emoji_text}")
+                    
+                except Exception as e:
+                    # If emoji library fails, be lenient and include it anyway
+                    if emoji_handler:
+                        try:
+                            prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji_text)
+                            valid_emojis.append(prepared_emoji)
+                            logger.warning(f"⚠️ EMOJI VALIDATION - Error using emoji library for '{emoji_text}', prepared anyway: '{prepared_emoji}' (error: {e})")
+                        except Exception:
+                            valid_emojis.append(emoji_text)
+                            logger.warning(f"⚠️ EMOJI VALIDATION - Error using emoji library and preparing '{emoji_text}', including original: {e}")
+                    else:
+                        valid_emojis.append(emoji_text)
+                        logger.warning(f"⚠️ EMOJI VALIDATION - Error using emoji library for '{emoji_text}', including anyway: {e}")
+                        
+            except Exception as validation_error:
+                logger.error(f"❌ EMOJI VALIDATION - Unexpected error validating emoji '{emoji_text}': {validation_error}")
+                # Include the emoji anyway to prevent breaking the poll creation
+                valid_emojis.append(emoji_text)
+
+        logger.debug(f"✅ EMOJI VALIDATION - Final validated emojis: {valid_emojis}")
         return valid_emojis
 
     @staticmethod
@@ -336,8 +393,10 @@ class PollValidator:
             validated_data['close_time'] = close_time
 
             # Validate emojis (CRITICAL FIX - this was missing!)
+            # Try to get bot instance for emoji preparation
+            bot_instance = poll_data.get('bot_instance', None)
             validated_data['emojis'] = PollValidator.validate_poll_emojis(
-                poll_data.get('emojis', []))
+                poll_data.get('emojis', []), bot_instance)
 
             # Validate boolean fields
             validated_data['anonymous'] = bool(

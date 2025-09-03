@@ -139,6 +139,21 @@ class DiscordEmojiHandler:
             logger.warning(f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing '{text}' due to library error")
             return True
 
+    def is_custom_emoji_format(self, emoji_input: str) -> bool:
+        """
+        Check if the text matches Discord's custom emoji format: <:name:id> or <a:name:id>
+        
+        Args:
+            emoji_input (str): The emoji input to validate
+            
+        Returns:
+            bool: True if it matches custom emoji format, False otherwise
+        """
+        if not emoji_input:
+            return False
+        pattern = r'^<(a?):(\w+):(\d+)>$'
+        return bool(re.match(pattern, emoji_input.strip()))
+
     def parse_custom_emoji(self, emoji_text: str) -> Optional[Dict[str, Any]]:
         """Parse custom emoji format <:name:id> or <a:name:id>"""
         if not emoji_text:
@@ -161,6 +176,68 @@ class DiscordEmojiHandler:
             }
 
         return None
+
+    def prepare_emoji_for_reaction(self, emoji_input: str) -> str:
+        """
+        Prepare a Unicode emoji for use in Discord reactions.
+        
+        Key insights for Unicode emojis:
+        1. Unicode emojis need variation selectors removed (️)
+        2. NO URL encoding for reactions - Discord expects raw Unicode
+        3. This function is specifically for Unicode emojis only
+        
+        Args:
+            emoji_input (str): The raw Unicode emoji input
+            
+        Returns:
+            str: The properly formatted Unicode emoji for reactions
+            
+        Raises:
+            ValueError: If emoji_input is invalid or cannot be processed
+        """
+        try:
+            if not emoji_input:
+                logger.warning("prepare_emoji_for_reaction: Empty emoji input provided")
+                return emoji_input
+            
+            if not isinstance(emoji_input, str):
+                logger.error(f"prepare_emoji_for_reaction: Invalid input type {type(emoji_input)}, expected str")
+                raise ValueError(f"Emoji input must be a string, got {type(emoji_input)}")
+            
+            # Strip whitespace
+            emoji_input = emoji_input.strip()
+            
+            if not emoji_input:
+                logger.warning("prepare_emoji_for_reaction: Empty emoji input after stripping")
+                return emoji_input
+            
+            # Only process Unicode emojis - remove variation selectors but keep as Unicode
+            if self.is_unicode_emoji(emoji_input):
+                try:
+                    # Remove variation selectors that cause Discord API errors
+                    cleaned = emoji_input.replace('\ufe0f', '').replace('\ufe0e', '')
+                    
+                    # Validate the cleaned emoji is still valid
+                    if not cleaned:
+                        logger.warning(f"prepare_emoji_for_reaction: Emoji became empty after cleaning: '{emoji_input}'")
+                        return emoji_input  # Return original if cleaning resulted in empty string
+                    
+                    logger.debug(f"prepare_emoji_for_reaction: Successfully prepared Unicode emoji '{emoji_input}' -> '{cleaned}'")
+                    return cleaned
+                    
+                except Exception as clean_error:
+                    logger.error(f"prepare_emoji_for_reaction: Error cleaning Unicode emoji '{emoji_input}': {clean_error}")
+                    # Return original emoji if cleaning fails
+                    return emoji_input
+            
+            # For non-Unicode emojis, return as-is (caller should handle custom emojis separately)
+            logger.debug(f"prepare_emoji_for_reaction: Non-Unicode emoji passed through: '{emoji_input}'")
+            return emoji_input
+            
+        except Exception as e:
+            logger.error(f"prepare_emoji_for_reaction: Unexpected error processing emoji '{emoji_input}': {e}")
+            # Return original input on any error to prevent breaking the flow
+            return emoji_input if isinstance(emoji_input, str) else str(emoji_input)
 
     async def process_emoji_input(self, emoji_input: str, guild_id: int) -> Optional[str]:
         """
@@ -190,8 +267,8 @@ class DiscordEmojiHandler:
         # 2. Check if it's a custom emoji format <:name:id> or <a:name:id>
         custom_emoji_data = self.parse_custom_emoji(emoji_input)
         if custom_emoji_data:
-            print(f"🎭 PROCESS_EMOJI_INPUT DEBUG - Parsed custom emoji: {custom_emoji_data}")
-            logger.info(f"🎭 PROCESS_EMOJI_INPUT DEBUG - Parsed custom emoji: {custom_emoji_data}")
+            print(f"� PROCESS_EMOJI_INPUT DEBUG - Parsed custom emoji: {custom_emoji_data}")
+            logger.info(f"� PROCESS_EMOJI_INPUT DEBUG - Parsed custom emoji: {custom_emoji_data}")
             
             # For custom emojis, we need to verify they're from the correct guild
             try:
@@ -273,8 +350,8 @@ class DiscordEmojiHandler:
                 
                 processed_emoji = await self.process_emoji_input(emoji_input, guild_id)
                 
-                print(f"📤 PROCESS_POLL_EMOJIS DEBUG - process_emoji_input returned: '{processed_emoji}' (type: {type(processed_emoji)})")
-                logger.info(f"📤 PROCESS_POLL_EMOJIS DEBUG - process_emoji_input returned: '{processed_emoji}' (type: {type(processed_emoji)})")
+                print(f"� PROCESS_POLL_EMOJIS DEBUG - process_emoji_input returned: '{processed_emoji}' (type: {type(processed_emoji)})")
+                logger.info(f"� PROCESS_POLL_EMOJIS DEBUG - process_emoji_input returned: '{processed_emoji}' (type: {type(processed_emoji)})")
 
                 if processed_emoji:
                     final_emoji = processed_emoji

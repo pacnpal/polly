@@ -490,15 +490,22 @@ class DiscordErrorHandler:
         return None
 
     @staticmethod
-    async def safe_add_reactions(message: discord.Message, emojis: List[str]) -> List[str]:
+    async def safe_add_reactions(message: discord.Message, emojis: List[str], bot: Optional[commands.Bot] = None) -> List[str]:
         """Safely add reactions to a message, returning list of successfully added emojis"""
         successful_reactions = []
 
+        # Import emoji handler for Unicode emoji preparation
+        from .discord_emoji_handler import DiscordEmojiHandler
+        emoji_handler = DiscordEmojiHandler(bot) if bot else None
+
         for emoji in emojis:
             try:
-                await message.add_reaction(emoji)
-                successful_reactions.append(emoji)
-                logger.debug(f"Successfully added reaction {emoji}")
+                # Prepare emoji for reaction if we have a bot instance
+                prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji) if emoji_handler else emoji
+                
+                await message.add_reaction(prepared_emoji)
+                successful_reactions.append(prepared_emoji)
+                logger.debug(f"Successfully added reaction {prepared_emoji} (original: {emoji})")
             except discord.Forbidden:
                 logger.error(f"No permission to add reaction {emoji}")
                 break  # If we can't add one, we likely can't add any

@@ -41,9 +41,9 @@ class UnifiedEmojiProcessor:
             logger.info(f"📊 UNIFIED EMOJI PROCESSOR - Discord handler returned {len(processed_emojis)} emojis: {processed_emojis}")
             print(f"📊 UNIFIED EMOJI PROCESSOR - Discord handler returned {len(processed_emojis)} emojis: {processed_emojis}")
             
-            # Step 2: Validate emojis using the validator
+            # Step 2: Validate emojis using the validator with bot instance for emoji preparation
             try:
-                validated_emojis = PollValidator.validate_poll_emojis(processed_emojis)
+                validated_emojis = PollValidator.validate_poll_emojis(processed_emojis, self.bot)
                 logger.info(f"✅ UNIFIED EMOJI PROCESSOR - Validator approved {len(validated_emojis)} emojis: {validated_emojis}")
                 print(f"✅ UNIFIED EMOJI PROCESSOR - Validator approved {len(validated_emojis)} emojis: {validated_emojis}")
             except Exception as validation_error:

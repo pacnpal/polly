@@ -112,9 +112,15 @@ async def create_quick_poll_command(
         poll.message_id = str(message.id)
         db.commit()
 
-        # Add reaction emojis
+        # Add reaction emojis with Unicode emoji preparation
+        from .discord_emoji_handler import DiscordEmojiHandler
+        emoji_handler = DiscordEmojiHandler(bot)
+        
         for i in range(len(options)):
-            await message.add_reaction(POLL_EMOJIS[i])
+            emoji = POLL_EMOJIS[i]
+            # Prepare emoji for reaction (handles Unicode emoji variation selectors)
+            prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji)
+            await message.add_reaction(prepared_emoji)
 
         # Schedule poll closure
         from .background_tasks import get_scheduler
