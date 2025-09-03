@@ -530,7 +530,21 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
     
     try:
         form_data = await request.form()
+        
+        # Debug: Log all form data keys to see what's actually being sent
+        form_keys = list(form_data.keys())
+        logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} form data keys: {form_keys}")
+        print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} form data keys: {form_keys}")
+        
         json_file = form_data.get("json_file")
+        
+        # Debug: Log the type and attributes of the json_file object
+        logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file type: {type(json_file)}")
+        print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file type: {type(json_file)}")
+        
+        if json_file:
+            logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {dir(json_file)}")
+            print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {dir(json_file)}")
         
         # Enhanced file detection - check for file object and content
         if not json_file:

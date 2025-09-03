@@ -26,9 +26,19 @@
                 const formData = new FormData();
                 formData.append('json_file', input.files[0]);
                 
-                htmx.ajax('POST', '/htmx/import-json', {
-                    values: formData,
-                    target: '#inline-messages'
+                // Use fetch instead of htmx.ajax for file uploads
+                fetch('/htmx/import-json', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('inline-messages').innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('inline-messages').innerHTML = 
+                        '<div class="alert alert-danger">Error uploading file. Please try again.</div>';
                 });
                 
                 // Reset the input
