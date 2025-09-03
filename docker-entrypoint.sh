@@ -16,6 +16,7 @@ chmod 755 data 2>/dev/null || echo "Warning: Could not change data directory per
 
 # Run database migration if needed
 echo "Running database migration..."
+mkdir .cache
 uv run migrate_database.py
 
 # Running final dependency checks
