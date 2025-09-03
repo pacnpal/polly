@@ -792,8 +792,12 @@
             }
         });
 
-        // Template data pre-filling functionality
+        // Template data pre-filling functionality - ALWAYS LOG WHAT WE RECEIVE
+        console.log('🔍 TEMPLATE JS DEBUG - Template section loading...');
+        console.log('🔍 TEMPLATE JS DEBUG - is_template flag:', {{ is_template|tojson }});
+        
         {% if template_data %}
+        console.log('🔍 TEMPLATE JS DEBUG - Template data section EXISTS in Jinja');
         function preFillTemplateData() {
             const templateData = {{ template_data|tojson }};
             
