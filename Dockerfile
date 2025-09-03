@@ -33,8 +33,8 @@ USER xyn0th
 
 # Create entrypoint script
 COPY docker-entrypoint.sh ./
+USER root
 RUN chmod +x docker-entrypoint.sh
-RUN chmod 755 static/uploads logs data static
-
+USER xyn0th
 # Run the application with migration
 CMD ["./docker-entrypoint.sh"]
