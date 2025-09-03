@@ -1,4 +1,5 @@
-<div class="alert alert-danger">
+<!-- Inline Error Component - Shows errors without redirecting -->
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
     <i class="fas fa-exclamation-triangle me-2"></i>
     {% if message.startswith('❌') or '**' in message or '•' in message %}
         <!-- Formatted error message with sections -->
@@ -29,6 +30,7 @@
         <!-- Simple error message -->
         {{ message }}
     {% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 
 <style>
@@ -38,5 +40,8 @@
 }
 .error-content div {
     margin-bottom: 0.25rem;
+}
+.alert-dismissible {
+    padding-right: 3rem;
 }
 </style>

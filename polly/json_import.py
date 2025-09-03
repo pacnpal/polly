@@ -256,7 +256,7 @@ class PollJSONImporter:
             # Process and normalize data
             processed_data = PollJSONValidator.process_json_data(data, user_timezone)
             
-            logger.info(f"Successfully imported poll JSON: {processed_data['name']}")
+            logger.info(f"✅ JSON IMPORT - Successfully processed poll: '{processed_data['name']}'")
             return True, processed_data, []
             
         except Exception as e:

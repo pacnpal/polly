@@ -526,21 +526,26 @@ def get_common_timezones() -> list:
 
 async def import_json_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
     """Import poll data from JSON file via HTMX"""
-    logger.info(f"User {current_user.id} importing poll from JSON")
+    logger.info(f"🔍 JSON IMPORT - User {current_user.id} starting JSON import process")
     
     try:
         form_data = await request.form()
         json_file = form_data.get("json_file")
         
         if not json_file or not hasattr(json_file, 'filename') or not json_file.filename:
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} attempted import without selecting file")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please select a JSON file to import"
             })
         
+        filename = str(json_file.filename)
+        logger.info(f"🔍 JSON IMPORT - User {current_user.id} uploading file: {filename}")
+        
         # Validate file type
-        if not json_file.filename.lower().endswith('.json'):
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+        if not filename.lower().endswith('.json'):
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} uploaded invalid file type: {filename}")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please upload a valid JSON file (.json extension required)"
             })
@@ -548,9 +553,11 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
         # Read file content
         try:
             file_content = await json_file.read()
+            file_size = len(file_content)
+            logger.info(f"🔍 JSON IMPORT - User {current_user.id} file read successfully: {file_size} bytes")
         except Exception as e:
-            logger.error(f"Error reading JSON file: {e}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            logger.error(f"❌ JSON IMPORT - User {current_user.id} file read error: {e}")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Error reading the uploaded file"
             })
@@ -558,6 +565,7 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
         # Get user timezone for processing
         user_prefs = get_user_preferences(current_user.id)
         user_timezone = user_prefs.get("default_timezone", "US/Eastern")
+        logger.debug(f"🔍 JSON IMPORT - User {current_user.id} timezone: {user_timezone}")
         
         # Import JSON data
         success, poll_data, errors = await PollJSONImporter.import_from_json_file(
@@ -565,29 +573,90 @@ async def import_json_htmx(request: Request, current_user: DiscordUser = Depends
         )
         
         if not success:
-            error_message = "JSON import failed:\n" + "\n".join(f"• {error}" for error in errors)
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} validation failed: {len(errors)} errors")
+            for error in errors:
+                logger.debug(f"🔍 JSON IMPORT - Validation error: {error}")
+            
+            # Create a detailed, user-friendly error message
+            error_title = "❌ JSON Import Failed"
+            
+            # Categorize errors for better user understanding
+            field_errors = []
+            format_errors = []
+            validation_errors = []
+            
+            for error in errors:
+                error_lower = error.lower()
+                if any(field in error_lower for field in ['field', 'missing', 'required']):
+                    field_errors.append(error)
+                elif any(fmt in error_lower for fmt in ['json', 'format', 'encoding', 'syntax']):
+                    format_errors.append(error)
+                else:
+                    validation_errors.append(error)
+            
+            # Build comprehensive error message
+            error_parts = [error_title, ""]
+            
+            if format_errors:
+                error_parts.extend([
+                    "📄 **File Format Issues:**",
+                    *[f"• {error}" for error in format_errors],
+                    ""
+                ])
+            
+            if field_errors:
+                error_parts.extend([
+                    "📝 **Required Fields Missing:**",
+                    *[f"• {error}" for error in field_errors],
+                    ""
+                ])
+            
+            if validation_errors:
+                error_parts.extend([
+                    "⚠️ **Validation Errors:**",
+                    *[f"• {error}" for error in validation_errors],
+                    ""
+                ])
+            
+            # Add helpful suggestions
+            error_parts.extend([
+                "💡 **How to Fix:**",
+                "• Check that your JSON file uses the correct field names:",
+                "  - Use 'open_time' and 'close_time' (not 'scheduled_date'/'scheduled_time')",
+                "  - Use 'ping_role_enabled' and 'ping_role_id' (not 'role_ping')",
+                "• Ensure all required fields are present: 'name', 'question', 'options'",
+                "• Use ISO datetime format: '2025-01-20T09:00'",
+                "• Check the documentation for the complete format guide",
+                "",
+                f"📁 **Your file:** {filename}"
+            ])
+            
+            error_message = "\n".join(error_parts)
+            
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": error_message
             })
         
-        logger.info(f"Successfully imported JSON data for user {current_user.id}: {poll_data['name']}")
+        poll_name = poll_data.get('name', 'Unknown Poll')
+        logger.info(f"✅ JSON IMPORT - User {current_user.id} successfully imported: '{poll_name}' from {filename}")
         
         # Return success with the imported data as template data
         # This will redirect to the create form with pre-filled data
         return templates.TemplateResponse("htmx/components/alert_success.html", {
             "request": request,
-            "message": f"JSON imported successfully! Poll '{poll_data['name']}' is ready to create.",
+            "message": f"JSON imported successfully! Poll '{poll_name}' is ready to create.",
             "redirect_url": f"/htmx/create-form-json-import",
             "json_data": poll_data  # Pass the data for the next form
         })
         
-    except Exception as e:
-        logger.error(f"Error importing JSON for user {current_user.id}: {e}")
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
-            "request": request,
-            "message": f"Unexpected error importing JSON: {str(e)}"
-        })
+        except Exception as e:
+            logger.error(f"❌ JSON IMPORT - Critical error for user {current_user.id}: {e}")
+            logger.exception("Full traceback for JSON import error:")
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
+                "request": request,
+                "message": f"Unexpected error importing JSON: {str(e)}"
+            })
 
 
 async def get_create_form_json_import_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
@@ -942,7 +1011,7 @@ async def get_create_form_template_htmx(poll_id: int, request: Request, bot, cur
         source_poll = db.query(Poll).filter(Poll.id == poll_id, Poll.creator_id == current_user.id).first()
         if not source_poll:
             logger.warning(f"Poll {poll_id} not found or not owned by user {current_user.id}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
@@ -1303,7 +1372,7 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
     except Exception as e:
         logger.error(f"Error saving settings for user {current_user.id}: {e}")
 
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": f"Error saving settings: {str(e)}"
         })
@@ -1868,7 +1937,7 @@ async def get_poll_details_htmx(poll_id: int, request: Request, current_user: Di
         if not poll:
             logger.warning(
                 f"Poll {poll_id} not found or not owned by user {current_user.id}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
@@ -1880,9 +1949,9 @@ async def get_poll_details_htmx(poll_id: int, request: Request, current_user: Di
         })
     except Exception as e:
         logger.error(f"Error getting poll details for poll {poll_id}: {e}")
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
-            "message": f"Error loading poll details: {str(e)}"
+            "message": f"Error loading template: {str(e)}"
         })
     finally:
         db.close()
@@ -1956,7 +2025,7 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         poll = db.query(Poll).filter(Poll.id == poll_id,
                                      Poll.creator_id == current_user.id).first()
         if not poll:
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Poll not found or access denied"
             })
@@ -2039,7 +2108,7 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
 
     except Exception as e:
         logger.error(f"Error getting poll dashboard for poll {poll_id}: {e}")
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": f"Error loading poll dashboard: {str(e)}"
         })
@@ -2173,7 +2242,7 @@ async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordU
             })
 
         if TypeSafeColumn.get_string(poll, 'status') != "active":
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Only active polls can be closed"
             })
@@ -2194,7 +2263,7 @@ async def close_poll_htmx(poll_id: int, request: Request, current_user: DiscordU
     except Exception as e:
         logger.error(f"Error closing poll {poll_id}: {e}")
         db.rollback()
-        return templates.TemplateResponse("htmx/components/alert_error.html", {
+        return templates.TemplateResponse("htmx/components/inline_error.html", {
             "request": request,
             "message": f"Error closing poll: {str(e)}"
         })
@@ -2206,20 +2275,24 @@ async def export_poll_json_htmx(poll_id: int, request: Request, current_user: Di
     """Export poll as JSON file via HTMX"""
     from fastapi.responses import Response
     
-    logger.info(f"User {current_user.id} exporting poll {poll_id} as JSON")
+    logger.info(f"🔍 JSON EXPORT - User {current_user.id} starting export for poll {poll_id}")
     db = get_db_session()
     try:
         poll = db.query(Poll).filter(Poll.id == poll_id,
                                      Poll.creator_id == current_user.id).first()
         if not poll:
+            logger.warning(f"⚠️ JSON EXPORT - Poll {poll_id} not found or access denied for user {current_user.id}")
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Poll not found or access denied")
+
+        poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown Poll')
+        logger.info(f"🔍 JSON EXPORT - Exporting poll: '{poll_name}' (ID: {poll_id})")
 
         # Export poll to JSON
         json_string = PollJSONExporter.export_poll_to_json_string(poll, indent=2)
         filename = PollJSONExporter.generate_filename(poll)
         
-        logger.info(f"Exported poll {poll_id} as JSON for user {current_user.id}")
+        logger.info(f"✅ JSON EXPORT - Successfully exported poll {poll_id} as '{filename}' for user {current_user.id}")
         
         return Response(
             content=json_string,
@@ -2228,7 +2301,8 @@ async def export_poll_json_htmx(poll_id: int, request: Request, current_user: Di
         )
 
     except Exception as e:
-        logger.error(f"Error exporting JSON for poll {poll_id}: {e}")
+        logger.error(f"❌ JSON EXPORT - Error exporting poll {poll_id} for user {current_user.id}: {e}")
+        logger.exception("Full traceback for JSON export error:")
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Error exporting JSON: {str(e)}")
     finally:
@@ -2502,7 +2576,7 @@ async def update_poll_htmx(poll_id: int, request: Request, bot, scheduler, curre
         
         if not emoji_success:
             logger.warning(f"Unified emoji processing failed for poll {poll_id} edit: {emoji_error}")
-            return templates.TemplateResponse("htmx/components/alert_error.html", {
+            return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": emoji_error
             })

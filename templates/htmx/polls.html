@@ -13,6 +13,9 @@
             </div>
         </div>
         
+        <!-- Inline Error/Success Display Area -->
+        <div id="inline-messages"></div>
+        
         <!-- Hidden file input for JSON import -->
         <input type="file" id="json-import-file" accept=".json" style="display: none;" 
                onchange="importJsonFile(this)">
@@ -25,7 +28,7 @@
                 
                 htmx.ajax('POST', '/htmx/import-json', {
                     values: formData,
-                    target: '#main-content'
+                    target: '#inline-messages'
                 });
                 
                 // Reset the input
