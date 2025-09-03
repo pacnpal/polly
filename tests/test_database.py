@@ -13,6 +13,7 @@ from polly.database import (
     Poll, Vote, User, UserPreference, Guild, Channel, 
     TypeSafeColumn, get_poll_emoji, POLL_EMOJIS
 )
+from tests.emoji_utils import get_random_poll_emojis
 
 
 class TestPoll:
@@ -447,6 +448,130 @@ class TestUtilityFunctions:
         assert all(isinstance(emoji, str) for emoji in POLL_EMOJIS)
         assert POLL_EMOJIS[0] == "🇦"
         assert POLL_EMOJIS[9] == "🇯"
+
+
+class TestRandomEmojiIntegration:
+    """Test integration of random emoji functionality with database models."""
+    
+    def test_poll_with_random_emojis(self, db_session):
+        """Test creating a poll with random emojis from the emoji library."""
+        # Get random emojis for poll options
+        random_emojis = get_random_poll_emojis(4)
+        
+        poll = Poll(
+            name="Random Emoji Poll",
+            question="Which random option do you prefer?",
+            options=["Random Option A", "Random Option B", "Random Option C", "Random Option D"],
+            emojis=random_emojis,
+            server_id="123456789",
+            channel_id="987654321",
+            creator_id="555555555",
+            open_time=datetime.now(pytz.UTC) + timedelta(hours=1),
+            close_time=datetime.now(pytz.UTC) + timedelta(hours=2)
+        )
+        
+        db_session.add(poll)
+        db_session.commit()
+        
+        # Verify the poll was created successfully
+        assert poll.id is not None
+        assert poll.name == "Random Emoji Poll"
+        assert len(poll.emojis) == 4
+        
+        # Verify all emojis are strings and not empty
+        for emoji in poll.emojis:
+            assert isinstance(emoji, str)
+            assert len(emoji) > 0
+        
+        # Verify emojis are properly stored and retrieved
+        retrieved_poll = db_session.query(Poll).filter(Poll.id == poll.id).first()
+        assert retrieved_poll.emojis == random_emojis
+    
+    def test_multiple_polls_with_different_random_emojis(self, db_session):
+        """Test creating multiple polls with different random emojis."""
+        polls = []
+        
+        for i in range(3):
+            random_emojis = get_random_poll_emojis(3)
+            
+            poll = Poll(
+                name=f"Random Poll {i+1}",
+                question=f"Random question {i+1}?",
+                options=[f"Option A{i+1}", f"Option B{i+1}", f"Option C{i+1}"],
+                emojis=random_emojis,
+                server_id="123456789",
+                channel_id="987654321",
+                creator_id="555555555",
+                open_time=datetime.now(pytz.UTC) + timedelta(hours=i+1),
+                close_time=datetime.now(pytz.UTC) + timedelta(hours=i+2)
+            )
+            
+            db_session.add(poll)
+            polls.append(poll)
+        
+        db_session.commit()
+        
+        # Verify all polls were created
+        for poll in polls:
+            assert poll.id is not None
+            assert len(poll.emojis) == 3
+            
+            # Verify emojis are valid
+            for emoji in poll.emojis:
+                assert isinstance(emoji, str)
+                assert len(emoji) > 0
+        
+        # Verify polls have different emoji sets (though not guaranteed due to randomness)
+        all_emoji_sets = [tuple(poll.emojis) for poll in polls]
+        # At least verify they're all valid sets
+        for emoji_set in all_emoji_sets:
+            assert len(emoji_set) == 3
+    
+    def test_poll_with_random_emojis_voting(self, db_session, sample_user):
+        """Test voting on a poll with random emojis."""
+        # Create poll with random emojis
+        random_emojis = get_random_poll_emojis(3)
+        
+        poll = Poll(
+            name="Random Emoji Voting Test",
+            question="Vote on random options?",
+            options=["Random A", "Random B", "Random C"],
+            emojis=random_emojis,
+            server_id="123456789",
+            channel_id="987654321",
+            creator_id="555555555",
+            open_time=datetime.now(pytz.UTC),
+            close_time=datetime.now(pytz.UTC) + timedelta(hours=1)
+        )
+        
+        db_session.add(poll)
+        db_session.commit()
+        
+        # Add votes for each option
+        votes = [
+            Vote(poll_id=poll.id, user_id=sample_user.id, option_index=0),
+            Vote(poll_id=poll.id, user_id="user2", option_index=1),
+            Vote(poll_id=poll.id, user_id="user3", option_index=2),
+            Vote(poll_id=poll.id, user_id="user4", option_index=0),  # Another vote for option 0
+        ]
+        
+        for vote in votes:
+            db_session.add(vote)
+        db_session.commit()
+        
+        # Test results
+        results = poll.get_results()
+        assert results[0] == 2  # Two votes for option 0
+        assert results[1] == 1  # One vote for option 1
+        assert results[2] == 1  # One vote for option 2
+        
+        # Test winner
+        winners = poll.get_winner()
+        assert winners == [0]  # Option 0 should win
+        
+        # Verify the emojis are still intact
+        assert len(poll.emojis) == 3
+        assert poll.emojis == random_emojis
 
 
 class TestDatabaseIntegrity:

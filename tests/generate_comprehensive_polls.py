@@ -58,6 +58,7 @@ from polly.error_handler import PollErrorHandler
 from polly.timezone_scheduler_fix import TimezoneAwareScheduler
 from polly.background_tasks import get_scheduler
 from tests.test_image_generator import TestImageGenerator
+from tests.emoji_utils import get_random_emoji, get_random_emojis, get_random_poll_emojis, get_unique_random_emojis
 
 # Configure logging
 logging.basicConfig(
@@ -186,7 +187,7 @@ class ComprehensivePollGenerator:
         image_options = [True, False]
         
         # Emoji types to test
-        emoji_types = ["default", "unicode", "symbols", "mixed", "random", "custom"]
+        emoji_types = ["default", "unicode", "symbols", "mixed", "random", "library_random", "custom"]
         
         # Scheduling options
         schedule_types = ["immediate", "future", "far_future"]
@@ -380,7 +381,7 @@ class ComprehensivePollGenerator:
         return poll_data
     
     def generate_emojis(self, emoji_type: str, count: int) -> List[str]:
-        """Generate emojis based on type and count"""
+        """Generate emojis based on type and count using the emoji library"""
         import random
         
         if emoji_type == "default":
@@ -401,9 +402,15 @@ class ComprehensivePollGenerator:
                     emojis.append(self.letter_emojis[i % len(self.letter_emojis)])
             return emojis
         elif emoji_type == "random":
-            # Randomly select from all available emoji types
-            all_emojis = self.all_unicode_emojis + self.all_symbol_emojis + self.all_letter_emojis
-            return random.sample(all_emojis, min(count, len(all_emojis)))
+            # Use the random emoji utilities from the emoji library
+            try:
+                # Try to get random poll emojis first (optimized for polls)
+                return get_random_poll_emojis(count)
+            except Exception as e:
+                logger.warning(f"Failed to get random poll emojis: {e}, falling back to manual selection")
+                # Fallback to manual random selection
+                all_emojis = self.all_unicode_emojis + self.all_symbol_emojis + self.all_letter_emojis
+                return random.sample(all_emojis, min(count, len(all_emojis)))
         else:
             # Fallback to default
             return self.letter_emojis[:count]
@@ -801,40 +808,87 @@ async def main():
     
     args = parser.parse_args()
     
-    generator = ComprehensivePollGenerator(
-        dry_run=args.dry_run, 
-        limit=args.limit,
-        server_id=args.server_id,
-        channel_id=args.channel_id,
-        user_id=args.user_id,
-        role_id=args.role_id
-    )
+    # Initialize database first
+    init_database()
     
-    # Enable real images if requested
-    if args.use_real_images or args.use_all_images:
-        generator.image_generator = TestImageGenerator(use_real_images=True)
-        logger.info("Real images enabled - will use sample-images repository")
+    # Start Discord bot connection if not in dry-run or export mode
+    bot_task = None
+    if not args.dry_run and not args.export_json:
+        logger.info("Starting Discord bot connection...")
+        try:
+            from polly.discord_bot import get_bot_instance, start_bot
+            bot = get_bot_instance()
+            
+            # Start bot in background task
+            bot_task = asyncio.create_task(start_bot())
+            
+            # Wait for bot to be ready
+            logger.info("Waiting for bot to connect to Discord...")
+            timeout = 30  # 30 second timeout
+            start_time = asyncio.get_event_loop().time()
+            
+            while not bot.is_ready():
+                if asyncio.get_event_loop().time() - start_time > timeout:
+                    raise TimeoutError("Bot failed to connect within 30 seconds")
+                await asyncio.sleep(0.5)
+            
+            logger.info(f"✅ Bot connected as {bot.user}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start Discord bot: {e}")
+            logger.error("💡 Make sure DISCORD_TOKEN is set and the bot has proper permissions")
+            if bot_task:
+                bot_task.cancel()
+            return
+    
+    try:
+        generator = ComprehensivePollGenerator(
+            dry_run=args.dry_run, 
+            limit=args.limit,
+            server_id=args.server_id,
+            channel_id=args.channel_id,
+            user_id=args.user_id,
+            role_id=args.role_id
+        )
         
-        # Store cleanup preference for later use
-        generator.should_cleanup = not args.no_cleanup
-        if args.no_cleanup:
-            logger.info("Repository cleanup disabled - will keep sample-images after testing")
-    
-    # Handle --use-all-images mode
-    if args.use_all_images:
-        logger.info("USE ALL IMAGES MODE: Will create a poll for each image in repository")
-        await generator.generate_polls_for_all_images()
-        return
-    
-    if args.export_json:
-        # Just export combinations without creating polls
-        generator.combinations = generator.generate_all_combinations()
-        if args.limit:
-            generator.combinations = generator.combinations[:args.limit]
-        generator.export_combinations_json()
-    else:
-        # Generate actual polls
-        await generator.generate_all_polls()
+        # Enable real images if requested
+        if args.use_real_images or args.use_all_images:
+            generator.image_generator = TestImageGenerator(use_real_images=True)
+            logger.info("Real images enabled - will use sample-images repository")
+            
+            # Store cleanup preference for later use
+            generator.should_cleanup = not args.no_cleanup
+            if args.no_cleanup:
+                logger.info("Repository cleanup disabled - will keep sample-images after testing")
+        
+        # Handle --use-all-images mode
+        if args.use_all_images:
+            logger.info("USE ALL IMAGES MODE: Will create a poll for each image in repository")
+            await generator.generate_polls_for_all_images()
+        elif args.export_json:
+            # Just export combinations without creating polls
+            generator.combinations = generator.generate_all_combinations()
+            if args.limit:
+                generator.combinations = generator.combinations[:args.limit]
+            generator.export_combinations_json()
+        else:
+            # Generate actual polls
+            await generator.generate_all_polls()
+            
+    finally:
+        # Clean up bot connection
+        if bot_task and not bot_task.done():
+            logger.info("Shutting down Discord bot...")
+            try:
+                from polly.discord_bot import shutdown_bot
+                await shutdown_bot()
+                bot_task.cancel()
+                try:
+                    await bot_task
+                except asyncio.CancelledError:
+                    pass
+            except Exception as e:
+                logger.error(f"Error shutting down bot: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

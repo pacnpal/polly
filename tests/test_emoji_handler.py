@@ -8,6 +8,7 @@ from unittest.mock import Mock, AsyncMock, patch
 import discord
 
 from polly.discord_emoji_handler import DiscordEmojiHandler
+from tests.emoji_utils import get_random_emoji, get_random_emojis, get_random_poll_emojis
 
 
 class TestDiscordEmojiHandler:
@@ -57,8 +58,8 @@ class TestDiscordEmojiHandler:
                 # Some edge cases may cause exceptions
                 assert isinstance(e, (ValueError, TypeError, UnicodeError))
     
-    def test_is_custom_discord_emoji_valid(self, mock_bot):
-        """Test valid custom Discord emoji detection."""
+    def test_is_custom_emoji_format_valid(self, mock_bot):
+        """Test valid custom Discord emoji format detection."""
         handler = DiscordEmojiHandler(mock_bot)
         
         valid_custom_emojis = [
@@ -69,10 +70,10 @@ class TestDiscordEmojiHandler:
         ]
         
         for emoji in valid_custom_emojis:
-            assert handler.is_custom_discord_emoji(emoji) is True
+            assert handler.is_custom_emoji_format(emoji) is True
     
-    def test_is_custom_discord_emoji_invalid(self, mock_bot):
-        """Test invalid custom Discord emoji detection."""
+    def test_is_custom_emoji_format_invalid(self, mock_bot):
+        """Test invalid custom Discord emoji format detection."""
         handler = DiscordEmojiHandler(mock_bot)
         
         invalid_custom_emojis = [
@@ -89,7 +90,7 @@ class TestDiscordEmojiHandler:
         ]
         
         for emoji in invalid_custom_emojis:
-            assert handler.is_custom_discord_emoji(emoji) is False
+            assert handler.is_custom_emoji_format(emoji) is False
     
     def test_prepare_emoji_for_reaction_unicode(self, mock_bot):
         """Test preparing Unicode emoji for reactions."""
@@ -144,7 +145,7 @@ class TestDiscordEmojiHandler:
         handler = DiscordEmojiHandler(mock_bot)
         
         emoji_inputs = ["😀", "🎉", "❤️", "👍"]
-        server_id = "123456789"
+        server_id = 123456789
         
         result = await handler.process_poll_emojis(emoji_inputs, server_id)
         
@@ -173,13 +174,13 @@ class TestDiscordEmojiHandler:
         mock_bot.get_guild.return_value = mock_guild
         
         emoji_inputs = ["<:custom1:123456789>", "<a:custom2:987654321>"]
-        server_id = "123456789"
+        server_id = 123456789
         
         result = await handler.process_poll_emojis(emoji_inputs, server_id)
         
         assert isinstance(result, list)
         assert len(result) == len(emoji_inputs)
-        mock_bot.get_guild.assert_called_once_with(int(server_id))
+        mock_bot.get_guild.assert_called_once_with(server_id)
     
     @pytest.mark.asyncio
     async def test_process_poll_emojis_mixed(self, mock_bot):
@@ -531,7 +532,7 @@ class TestEmojiHandlerPerformance:
         ]
         
         for test_string in test_strings:
-            result = handler.is_custom_discord_emoji(test_string)
+            result = handler.is_custom_emoji_format(test_string)
             assert isinstance(result, bool)
     
     @pytest.mark.asyncio

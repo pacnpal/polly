@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from polly.database import Base, Poll, Vote, User, UserPreference, Guild, Channel, get_db_session
 from polly.web_app import create_app
 from polly.auth import DiscordUser
+from tests.emoji_utils import get_random_emoji, get_random_emojis, get_random_poll_emojis
 
 
 @pytest.fixture(scope="session")
@@ -210,11 +211,19 @@ def sample_user(db_session):
 @pytest.fixture
 def sample_discord_user():
     """Create a sample DiscordUser for authentication."""
-    return DiscordUser(
-        id="222222222",
-        username="TestUser",
-        avatar="test_avatar_hash"
-    )
+    user_data = {
+        "id": "222222222",
+        "username": "TestUser",
+        "avatar": "test_avatar_hash"
+    }
+    guilds_data = [
+        {
+            "id": "987654321",
+            "name": "Test Server",
+            "permissions": "32"  # Manage Server permission
+        }
+    ]
+    return DiscordUser(user_data, guilds_data)
 
 
 @pytest.fixture
@@ -395,6 +404,75 @@ def emoji_test_cases():
         "duplicate": ["😀", "😀", "😃", "😃"],
         "malformed": ["😀😃", "🎉🔥", "mixed😀text"]
     }
+
+
+@pytest.fixture
+def random_emoji():
+    """Get a single random emoji from the emoji library."""
+    return get_random_emoji()
+
+
+@pytest.fixture
+def random_emojis():
+    """Get multiple random emojis from the emoji library."""
+    return get_random_emojis(4)
+
+
+@pytest.fixture
+def random_poll_emojis():
+    """Get random emojis suitable for poll options."""
+    return get_random_poll_emojis(4)
+
+
+@pytest.fixture
+def sample_poll_data_with_random_emojis():
+    """Sample poll data with random emojis for testing."""
+    random_emojis = get_random_poll_emojis(4)
+    return {
+        "name": "Test Poll with Random Emojis",
+        "question": "What is your favorite option?",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "emojis": random_emojis,
+        "server_id": "987654321",
+        "channel_id": "555555555",
+        "creator_id": "222222222",
+        "open_time": datetime.now(pytz.UTC) + timedelta(hours=1),
+        "close_time": datetime.now(pytz.UTC) + timedelta(hours=25),
+        "timezone": "UTC",
+        "anonymous": False,
+        "multiple_choice": False,
+        "image_path": None,
+        "image_message_text": "",
+        "ping_role_enabled": False,
+        "ping_role_id": None,
+        "ping_role_name": None
+    }
+
+
+@pytest.fixture
+def sample_poll_with_random_emojis(db_session, sample_poll_data_with_random_emojis):
+    """Create a sample poll with random emojis in the database."""
+    poll = Poll(
+        name=sample_poll_data_with_random_emojis["name"],
+        question=sample_poll_data_with_random_emojis["question"],
+        options=sample_poll_data_with_random_emojis["options"],
+        emojis=sample_poll_data_with_random_emojis["emojis"],
+        server_id=sample_poll_data_with_random_emojis["server_id"],
+        server_name="Test Server",
+        channel_id=sample_poll_data_with_random_emojis["channel_id"],
+        channel_name="test-channel",
+        creator_id=sample_poll_data_with_random_emojis["creator_id"],
+        open_time=sample_poll_data_with_random_emojis["open_time"],
+        close_time=sample_poll_data_with_random_emojis["close_time"],
+        timezone=sample_poll_data_with_random_emojis["timezone"],
+        anonymous=sample_poll_data_with_random_emojis["anonymous"],
+        multiple_choice=sample_poll_data_with_random_emojis["multiple_choice"],
+        status="scheduled"
+    )
+    db_session.add(poll)
+    db_session.commit()
+    db_session.refresh(poll)
+    return poll
 
 
 # Monkey patch the database session for testing
