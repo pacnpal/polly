@@ -772,7 +772,70 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
                     "display": tz
                 })
 
-        logger.info(f"🔍 JSON IMPORT - Returning create form with imported data for poll '{poll_name}'")
+        # GRACEFUL SERVER/CHANNEL VALIDATION
+        # Check if the imported server_id is valid for this user
+        imported_server_id = poll_data.get('server_id', '')
+        imported_channel_id = poll_data.get('channel_id', '')
+        validation_warnings = []
+        
+        # Validate server access
+        valid_server = False
+        if imported_server_id:
+            for guild in user_guilds:
+                if guild["id"] == imported_server_id:
+                    valid_server = True
+                    # Check if channel is valid for this server
+                    if imported_channel_id:
+                        valid_channel = any(ch["id"] == imported_channel_id for ch in guild["channels"])
+                        if not valid_channel:
+                            validation_warnings.append(f"Channel from JSON not found in server '{guild['name']}' - please select a new channel")
+                            poll_data['channel_id'] = ''  # Clear invalid channel
+                    break
+            
+            if not valid_server:
+                validation_warnings.append(f"Server from JSON not accessible - please select a server you have access to")
+                poll_data['server_id'] = ''  # Clear invalid server
+                poll_data['channel_id'] = ''  # Clear channel too since server is invalid
+        
+        # Validate role access if role ping is enabled
+        if poll_data.get('ping_role_enabled') and poll_data.get('ping_role_id'):
+            if not imported_server_id or not valid_server:
+                validation_warnings.append("Role ping settings cleared - please select a server first, then choose a role")
+                poll_data['ping_role_enabled'] = False
+                poll_data['ping_role_id'] = ''
+
+        # GRACEFUL EMOJI VALIDATION
+        # Check if imported emojis are valid/accessible
+        imported_emojis = poll_data.get('emojis', [])
+        if imported_emojis and len(imported_emojis) > 0:
+            try:
+                # Quick validation of emojis - check for Discord custom emoji format
+                invalid_emojis = []
+                for i, emoji in enumerate(imported_emojis):
+                    if emoji and isinstance(emoji, str):
+                        # Check if it's a Discord custom emoji format <:name:id> or <a:name:id>
+                        if emoji.startswith('<:') or emoji.startswith('<a:'):
+                            # This is a Discord custom emoji - it might not be accessible
+                            # We'll let the unified emoji processor handle validation later
+                            # but warn the user that custom emojis might not work
+                            if not valid_server:
+                                invalid_emojis.append(f"option {i+1}")
+                
+                if invalid_emojis and not valid_server:
+                    validation_warnings.append(f"Custom emojis from JSON may not work without a valid server - default emojis will be used if needed")
+                elif invalid_emojis and valid_server:
+                    validation_warnings.append(f"Some custom emojis from JSON may not be accessible in the selected server - they will fall back to defaults if needed")
+                    
+            except Exception as e:
+                logger.warning(f"Error validating imported emojis: {e}")
+                validation_warnings.append("Emoji validation encountered issues - default emojis will be used if needed")
+
+        # Create success message with warnings if any
+        success_message = f"JSON imported successfully! Poll '{poll_name}' data has been loaded into the form."
+        if validation_warnings:
+            success_message += "\n\n⚠️ Some settings need your attention:\n• " + "\n• ".join(validation_warnings)
+
+        logger.info(f"🔍 JSON IMPORT - Returning create form with imported data for poll '{poll_name}' (warnings: {len(validation_warnings)})")
         
         # Return the create form directly with the imported JSON data pre-filled
         return templates.TemplateResponse("htmx/create_form_filepond.html", {
@@ -787,7 +850,8 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
             "template_data": poll_data,  # Pass the imported JSON data to pre-fill form
             "is_template": False,
             "is_json_import": True,  # Flag to indicate this is from JSON import
-            "success_message": f"JSON imported successfully! Poll '{poll_name}' data has been loaded into the form."
+            "success_message": success_message,
+            "validation_warnings": validation_warnings  # Pass warnings to template
         })
         
     except Exception as e:
