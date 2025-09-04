@@ -1387,36 +1387,63 @@ async def get_create_form_template_htmx(poll_id: int, request: Request, bot, cur
 
 async def get_channels_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth), preselect_last_channel: bool = True):
     """Get channels for a server as HTML options for HTMX"""
+    logger.debug(f"🔍 CHANNELS DEBUG - User {current_user.id} requesting channels for server {server_id}, preselect_last_channel={preselect_last_channel}")
+    
     if not server_id:
+        logger.debug("🔍 CHANNELS DEBUG - No server_id provided")
         return '<option value="">Select a server first...</option>'
 
-    user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
-    guild = next((g for g in user_guilds if g["id"] == server_id), None)
+    try:
+        user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
+        if not user_guilds:
+            logger.warning(f"🔍 CHANNELS DEBUG - No guilds found for user {current_user.id}")
+            return '<option value="">No servers available...</option>'
+        
+        guild = next((g for g in user_guilds if g["id"] == server_id), None)
 
-    if not guild:
-        return '<option value="">Server not found...</option>'
+        if not guild:
+            logger.warning(f"🔍 CHANNELS DEBUG - Server {server_id} not found for user {current_user.id}")
+            return '<option value="">Server not found...</option>'
 
-    # Get user preferences to potentially pre-select last used channel
-    user_prefs = get_user_preferences(current_user.id)
-    last_channel_id = user_prefs.get("last_channel_id") if preselect_last_channel else None
-    last_server_id = user_prefs.get("last_server_id")
+        logger.debug(f"🔍 CHANNELS DEBUG - Found guild: {guild['name']} with {len(guild['channels'])} channels")
 
-    # Only pre-select the last channel if we're loading the same server as last time
-    # This prevents pre-selecting channels from different servers when switching
-    should_preselect = (preselect_last_channel and
-                        last_channel_id and
-                        last_server_id and
-                        str(server_id) == str(last_server_id))
+        # Get user preferences to potentially pre-select last used channel
+        user_prefs = get_user_preferences(current_user.id)
+        last_channel_id = user_prefs.get("last_channel_id") if preselect_last_channel else None
+        last_server_id = user_prefs.get("last_server_id")
 
-    options = '<option value="">Select a channel...</option>'
-    for channel in guild["channels"]:
-        # HTML escape the channel name to prevent JavaScript syntax errors
-        escaped_channel_name = escape(channel["name"])
-        # Pre-select the last used channel only if it's from the same server
-        selected = 'selected' if should_preselect and channel["id"] == last_channel_id else ''
-        options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
+        # Only pre-select the last channel if we're loading the same server as last time
+        # This prevents pre-selecting channels from different servers when switching
+        should_preselect = (preselect_last_channel and
+                            last_channel_id and
+                            last_server_id and
+                            str(server_id) == str(last_server_id))
 
-    return options
+        logger.debug(f"🔍 CHANNELS DEBUG - Preselection logic: should_preselect={should_preselect}, last_channel_id={last_channel_id}, last_server_id={last_server_id}")
+
+        options = '<option value="">Select a channel...</option>'
+        selected_channel_found = False
+        
+        for channel in guild["channels"]:
+            # HTML escape the channel name to prevent JavaScript syntax errors
+            escaped_channel_name = escape(channel["name"])
+            # Pre-select the last used channel only if it's from the same server
+            selected = 'selected' if should_preselect and channel["id"] == last_channel_id else ''
+            if selected:
+                selected_channel_found = True
+                logger.debug(f"🔍 CHANNELS DEBUG - Pre-selecting channel: #{channel['name']} (ID: {channel['id']})")
+            options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
+
+        if should_preselect and not selected_channel_found and last_channel_id:
+            logger.warning(f"🔍 CHANNELS DEBUG - Last used channel {last_channel_id} not found in server {server_id}")
+
+        logger.debug(f"🔍 CHANNELS DEBUG - Returning {len(guild['channels'])} channel options")
+        return options
+        
+    except Exception as e:
+        logger.error(f"🔍 CHANNELS DEBUG - Error getting channels for server {server_id}: {e}")
+        logger.exception("Full traceback for channels error:")
+        return '<option value="">Error loading channels...</option>'
 
 
 async def get_roles_htmx(server_id: str, bot, current_user: DiscordUser = Depends(require_auth), preselect_last_role: bool = True):

@@ -346,7 +346,7 @@ def add_htmx_routes(app: FastAPI):
         return await get_create_form_template_htmx(poll_id, request, bot, current_user)
 
     @app.get("/htmx/channels", response_class=HTMLResponse)
-    async def htmx_channels(server_id: str, preselect_last_channel: bool = False, current_user: DiscordUser = Depends(require_auth)):
+    async def htmx_channels(server_id: str, preselect_last_channel: bool = True, current_user: DiscordUser = Depends(require_auth)):
         bot = get_bot_instance()
         return await get_channels_htmx(server_id, bot, current_user, preselect_last_channel)
 
