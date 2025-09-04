@@ -427,9 +427,26 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
         db.close()
 
 
-def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
+def format_datetime_for_user(dt, user_timezone: str) -> str:
     """Format datetime in user's timezone for display"""
     try:
+        # Handle string datetime values (from cache or other sources)
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Error parsing datetime string {dt}: {e}")
+                return "Unknown time"
+        
+        # Handle None values
+        if dt is None:
+            return "Unknown time"
+        
+        # Ensure we have a datetime object
+        if not isinstance(dt, datetime):
+            logger.warning(f"Invalid datetime type {type(dt)}: {dt}")
+            return "Unknown time"
+
         if dt.tzinfo is None:
             # Assume UTC if no timezone info
             dt = pytz.UTC.localize(dt)
@@ -442,8 +459,14 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
     except Exception as e:
         logger.error(
             f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
-        # Fallback to UTC
-        return dt.strftime('%b %d, %I:%M %p UTC')
+        # Fallback - try to return something useful
+        try:
+            if isinstance(dt, datetime):
+                return dt.strftime('%b %d, %I:%M %p UTC')
+            else:
+                return str(dt) if dt else "Unknown time"
+        except:
+            return "Unknown time"
 
 
 def get_common_timezones() -> list:
