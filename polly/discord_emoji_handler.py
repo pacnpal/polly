@@ -422,17 +422,26 @@ class DiscordEmojiHandler:
 
     async def get_guild_emoji_list(self, guild_id: int) -> List[Dict[str, Any]]:
         """
-        Get a list of all guild emojis for frontend display
+        Get a list of all guild emojis for frontend display with enhanced caching
 
         Returns:
             List of emoji data dictionaries with name, id, url, animated status
         """
         try:
-            # Debug: Start of emoji list retrieval
-            print(
-                f"🔍 EMOJI HANDLER DEBUG - Starting get_guild_emoji_list for guild {guild_id}")
-            logger.info(
-                f"🔍 EMOJI HANDLER DEBUG - Starting get_guild_emoji_list for guild {guild_id}")
+            # Import enhanced cache service
+            from .enhanced_cache_service import get_enhanced_cache_service
+            enhanced_cache = get_enhanced_cache_service()
+            
+            # Check cache first (1 hour TTL to prevent Discord rate limiting)
+            cached_emojis = await enhanced_cache.get_cached_guild_emojis_extended(str(guild_id))
+            if cached_emojis:
+                logger.info(f"🚀 EMOJI CACHE HIT - Retrieved {len(cached_emojis)} cached emojis for guild {guild_id}")
+                print(f"🚀 EMOJI CACHE HIT - Retrieved {len(cached_emojis)} cached emojis for guild {guild_id}")
+                return cached_emojis
+
+            # Cache miss - fetch from Discord API
+            logger.info(f"🔍 EMOJI CACHE MISS - Fetching emojis from Discord API for guild {guild_id}")
+            print(f"🔍 EMOJI CACHE MISS - Fetching emojis from Discord API for guild {guild_id}")
 
             # Debug: Check bot availability
             if not self.bot:
@@ -440,18 +449,11 @@ class DiscordEmojiHandler:
                 logger.error("❌ EMOJI HANDLER DEBUG - Bot instance is None")
                 return []
 
-            print(
-                "✅ EMOJI HANDLER DEBUG - Bot instance available, getting guild emojis...")
-            logger.info(
-                "✅ EMOJI HANDLER DEBUG - Bot instance available, getting guild emojis...")
-
             guild_emojis = await self.get_guild_emojis(guild_id)
 
             # Debug: Log emoji retrieval results
-            print(
-                f"📊 EMOJI HANDLER DEBUG - Retrieved {len(guild_emojis)} raw guild emojis")
-            logger.info(
-                f"📊 EMOJI HANDLER DEBUG - Retrieved {len(guild_emojis)} raw guild emojis")
+            print(f"📊 EMOJI HANDLER DEBUG - Retrieved {len(guild_emojis)} raw guild emojis")
+            logger.info(f"📊 EMOJI HANDLER DEBUG - Retrieved {len(guild_emojis)} raw guild emojis")
 
             emoji_list = []
             for i, emoji in enumerate(guild_emojis):
@@ -466,46 +468,22 @@ class DiscordEmojiHandler:
                     }
                     emoji_list.append(emoji_data)
 
-                    # Debug: Log each emoji being processed
-                    print(
-                        f"✨ EMOJI HANDLER DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, Animated: {emoji.animated}, Usable: {emoji.is_usable()})")
-                    logger.info(
-                        f"✨ EMOJI HANDLER DEBUG - Emoji {i+1}: {emoji.name} (ID: {emoji.id}, Animated: {emoji.animated}, Usable: {emoji.is_usable()})")
-
                 except Exception as emoji_error:
-                    print(
-                        f"❌ EMOJI HANDLER DEBUG - Error processing emoji {i+1}: {emoji_error}")
-                    logger.error(
-                        f"❌ EMOJI HANDLER DEBUG - Error processing emoji {i+1}: {emoji_error}")
+                    logger.error(f"Error processing emoji {i+1}: {emoji_error}")
                     continue
 
-            # Debug: Final results
-            print(
-                f"🎯 EMOJI HANDLER DEBUG - Final emoji list contains {len(emoji_list)} processed emojis")
-            logger.info(
-                f"🎯 EMOJI HANDLER DEBUG - Final emoji list contains {len(emoji_list)} processed emojis")
-
-            # Debug: Log sample of emoji data structure
+            # Cache the results for 1 hour to prevent Discord rate limiting
             if emoji_list:
-                sample_emoji = emoji_list[0]
-                print(
-                    f"📋 EMOJI HANDLER DEBUG - Sample emoji data structure: {sample_emoji}")
-                logger.info(
-                    f"📋 EMOJI HANDLER DEBUG - Sample emoji data structure: {sample_emoji}")
-            else:
-                print("⚠️ EMOJI HANDLER DEBUG - No emojis in final list")
-                logger.info(
-                    "⚠️ EMOJI HANDLER DEBUG - No emojis in final list")
+                await enhanced_cache.cache_guild_emojis_extended(str(guild_id), emoji_list)
+                logger.info(f"💾 EMOJI CACHED - Stored {len(emoji_list)} emojis for guild {guild_id} with 1h TTL")
+                print(f"💾 EMOJI CACHED - Stored {len(emoji_list)} emojis for guild {guild_id} with 1h TTL")
 
-            logger.debug(
-                f"Retrieved {len(emoji_list)} emojis for guild {guild_id}")
+            logger.debug(f"Retrieved {len(emoji_list)} emojis for guild {guild_id}")
             return emoji_list
 
         except Exception as e:
-            print(
-                f"💥 EMOJI HANDLER DEBUG - Exception in get_guild_emoji_list: {e}")
-            logger.error(
-                f"💥 EMOJI HANDLER DEBUG - Exception in get_guild_emoji_list: {e}")
+            print(f"💥 EMOJI HANDLER DEBUG - Exception in get_guild_emoji_list: {e}")
+            logger.error(f"💥 EMOJI HANDLER DEBUG - Exception in get_guild_emoji_list: {e}")
             logger.error(f"Error getting emoji list for guild {guild_id}: {e}")
             return []
 

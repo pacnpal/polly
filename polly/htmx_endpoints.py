@@ -2516,7 +2516,22 @@ async def get_poll_results_realtime_htmx(poll_id: int, request: Request, current
 
 
 async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
-    """Get poll dashboard with spreadsheet-style live results for HTMX"""
+    """Get poll dashboard with spreadsheet-style live results for HTMX with enhanced caching"""
+    from .enhanced_cache_service import get_enhanced_cache_service
+    enhanced_cache = get_enhanced_cache_service()
+    
+    # Check cache first (15 second TTL for dashboard data)
+    cached_dashboard = await enhanced_cache.get_cached_poll_dashboard(poll_id)
+    if cached_dashboard:
+        logger.debug(f"🚀 DASHBOARD CACHE HIT - Retrieved cached dashboard for poll {poll_id}")
+        return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
+            "request": request,
+            **cached_dashboard
+        })
+    
+    # Cache miss - generate dashboard data
+    logger.debug(f"🔍 DASHBOARD CACHE MISS - Generating dashboard for poll {poll_id}")
+    
     db = get_db_session()
     try:
         poll = db.query(Poll).filter(Poll.id == poll_id,
@@ -2539,7 +2554,7 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         # This allows poll creators to see who voted while maintaining anonymity for other users
         show_usernames_to_creator = True
         
-        # Prepare vote data with Discord usernames
+        # Prepare vote data with Discord usernames (with caching)
         vote_data = []
         unique_users = set()
         
@@ -2549,19 +2564,34 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
                 option_index = TypeSafeColumn.get_int(vote, 'option_index')
                 voted_at = TypeSafeColumn.get_datetime(vote, 'voted_at')
                 
-                # Get Discord user information
+                # Get Discord user information with caching
                 username = "Unknown User"
                 avatar_url = None
                 
                 if bot and user_id:
-                    try:
-                        discord_user = await bot.fetch_user(int(user_id))
-                        if discord_user:
-                            username = discord_user.display_name or discord_user.name
-                            avatar_url = discord_user.avatar.url if discord_user.avatar else None
-                    except Exception as e:
-                        logger.warning(f"Could not fetch Discord user {user_id}: {e}")
-                        username = f"User {user_id[:8]}..."
+                    # Check cache for Discord user data first
+                    cached_user = await enhanced_cache.get_cached_discord_user(user_id)
+                    if cached_user:
+                        username = cached_user.get('username', 'Unknown User')
+                        avatar_url = cached_user.get('avatar_url')
+                    else:
+                        # Fetch from Discord API and cache
+                        try:
+                            discord_user = await bot.fetch_user(int(user_id))
+                            if discord_user:
+                                username = discord_user.display_name or discord_user.name
+                                avatar_url = discord_user.avatar.url if discord_user.avatar else None
+                                
+                                # Cache Discord user data for 30 minutes
+                                user_data = {
+                                    'username': username,
+                                    'avatar_url': avatar_url,
+                                    'cached_at': datetime.now().isoformat()
+                                }
+                                await enhanced_cache.cache_discord_user(user_id, user_data)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch Discord user {user_id}: {e}")
+                            username = f"User {user_id[:8]}..."
                 
                 # Get option details
                 option_text = options[option_index] if option_index < len(options) else "Unknown Option"
@@ -2589,8 +2619,8 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         unique_voters = len(unique_users)
         results = poll.get_results()
         
-        return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
-            "request": request,
+        # Prepare dashboard data for caching
+        dashboard_data = {
             "poll": poll,
             "vote_data": vote_data,
             "total_votes": total_votes,
@@ -2601,6 +2631,15 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
             "is_anonymous": is_anonymous,
             "show_usernames_to_creator": show_usernames_to_creator,
             "format_datetime_for_user": format_datetime_for_user
+        }
+        
+        # Cache dashboard data for 15 seconds
+        await enhanced_cache.cache_poll_dashboard(poll_id, dashboard_data)
+        logger.debug(f"💾 DASHBOARD CACHED - Stored dashboard for poll {poll_id} with 15s TTL")
+        
+        return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
+            "request": request,
+            **dashboard_data
         })
 
     except Exception as e:
