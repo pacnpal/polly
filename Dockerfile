@@ -26,15 +26,15 @@ RUN mkdir -p static/uploads logs data
 EXPOSE 8000
 
 # User change
-RUN adduser --disabled-password --gecos "" xyn0th
-RUN chown -R xyn0th:xyn0th /app/static/uploads /app/logs /app/data /app/static /app
+RUN adduser --disabled-password --gecos "" polly
+RUN chown -R polly:polly /app/static/uploads /app/logs /app/data /app/static /app
 RUN chmod -R 755 /app/static/uploads /app/logs /app/data /app/static
-USER xyn0th
+USER polly
 
 # Create entrypoint script
 COPY docker-entrypoint.sh ./
 USER root
 RUN chmod +x docker-entrypoint.sh
-USER xyn0th
+USER polly
 # Run the application with migration
 CMD ["./docker-entrypoint.sh"]
