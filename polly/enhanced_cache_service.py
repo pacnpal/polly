@@ -76,21 +76,52 @@ class EnhancedCacheService(CacheService):
     # Poll Dashboard Caching
     async def cache_poll_dashboard(self, poll_id: int, dashboard_data: Dict[str, Any]) -> bool:
         """Cache poll dashboard data with moderate TTL"""
+        logger.info(f"🔍 CACHE DEBUG - Attempting to cache dashboard for poll {poll_id}")
+        logger.info(f"🔍 CACHE DEBUG - Dashboard data keys: {list(dashboard_data.keys())}")
+        logger.info(f"🔍 CACHE DEBUG - Dashboard data total_votes: {dashboard_data.get('total_votes', 'NOT_FOUND')}")
+        logger.info(f"🔍 CACHE DEBUG - Dashboard data unique_voters: {dashboard_data.get('unique_voters', 'NOT_FOUND')}")
+        logger.info(f"🔍 CACHE DEBUG - Dashboard data results: {dashboard_data.get('results', 'NOT_FOUND')}")
+        logger.info(f"🔍 CACHE DEBUG - Dashboard data vote_data length: {len(dashboard_data.get('vote_data', []))}")
+        
         redis_client = await self._get_redis()
         if not redis_client:
+            logger.error(f"🔍 CACHE DEBUG - Redis client not available for poll {poll_id}")
             return False
         
         cache_key = f"poll_dashboard:{poll_id}"
-        return await redis_client.cache_set(cache_key, dashboard_data, self.poll_dashboard_ttl)
+        logger.info(f"🔍 CACHE DEBUG - Using cache key: {cache_key}")
+        logger.info(f"🔍 CACHE DEBUG - Cache TTL: {self.poll_dashboard_ttl} seconds")
+        
+        result = await redis_client.cache_set(cache_key, dashboard_data, self.poll_dashboard_ttl)
+        logger.info(f"🔍 CACHE DEBUG - Cache set result for poll {poll_id}: {result}")
+        
+        return result
     
     async def get_cached_poll_dashboard(self, poll_id: int) -> Optional[Dict[str, Any]]:
         """Get cached poll dashboard data"""
+        logger.info(f"🔍 CACHE DEBUG - Attempting to retrieve cached dashboard for poll {poll_id}")
+        
         redis_client = await self._get_redis()
         if not redis_client:
+            logger.error(f"🔍 CACHE DEBUG - Redis client not available for poll {poll_id}")
             return None
         
         cache_key = f"poll_dashboard:{poll_id}"
-        return await redis_client.cache_get(cache_key)
+        logger.info(f"🔍 CACHE DEBUG - Using cache key: {cache_key}")
+        
+        cached_data = await redis_client.cache_get(cache_key)
+        
+        if cached_data:
+            logger.info(f"🔍 CACHE DEBUG - Cache HIT for poll {poll_id}")
+            logger.info(f"🔍 CACHE DEBUG - Retrieved data keys: {list(cached_data.keys())}")
+            logger.info(f"🔍 CACHE DEBUG - Retrieved total_votes: {cached_data.get('total_votes', 'NOT_FOUND')}")
+            logger.info(f"🔍 CACHE DEBUG - Retrieved unique_voters: {cached_data.get('unique_voters', 'NOT_FOUND')}")
+            logger.info(f"🔍 CACHE DEBUG - Retrieved results: {cached_data.get('results', 'NOT_FOUND')}")
+            logger.info(f"🔍 CACHE DEBUG - Retrieved vote_data length: {len(cached_data.get('vote_data', []))}")
+        else:
+            logger.info(f"🔍 CACHE DEBUG - Cache MISS for poll {poll_id}")
+        
+        return cached_data
     
     async def invalidate_poll_dashboard(self, poll_id: int) -> bool:
         """Invalidate cached poll dashboard data"""

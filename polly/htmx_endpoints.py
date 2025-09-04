@@ -2543,10 +2543,17 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
     from .enhanced_cache_service import get_enhanced_cache_service
     enhanced_cache = get_enhanced_cache_service()
     
+    logger.info(f"🔍 DASHBOARD DEBUG - Starting dashboard request for poll {poll_id} by user {current_user.id}")
+    
     # Check cache first (15 second TTL for dashboard data)
     cached_dashboard = await enhanced_cache.get_cached_poll_dashboard(poll_id)
     if cached_dashboard:
-        logger.debug(f"🚀 DASHBOARD CACHE HIT - Retrieved cached dashboard for poll {poll_id}")
+        logger.info(f"🚀 DASHBOARD CACHE HIT - Retrieved cached dashboard for poll {poll_id}")
+        logger.info(f"🔍 DASHBOARD DEBUG - Cached data keys: {list(cached_dashboard.keys())}")
+        logger.info(f"🔍 DASHBOARD DEBUG - Cached total_votes: {cached_dashboard.get('total_votes', 'NOT_FOUND')}")
+        logger.info(f"🔍 DASHBOARD DEBUG - Cached unique_voters: {cached_dashboard.get('unique_voters', 'NOT_FOUND')}")
+        logger.info(f"🔍 DASHBOARD DEBUG - Cached results: {cached_dashboard.get('results', 'NOT_FOUND')}")
+        logger.info(f"🔍 DASHBOARD DEBUG - Cached vote_data length: {len(cached_dashboard.get('vote_data', []))}")
         
         # We still need to get the Poll object for the template since it's not cached
         db = get_db_session()
@@ -2554,17 +2561,22 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
             poll = db.query(Poll).filter(Poll.id == poll_id,
                                          Poll.creator_id == current_user.id).first()
             if not poll:
+                logger.error(f"🔍 DASHBOARD DEBUG - Poll {poll_id} not found or access denied for user {current_user.id}")
                 return templates.TemplateResponse("htmx/components/inline_error.html", {
                     "request": request,
                     "message": "Poll not found or access denied"
                 })
+            
+            logger.info(f"🔍 DASHBOARD DEBUG - Poll object retrieved: {poll.id}")
             
             # Convert cached vote data back to template-friendly format
             # The cached data has ISO strings, but templates need datetime objects
             cached_vote_data = cached_dashboard.get("vote_data", [])
             template_vote_data = []
             
-            for vote in cached_vote_data:
+            logger.info(f"🔍 DASHBOARD DEBUG - Processing {len(cached_vote_data)} cached votes")
+            
+            for i, vote in enumerate(cached_vote_data):
                 template_vote = vote.copy()
                 # Convert ISO string back to datetime object for template use
                 if vote.get('voted_at'):
@@ -2576,11 +2588,30 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
                 else:
                     template_vote['voted_at'] = None
                 template_vote_data.append(template_vote)
+                
+                if i < 3:  # Log first 3 votes for debugging
+                    logger.info(f"🔍 DASHBOARD DEBUG - Vote {i+1}: user_id={vote.get('user_id', 'MISSING')}, option_index={vote.get('option_index', 'MISSING')}")
             
             # Always calculate fresh summary statistics from the Poll model to avoid cache corruption
+            logger.info(f"🔍 DASHBOARD DEBUG - Calculating fresh summary statistics")
             fresh_total_votes = poll.get_total_votes()
             fresh_unique_voters = len(set(vote['user_id'] for vote in template_vote_data))
             fresh_results = poll.get_results()
+            
+            logger.info(f"🔍 DASHBOARD DEBUG - Fresh calculations:")
+            logger.info(f"🔍 DASHBOARD DEBUG - fresh_total_votes: {fresh_total_votes}")
+            logger.info(f"🔍 DASHBOARD DEBUG - fresh_unique_voters: {fresh_unique_voters}")
+            logger.info(f"🔍 DASHBOARD DEBUG - fresh_results: {fresh_results}")
+            
+            # Compare with cached values
+            cached_total = cached_dashboard.get('total_votes', 'NOT_FOUND')
+            cached_unique = cached_dashboard.get('unique_voters', 'NOT_FOUND')
+            cached_results = cached_dashboard.get('results', 'NOT_FOUND')
+            
+            logger.info(f"🔍 DASHBOARD DEBUG - Comparison with cached values:")
+            logger.info(f"🔍 DASHBOARD DEBUG - total_votes: fresh={fresh_total_votes} vs cached={cached_total}")
+            logger.info(f"🔍 DASHBOARD DEBUG - unique_voters: fresh={fresh_unique_voters} vs cached={cached_unique}")
+            logger.info(f"🔍 DASHBOARD DEBUG - results: fresh={fresh_results} vs cached={cached_results}")
             
             # Add the non-cacheable objects to the cached data, but use fresh summary stats
             template_data = {
@@ -2592,6 +2623,12 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
                 "format_datetime_for_user": format_datetime_for_user,
                 **{k: v for k, v in cached_dashboard.items() if k not in ["vote_data", "total_votes", "unique_voters", "results"]}  # Exclude vote_data and summary stats
             }
+            
+            logger.info(f"🔍 DASHBOARD DEBUG - Final template_data summary:")
+            logger.info(f"🔍 DASHBOARD DEBUG - template_data total_votes: {template_data.get('total_votes', 'MISSING')}")
+            logger.info(f"🔍 DASHBOARD DEBUG - template_data unique_voters: {template_data.get('unique_voters', 'MISSING')}")
+            logger.info(f"🔍 DASHBOARD DEBUG - template_data results: {template_data.get('results', 'MISSING')}")
+            logger.info(f"🔍 DASHBOARD DEBUG - template_data vote_data length: {len(template_data.get('vote_data', []))}")
             
             return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
                 "request": request,
