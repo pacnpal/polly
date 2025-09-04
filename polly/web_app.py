@@ -243,7 +243,11 @@ def add_exception_handlers(app: FastAPI):
             client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
                        request.headers.get("X-Real-IP", "") or \
                        (request.client.host if request.client else "unknown")
-            logger.warning(f"HTTP {exc.status_code} blocked request from {client_ip}: {request.url.path}")
+            # Log rate limiting (429) as info, security blocks (403) as warning
+            if exc.status_code == 429:
+                logger.info(f"HTTP {exc.status_code} blocked request from {client_ip}: {request.url.path}")
+            else:
+                logger.warning(f"HTTP {exc.status_code} blocked request from {client_ip}: {request.url.path}")
         
         # Return JSON response for API endpoints, HTML for web pages
         if request.url.path.startswith("/htmx/") or request.url.path.startswith("/api/"):
