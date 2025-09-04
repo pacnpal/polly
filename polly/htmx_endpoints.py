@@ -2536,11 +2536,30 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
                     "message": "Poll not found or access denied"
                 })
             
+            # Convert cached vote data back to template-friendly format
+            # The cached data has ISO strings, but templates need datetime objects
+            cached_vote_data = cached_dashboard.get("vote_data", [])
+            template_vote_data = []
+            
+            for vote in cached_vote_data:
+                template_vote = vote.copy()
+                # Convert ISO string back to datetime object for template use
+                if vote.get('voted_at'):
+                    try:
+                        template_vote['voted_at'] = datetime.fromisoformat(vote['voted_at'].replace('Z', '+00:00'))
+                    except (ValueError, AttributeError) as e:
+                        logger.warning(f"Error parsing cached datetime {vote.get('voted_at')}: {e}")
+                        template_vote['voted_at'] = None
+                else:
+                    template_vote['voted_at'] = None
+                template_vote_data.append(template_vote)
+            
             # Add the non-cacheable objects to the cached data
             template_data = {
                 "poll": poll,
+                "vote_data": template_vote_data,  # Use converted vote data with datetime objects
                 "format_datetime_for_user": format_datetime_for_user,
-                **cached_dashboard
+                **{k: v for k, v in cached_dashboard.items() if k != "vote_data"}  # Exclude original vote_data
             }
             
             return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
