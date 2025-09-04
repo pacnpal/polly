@@ -61,11 +61,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         hour_count = len(self.hour_requests[client_ip])
         
         if minute_count >= self.requests_per_minute:
-            logger.warning(f"Rate limit exceeded (per minute) for IP {client_ip}: {minute_count} requests")
+            logger.info(f"Rate limit exceeded (per minute) for IP {client_ip}: {minute_count} requests")
             return True
         
         if hour_count >= self.requests_per_hour:
-            logger.warning(f"Rate limit exceeded (per hour) for IP {client_ip}: {hour_count} requests")
+            logger.info(f"Rate limit exceeded (per hour) for IP {client_ip}: {hour_count} requests")
             return True
         
         # Add current request
@@ -85,7 +85,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             client_ip = self.get_client_ip(request)
             
             if self.is_rate_limited(client_ip):
-                logger.warning(f"Rate limit exceeded for {client_ip} on {request.url.path}")
+                logger.info(f"Rate limit exceeded for {client_ip} on {request.url.path}")
                 from fastapi.responses import JSONResponse
                 return JSONResponse(
                     status_code=429,
