@@ -1030,21 +1030,25 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
                             logger.warning(f"🔍 JSON IMPORT VALIDATION - ❌ Channel access INVALID: {imported_channel_id} not found in server {server_name}")
                             print(f"🔍 JSON IMPORT VALIDATION - ❌ Channel access INVALID: {imported_channel_id} not found in server {server_name}")
                             validation_warnings.append(f"Channel from JSON not found in server '{server_name}' - please select a new channel")
-                            poll_data['channel_id'] = ''  # Clear ONLY invalid channel, keep valid server
+                            
+                            # Reset channel to match new form default exactly (server remains valid)
+                            poll_data['channel_id'] = ''  # This matches: <option value="">Select a channel...</option>
                     break
             
-            if not valid_server:
-                logger.warning(f"🔍 JSON IMPORT VALIDATION - ❌ Server access INVALID: {imported_server_id} not accessible to user")
-                print(f"🔍 JSON IMPORT VALIDATION - ❌ Server access INVALID: {imported_server_id} not accessible to user")
-                validation_warnings.append(f"Server from JSON not accessible - please select a server you have access to")
-                poll_data['server_id'] = ''  # Clear invalid server
-                poll_data['channel_id'] = ''  # Clear channel too since server is invalid
-                
-                # Also clear role ping settings since server is invalid
-                if poll_data.get('ping_role_enabled'):
-                    validation_warnings.append("Role ping settings cleared - server from JSON not accessible")
-                    poll_data['ping_role_enabled'] = False
-                    poll_data['ping_role_id'] = ''
+        if not valid_server:
+            logger.warning(f"🔍 JSON IMPORT VALIDATION - ❌ Server access INVALID: {imported_server_id} not accessible to user")
+            print(f"🔍 JSON IMPORT VALIDATION - ❌ Server access INVALID: {imported_server_id} not accessible to user")
+            validation_warnings.append(f"Server from JSON not accessible - please select a server you have access to")
+            
+            # Reset server and channel to match new form defaults exactly
+            poll_data['server_id'] = ''  # This matches: <option value="">Select a server...</option>
+            poll_data['channel_id'] = ''  # This matches: <option value="">Select a server first...</option>
+            
+            # Also clear role ping settings since server is invalid
+            if poll_data.get('ping_role_enabled'):
+                validation_warnings.append("Role ping settings cleared - server from JSON not accessible")
+                poll_data['ping_role_enabled'] = False
+                poll_data['ping_role_id'] = ''
         
         # Validate role access if role ping is enabled (only if server is valid)
         if poll_data.get('ping_role_enabled') and poll_data.get('ping_role_id') and valid_server:
