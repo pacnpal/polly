@@ -25,6 +25,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - polly-network
   redis:
     image: redis:7-alpine
     container_name: polly-redis
