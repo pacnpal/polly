@@ -24,8 +24,8 @@ from .auth import (
 from .security_middleware import (
     RateLimitMiddleware, SecurityHeadersMiddleware
 )
-from .enhanced_security_middleware import (
-    EnhancedSecurityMiddleware
+from .turnstile_middleware import (
+    TurnstileSecurityMiddleware
 )
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
@@ -216,7 +216,7 @@ def create_app() -> FastAPI:
     add_exception_handlers(app)
 
     # Add security middleware (order matters - add in reverse order of execution)
-    app.add_middleware(EnhancedSecurityMiddleware)
+    app.add_middleware(TurnstileSecurityMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RateLimitMiddleware, requests_per_minute=60, requests_per_hour=1000)
 

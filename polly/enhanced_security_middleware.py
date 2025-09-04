@@ -18,6 +18,20 @@ class EnhancedSecurityMiddleware(BaseHTTPMiddleware):
     This replaces the separate AttackBlockingMiddleware and enhances InputSanitizationMiddleware.
     """
     
+    # Trusted IPs that should never be blocked (add your IPs here)
+    TRUSTED_IPS: Set[str] = {
+        "68.58.147.115",  # User's IP
+        "127.0.0.1",      # Localhost
+        "::1",            # IPv6 localhost
+    }
+    
+    # Endpoints that are expected to have high traffic and should be excluded from rate limiting
+    HIGH_TRAFFIC_ENDPOINTS: Set[str] = {
+        "/htmx/polls-realtime",
+        "/health",
+        "/static/",
+    }
+    
     # Known malicious paths that should be blocked immediately
     BLOCKED_PATHS: Set[str] = {
         # PHPUnit RCE paths
@@ -191,7 +205,15 @@ class EnhancedSecurityMiddleware(BaseHTTPMiddleware):
             
             client_ip = self.get_client_ip(request)
             
-            # Check if IP is already blocked
+            # Check if this is a trusted IP - if so, skip all security checks
+            if client_ip in self.TRUSTED_IPS:
+                logger.debug(f"Trusted IP access: {client_ip} -> {request.url.path}")
+                return await call_next(request)
+            
+            # Check if this is a high-traffic endpoint - skip rate limiting but still check for attacks
+            is_high_traffic = any(request.url.path.startswith(endpoint) for endpoint in self.HIGH_TRAFFIC_ENDPOINTS)
+            
+            # Check if IP is already blocked (but not for trusted IPs)
             from .ip_blocker import get_ip_blocker
             ip_blocker = get_ip_blocker()
             
@@ -210,10 +232,13 @@ class EnhancedSecurityMiddleware(BaseHTTPMiddleware):
                 # Log with appropriate level - WARNING will trigger your notification system
                 logger.warning(f"SECURITY BLOCK [{severity}] from {client_ip}: {reason}")
                 
-                # Record violation and potentially block IP
-                should_block = ip_blocker.record_violation(client_ip, severity)
-                if should_block:
-                    logger.critical(f"IP {client_ip} has been BLOCKED due to repeated violations")
+                # Record violation and potentially block IP (but not for high-traffic endpoints)
+                if not is_high_traffic:
+                    should_block = ip_blocker.record_violation(client_ip, severity)
+                    if should_block:
+                        logger.critical(f"IP {client_ip} has been BLOCKED due to repeated violations")
+                else:
+                    logger.info(f"High-traffic endpoint violation not counted: {client_ip} -> {request.url.path}")
                 
                 # Return 403 Forbidden for blocked requests
                 from fastapi.responses import JSONResponse
