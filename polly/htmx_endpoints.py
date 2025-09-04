@@ -2577,12 +2577,20 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
                     template_vote['voted_at'] = None
                 template_vote_data.append(template_vote)
             
-            # Add the non-cacheable objects to the cached data
+            # Always calculate fresh summary statistics from the Poll model to avoid cache corruption
+            fresh_total_votes = poll.get_total_votes()
+            fresh_unique_voters = len(set(vote['user_id'] for vote in template_vote_data))
+            fresh_results = poll.get_results()
+            
+            # Add the non-cacheable objects to the cached data, but use fresh summary stats
             template_data = {
                 "poll": poll,
                 "vote_data": template_vote_data,  # Use converted vote data with datetime objects
+                "total_votes": fresh_total_votes,  # Always use fresh calculation
+                "unique_voters": fresh_unique_voters,  # Always use fresh calculation
+                "results": fresh_results,  # Always use fresh calculation
                 "format_datetime_for_user": format_datetime_for_user,
-                **{k: v for k, v in cached_dashboard.items() if k != "vote_data"}  # Exclude original vote_data
+                **{k: v for k, v in cached_dashboard.items() if k not in ["vote_data", "total_votes", "unique_voters", "results"]}  # Exclude vote_data and summary stats
             }
             
             return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
