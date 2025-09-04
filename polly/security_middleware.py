@@ -131,50 +131,5 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class InputSanitizationMiddleware(BaseHTTPMiddleware):
-    """Sanitize and validate input data"""
-    
-    SUSPICIOUS_PATTERNS = [
-        # SQL injection patterns
-        r"(?i)(union\s+select|drop\s+table|delete\s+from|insert\s+into)",
-        # XSS patterns
-        r"(?i)(<script|javascript:|on\w+\s*=)",
-        # Command injection patterns
-        r"(?i)(;|\||&|`|\$\(|\${)",
-        # Path traversal patterns
-        r"(\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e%5c)",
-    ]
-    
-    def is_suspicious_input(self, value: str) -> bool:
-        """Check if input contains suspicious patterns"""
-        import re
-        
-        if not isinstance(value, str):
-            return False
-        
-        for pattern in self.SUSPICIOUS_PATTERNS:
-            if re.search(pattern, value):
-                return True
-        
-        return False
-    
-    async def dispatch(self, request: Request, call_next):
-        """Validate input data"""
-        # Skip validation for static files and health checks
-        if (request.url.path.startswith("/static/") or 
-            request.url.path == "/health"):
-            return await call_next(request)
-        
-        # Check query parameters
-        for key, value in request.query_params.items():
-            if self.is_suspicious_input(str(value)):
-                logger.warning(f"Suspicious query parameter detected: {key}={value}")
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid input detected"
-                )
-        
-        # For POST requests, we'll let the individual endpoints handle form validation
-        # since they have more context about what's expected
-        
-        return await call_next(request)
+# InputSanitizationMiddleware has been consolidated into EnhancedSecurityMiddleware
+# in enhanced_security_middleware.py to avoid duplication and improve efficiency
