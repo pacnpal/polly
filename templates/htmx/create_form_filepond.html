@@ -46,7 +46,7 @@
                         <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
                         <select class="form-select" id="server-select" name="server_id" required
                                 hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
-                                hx-trigger="change, load, htmx:afterSwap">
+                                hx-trigger="change">
                             <option value="">Select a server...</option>
                             {% for guild in guilds %}
                             <option value="{{ guild.id }}" {% if (template_data and guild.id|string == template_data.server_id|string) or (not template_data and user_preferences and guild.id|string == user_preferences.last_server_id|string) %}selected{% endif %}>{{ guild.name|e }}</option>
@@ -615,7 +615,7 @@
             }
         });
 
-        // Handle intelligent channel pre-selection
+        // Handle intelligent channel pre-selection and initial channel loading
         let isInitialLoad = true;
         
         if (serverSelectElement) {
@@ -631,6 +631,51 @@
                     isInitialLoad = false;
                 }
             });
+            
+            // CRITICAL: Load channels immediately if server is already selected (JSON import scenario)
+            function loadChannelsIfServerSelected() {
+                const currentServerId = serverSelectElement.value;
+                const channelSelect = document.getElementById('channel-select');
+                
+                console.log('🔍 CHANNEL LOAD DEBUG - Checking if channels need to be loaded');
+                console.log('🔍 CHANNEL LOAD DEBUG - Current server ID:', currentServerId);
+                console.log('🔍 CHANNEL LOAD DEBUG - Channel select children count:', channelSelect ? channelSelect.children.length : 'null');
+                
+                if (currentServerId && channelSelect && channelSelect.children.length <= 1) {
+                    console.log('🔍 CHANNEL LOAD DEBUG - Server selected but no channels loaded, triggering load');
+                    
+                    // Use HTMX to load channels
+                    if (typeof htmx !== 'undefined') {
+                        console.log('🔍 CHANNEL LOAD DEBUG - Using HTMX to load channels');
+                        htmx.ajax('GET', `/htmx/channels?server_id=${currentServerId}&preselect_last_channel=true`, {
+                            target: '#channel-select',
+                            swap: 'innerHTML'
+                        });
+                    } else {
+                        console.log('🔍 CHANNEL LOAD DEBUG - HTMX not available, using fetch fallback');
+                        // Fallback to fetch if HTMX is not available
+                        fetch(`/htmx/channels?server_id=${currentServerId}&preselect_last_channel=true`)
+                            .then(response => response.text())
+                            .then(html => {
+                                channelSelect.innerHTML = html;
+                                console.log('🔍 CHANNEL LOAD DEBUG - Channels loaded via fetch');
+                            })
+                            .catch(error => {
+                                console.error('🔍 CHANNEL LOAD DEBUG - Error loading channels via fetch:', error);
+                            });
+                    }
+                } else if (currentServerId && channelSelect && channelSelect.children.length > 1) {
+                    console.log('🔍 CHANNEL LOAD DEBUG - Server selected and channels already loaded');
+                } else {
+                    console.log('🔍 CHANNEL LOAD DEBUG - No server selected or channel select not found');
+                }
+            }
+            
+            // Load channels on initial page load if server is pre-selected
+            setTimeout(loadChannelsIfServerSelected, 100);
+            
+            // Also try again after a longer delay in case the first attempt was too early
+            setTimeout(loadChannelsIfServerSelected, 500);
         }
 
         // Time validation
