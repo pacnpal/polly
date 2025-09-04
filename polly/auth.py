@@ -18,7 +18,8 @@ from .database import get_db_session, User
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 DISCORD_REDIRECT_URI = os.getenv(
-    "DISCORD_REDIRECT_URI", "http://localhost:8000/auth/callback")
+    "DISCORD_REDIRECT_URI", "http://localhost:8000/auth/callback"
+)
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this")
 
 # Discord API endpoints
@@ -65,8 +66,7 @@ class DiscordUser:
 def is_admin(member: discord.Member) -> bool:
     """Check if Discord member has admin permissions"""
     return (
-        member.guild_permissions.administrator or
-        member.guild_permissions.manage_guild
+        member.guild_permissions.administrator or member.guild_permissions.manage_guild
     )
 
 
@@ -76,7 +76,7 @@ def get_discord_oauth_url() -> str:
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": DISCORD_REDIRECT_URI,
         "response_type": "code",
-        "scope": "identify guilds"
+        "scope": "identify guilds",
     }
     query_string = "&".join([f"{k}={v}" for k, v in params.items()])
     return f"{DISCORD_OAUTH_URL}?{query_string}"
@@ -89,7 +89,7 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
         "client_secret": DISCORD_CLIENT_SECRET,
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": DISCORD_REDIRECT_URI
+        "redirect_uri": DISCORD_REDIRECT_URI,
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
@@ -97,7 +97,8 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
         response = await client.post(DISCORD_TOKEN_URL, data=data, headers=headers)
         if response.status_code != 200:
             raise HTTPException(
-                status_code=400, detail="Failed to exchange code for token")
+                status_code=400, detail="Failed to exchange code for token"
+            )
         return response.json()
 
 
@@ -109,15 +110,13 @@ async def get_discord_user(access_token: str) -> DiscordUser:
         # Get user info
         user_response = await client.get(DISCORD_USER_URL, headers=headers)
         if user_response.status_code != 200:
-            raise HTTPException(
-                status_code=400, detail="Failed to get user info")
+            raise HTTPException(status_code=400, detail="Failed to get user info")
         user_data = user_response.json()
 
         # Get user guilds
         guilds_response = await client.get(DISCORD_GUILDS_URL, headers=headers)
         if guilds_response.status_code != 200:
-            raise HTTPException(
-                status_code=400, detail="Failed to get user guilds")
+            raise HTTPException(status_code=400, detail="Failed to get user guilds")
         guilds_data = guilds_response.json()
 
         return DiscordUser(user_data, guilds_data)
@@ -130,7 +129,7 @@ def create_access_token(user: DiscordUser) -> str:
         "sub": user.id,
         "username": user.username,
         "admin_guilds": user.admin_guilds,
-        "exp": expire
+        "exp": expire,
     }
     return jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
 
@@ -144,7 +143,9 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def get_current_user(request: Request, token=Depends(security)) -> Optional[DiscordUser]:
+async def get_current_user(
+    request: Request, token=Depends(security)
+) -> Optional[DiscordUser]:
     """Get current authenticated user"""
     if not token:
         # Try to get token from cookie
@@ -159,17 +160,18 @@ async def get_current_user(request: Request, token=Depends(security)) -> Optiona
         return None
 
     # Create DiscordUser from token payload
-    user_data = {
-        "id": payload["sub"],
-        "username": payload["username"]
-    }
+    user_data = {"id": payload["sub"], "username": payload["username"]}
     # Mock guilds data from token
-    guilds_data = [{"id": guild_id, "permissions": "32"}
-                   for guild_id in payload.get("admin_guilds", [])]
+    guilds_data = [
+        {"id": guild_id, "permissions": "32"}
+        for guild_id in payload.get("admin_guilds", [])
+    ]
     return DiscordUser(user_data, guilds_data)
 
 
-async def require_auth(current_user: Optional[DiscordUser] = Depends(get_current_user)) -> DiscordUser:
+async def require_auth(
+    current_user: Optional[DiscordUser] = Depends(get_current_user),
+) -> DiscordUser:
     """Require authentication"""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -184,17 +186,12 @@ def save_user_to_db(user: DiscordUser):
 
         if db_user:
             # Update existing user
-            setattr(db_user, 'username', user.username)
-            setattr(db_user, 'avatar', user.avatar)
-            setattr(db_user, 'updated_at', datetime.now(pytz.UTC))
+            setattr(db_user, "username", user.username)
+            setattr(db_user, "avatar", user.avatar)
+            setattr(db_user, "updated_at", datetime.now(pytz.UTC))
         else:
             # Create new user
-            db_user = User(
-                id=user.id,
-                username=user.username,
-                avatar=user.avatar
-
-            )
+            db_user = User(id=user.id, username=user.username, avatar=user.avatar)
             db.add(db_user)
 
         db.commit()

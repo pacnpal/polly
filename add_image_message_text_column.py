@@ -30,9 +30,10 @@ def migrate_database():
         cursor.execute("PRAGMA table_info(polls)")
         columns = [column[1] for column in cursor.fetchall()]
 
-        if 'image_message_text' in columns:
+        if "image_message_text" in columns:
             logger.info(
-                "Column 'image_message_text' already exists. No migration needed.")
+                "Column 'image_message_text' already exists. No migration needed."
+            )
             return
 
         # Add the new column
@@ -40,8 +41,7 @@ def migrate_database():
         cursor.execute("ALTER TABLE polls ADD COLUMN image_message_text TEXT")
 
         conn.commit()
-        logger.info(
-            "Successfully added 'image_message_text' column to polls table.")
+        logger.info("Successfully added 'image_message_text' column to polls table.")
 
     except Exception as e:
         logger.error(f"Error during migration: {e}")

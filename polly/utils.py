@@ -23,7 +23,7 @@ async def cleanup_poll_images(poll_id: int) -> None:
     try:
         poll = db.query(Poll).filter(Poll.id == poll_id).first()
         if poll:
-            image_path = TypeSafeColumn.get_string(poll, 'image_path')
+            image_path = TypeSafeColumn.get_string(poll, "image_path")
             if image_path:
                 await cleanup_image(image_path)
     except Exception as e:
@@ -47,7 +47,11 @@ async def cleanup_image(image_path: str) -> bool:
 async def validate_image_file(image_file) -> Tuple[bool, str, Optional[bytes]]:
     """Validate uploaded image file and return validation result"""
     try:
-        if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
+        if (
+            not image_file
+            or not hasattr(image_file, "filename")
+            or not image_file.filename
+        ):
             return True, "", None
 
         # Read file content
@@ -58,8 +62,11 @@ async def validate_image_file(image_file) -> Tuple[bool, str, Optional[bytes]]:
             return False, "Image file too large (max 8MB)", None
 
         # Validate file type
-        allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-        if hasattr(image_file, 'content_type') and image_file.content_type not in allowed_types:
+        allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+        if (
+            hasattr(image_file, "content_type")
+            and image_file.content_type not in allowed_types
+        ):
             return False, "Invalid image format (JPEG, PNG, GIF, WebP only)", None
 
         return True, "", content
@@ -71,7 +78,7 @@ async def validate_image_file(image_file) -> Tuple[bool, str, Optional[bytes]]:
 async def save_image_file(content: bytes, filename: str) -> Optional[str]:
     """Save image file with proper error handling"""
     try:
-        file_extension = filename.split('.')[-1].lower()
+        file_extension = filename.split(".")[-1].lower()
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
         image_path = f"static/uploads/{unique_filename}"
 
@@ -121,7 +128,7 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         "Eastern": "US/Eastern",
         "Central": "US/Central",
         "Mountain": "US/Mountain",
-        "Pacific": "US/Pacific"
+        "Pacific": "US/Pacific",
     }
 
     # Check if it's a mapped timezone
@@ -163,13 +170,15 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
 
         # Debug logging to help troubleshoot timezone issues
         logger.debug(
-            f"Timezone parsing: '{datetime_str}' in '{timezone_str}' -> {localized_dt} -> {utc_dt}")
+            f"Timezone parsing: '{datetime_str}' in '{timezone_str}' -> {localized_dt} -> {utc_dt}"
+        )
 
         return utc_dt
 
     except Exception as e:
         logger.error(
-            f"Error parsing datetime '{datetime_str}' with timezone '{timezone_str}': {e}")
+            f"Error parsing datetime '{datetime_str}' with timezone '{timezone_str}': {e}"
+        )
         # Fallback: parse as UTC
         try:
             dt = datetime.fromisoformat(datetime_str)
@@ -193,46 +202,93 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
         user_tz = pytz.timezone(validate_and_normalize_timezone(user_timezone))
         local_dt = dt.astimezone(user_tz)
 
-        return local_dt.strftime('%b %d, %I:%M %p')
+        return local_dt.strftime("%b %d, %I:%M %p")
     except Exception as e:
         logger.error(
-            f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
+            f"Error formatting datetime {dt} for timezone {user_timezone}: {e}"
+        )
         # Fallback to UTC
-        return dt.strftime('%b %d, %I:%M %p UTC')
+        return dt.strftime("%b %d, %I:%M %p UTC")
 
 
 def get_common_timezones() -> List[Dict[str, str]]:
     """Get comprehensive list of timezones with display names"""
     common_timezones = [
         # North America
-        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
-        "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-        "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
-        "America/Mexico_City", "America/Sao_Paulo", "America/Argentina/Buenos_Aires",
-
+        "US/Eastern",
+        "US/Central",
+        "US/Mountain",
+        "US/Pacific",
+        "US/Alaska",
+        "US/Hawaii",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Anchorage",
+        "America/Honolulu",
+        "America/Toronto",
+        "America/Vancouver",
+        "America/Mexico_City",
+        "America/Sao_Paulo",
+        "America/Argentina/Buenos_Aires",
         # Europe
-        "UTC", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome",
-        "Europe/Madrid", "Europe/Amsterdam", "Europe/Brussels", "Europe/Vienna",
-        "Europe/Prague", "Europe/Warsaw", "Europe/Stockholm", "Europe/Helsinki",
-        "Europe/Oslo", "Europe/Copenhagen", "Europe/Zurich", "Europe/Athens",
-        "Europe/Istanbul", "Europe/Moscow",
-
+        "UTC",
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Europe/Rome",
+        "Europe/Madrid",
+        "Europe/Amsterdam",
+        "Europe/Brussels",
+        "Europe/Vienna",
+        "Europe/Prague",
+        "Europe/Warsaw",
+        "Europe/Stockholm",
+        "Europe/Helsinki",
+        "Europe/Oslo",
+        "Europe/Copenhagen",
+        "Europe/Zurich",
+        "Europe/Athens",
+        "Europe/Istanbul",
+        "Europe/Moscow",
         # Asia Pacific
-        "Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Singapore",
-        "Asia/Bangkok", "Asia/Jakarta", "Asia/Manila", "Asia/Kuala_Lumpur",
-        "Asia/Mumbai", "Asia/Kolkata", "Asia/Dubai", "Asia/Tehran", "Asia/Jerusalem",
-        "Australia/Sydney", "Australia/Melbourne", "Australia/Perth", "Australia/Brisbane",
-        "Pacific/Auckland", "Pacific/Fiji", "Pacific/Honolulu",
-
+        "Asia/Tokyo",
+        "Asia/Seoul",
+        "Asia/Shanghai",
+        "Asia/Hong_Kong",
+        "Asia/Singapore",
+        "Asia/Bangkok",
+        "Asia/Jakarta",
+        "Asia/Manila",
+        "Asia/Kuala_Lumpur",
+        "Asia/Mumbai",
+        "Asia/Kolkata",
+        "Asia/Dubai",
+        "Asia/Tehran",
+        "Asia/Jerusalem",
+        "Australia/Sydney",
+        "Australia/Melbourne",
+        "Australia/Perth",
+        "Australia/Brisbane",
+        "Pacific/Auckland",
+        "Pacific/Fiji",
+        "Pacific/Honolulu",
         # Africa
-        "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
-        "Africa/Casablanca", "Africa/Tunis", "Africa/Algiers",
-
+        "Africa/Cairo",
+        "Africa/Johannesburg",
+        "Africa/Lagos",
+        "Africa/Nairobi",
+        "Africa/Casablanca",
+        "Africa/Tunis",
+        "Africa/Algiers",
         # South America
-        "America/Lima", "America/Bogota", "America/Santiago", "America/Caracas",
-
+        "America/Lima",
+        "America/Bogota",
+        "America/Santiago",
+        "America/Caracas",
         # Other - Remove ambiguous timezone abbreviations that cause errors
-        "GMT"
+        "GMT",
     ]
 
     timezones = []
@@ -240,28 +296,29 @@ def get_common_timezones() -> List[Dict[str, str]]:
         try:
             # Validate timezone exists first
             tz_obj = pytz.timezone(tz_name)
-            
+
             # Get current offset safely
             try:
                 current_time = datetime.now(tz_obj)
-                offset = current_time.strftime('%z')
-                
+                offset = current_time.strftime("%z")
+
                 # Format offset nicely
                 if offset and len(offset) >= 5:
                     offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
                 else:
                     offset_formatted = "UTC+00:00"
             except Exception as offset_error:
-                logger.debug(f"Could not get offset for timezone {tz_name}: {offset_error}")
+                logger.debug(
+                    f"Could not get offset for timezone {tz_name}: {offset_error}"
+                )
                 offset_formatted = "UTC"
 
             # Create a more readable display name
-            display_name = tz_name.replace('_', ' ').replace('/', ' / ')
-            timezones.append({
-                "name": tz_name,
-                "display": f"{display_name} ({offset_formatted})"
-            })
-            
+            display_name = tz_name.replace("_", " ").replace("/", " / ")
+            timezones.append(
+                {"name": tz_name, "display": f"{display_name} ({offset_formatted})"}
+            )
+
         except pytz.UnknownTimeZoneError:
             logger.debug(f"Unknown timezone skipped: {tz_name}")
             # Skip unknown timezones instead of adding them with errors
@@ -269,13 +326,10 @@ def get_common_timezones() -> List[Dict[str, str]]:
         except Exception as e:
             logger.debug(f"Error processing timezone {tz_name}: {e}")
             # Fallback: add timezone with just its name
-            timezones.append({
-                "name": tz_name,
-                "display": tz_name
-            })
+            timezones.append({"name": tz_name, "display": tz_name})
 
     # Sort by display name for better UX
-    timezones.sort(key=lambda x: x['display'])
+    timezones.sort(key=lambda x: x["display"])
     return timezones
 
 
@@ -286,62 +340,69 @@ def get_user_preferences(user_id: str) -> Dict[str, Any]:
 
     db = get_db_session()
     try:
-        prefs = db.query(UserPreference).filter(
-            UserPreference.user_id == user_id).first()
+        prefs = (
+            db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
+        )
         if prefs:
             return {
                 "last_server_id": prefs.last_server_id,
                 "last_channel_id": prefs.last_channel_id,
-                "default_timezone": prefs.default_timezone or "US/Eastern"
+                "default_timezone": prefs.default_timezone or "US/Eastern",
             }
         return {
             "last_server_id": None,
             "last_channel_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
         return {
             "last_server_id": None,
             "last_channel_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
         }
     finally:
         db.close()
 
 
-def save_user_preferences(user_id: str, server_id: Optional[str] = None,
-                          channel_id: Optional[str] = None, timezone: Optional[str] = None):
+def save_user_preferences(
+    user_id: str,
+    server_id: Optional[str] = None,
+    channel_id: Optional[str] = None,
+    timezone: Optional[str] = None,
+):
     """Save user preferences for poll creation"""
     from .database import get_db_session, UserPreference
 
     db = get_db_session()
     try:
-        prefs = db.query(UserPreference).filter(
-            UserPreference.user_id == user_id).first()
+        prefs = (
+            db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
+        )
 
         if prefs:
             # Update existing preferences using setattr for type safety
             if server_id:
-                setattr(prefs, 'last_server_id', server_id)
+                setattr(prefs, "last_server_id", server_id)
             if channel_id:
-                setattr(prefs, 'last_channel_id', channel_id)
+                setattr(prefs, "last_channel_id", channel_id)
             if timezone:
-                setattr(prefs, 'default_timezone', timezone)
-            setattr(prefs, 'updated_at', datetime.now(pytz.UTC))
+                setattr(prefs, "default_timezone", timezone)
+            setattr(prefs, "updated_at", datetime.now(pytz.UTC))
         else:
             # Create new preferences
             prefs = UserPreference(
                 user_id=user_id,
                 last_server_id=server_id,
                 last_channel_id=channel_id,
-                default_timezone=timezone or "US/Eastern"
+                default_timezone=timezone or "US/Eastern",
             )
             db.add(prefs)
 
         db.commit()
         logger.debug(
-            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
+            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}"
+        )
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
         db.rollback()

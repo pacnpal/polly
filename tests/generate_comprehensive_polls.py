@@ -15,14 +15,14 @@ This script generates polls systematically covering:
 
 Features:
 - Standard mode: Generate ~880+ systematic poll combinations
-- Real images mode: Use 2000+ real images from sample-images repository  
+- Real images mode: Use 2000+ real images from sample-images repository
 - Ultimate mode: Create polls using RANDOM COMBINATIONS with each real image (1 combination per image = 2000+ polls with combination tallies)
 - Export mode: Export poll configurations to JSON for analysis
 
 Usage:
     # Standard comprehensive testing
     uv run tests/generate_comprehensive_polls.py [--dry-run] [--limit N] [--delay 2.0]
-    
+
     # With real images from sample-images repository
     uv run tests/generate_comprehensive_polls.py --use-real-images --delay 1.0
 
@@ -31,10 +31,10 @@ Usage:
 
     # Keep repository after testing
     uv run tests/generate_comprehensive_polls.py --use-all-images --no-cleanup --delay 3.0
-    
+
     # Export poll combinations to JSON (no rate limiting needed)
     uv run tests/generate_comprehensive_polls.py --export-json
-    
+
     # Fast testing with minimal delay
     uv run tests/generate_comprehensive_polls.py --limit 10 --delay 0.1
 """
@@ -48,25 +48,22 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 import pytz
 import json
-import uuid
 from pathlib import Path
 
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from polly.database import get_db_session, Poll, init_database
+from polly.database import init_database
 from polly.discord_bot import get_bot_instance
 from polly.poll_operations import BulletproofPollOperations
-from polly.error_handler import PollErrorHandler
-from polly.timezone_scheduler_fix import TimezoneAwareScheduler
-from polly.background_tasks import get_scheduler
 from tests.test_image_generator import TestImageGenerator
-from tests.emoji_utils import get_random_emoji, get_random_emojis, get_random_poll_emojis, get_unique_random_emojis
+from tests.emoji_utils import (
+    get_random_poll_emojis,
+)
 
 # Configure comprehensive logging with detailed formatting
 import psutil
-import traceback
-import time
+
 
 # Create detailed log formatter
 class DetailedFormatter(logging.Formatter):
@@ -75,24 +72,25 @@ class DetailedFormatter(logging.Formatter):
         process = psutil.Process()
         memory_mb = process.memory_info().rss / 1024 / 1024
         cpu_percent = process.cpu_percent()
-        
+
         # Add custom fields to the record
         record.memory_mb = f"{memory_mb:.1f}MB"
         record.cpu_percent = f"{cpu_percent:.1f}%"
         record.thread_id = f"T{record.thread}"
-        
+
         return super().format(record)
+
 
 # Setup comprehensive logging
 log_filename = f"poll_generation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s.%(msecs)03d | %(memory_mb)s | %(cpu_percent)s | %(thread_id)s | %(name)s | %(levelname)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s.%(msecs)03d | %(memory_mb)s | %(cpu_percent)s | %(thread_id)s | %(name)s | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.FileHandler(log_filename, encoding='utf-8'),
-        logging.StreamHandler()
-    ]
+        logging.FileHandler(log_filename, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
 )
 
 # Apply detailed formatter
@@ -101,39 +99,51 @@ for handler in logging.getLogger().handlers:
 
 logger = logging.getLogger(__name__)
 
+
 # Log system information at startup
 def log_system_info():
     """Log comprehensive system information"""
     logger.info("=" * 80)
     logger.info("SYSTEM INFORMATION")
     logger.info("=" * 80)
-    
+
     # System specs
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Platform: {sys.platform}")
     logger.info(f"CPU count: {psutil.cpu_count()}")
-    logger.info(f"Total memory: {psutil.virtual_memory().total / 1024 / 1024 / 1024:.1f} GB")
-    logger.info(f"Available memory: {psutil.virtual_memory().available / 1024 / 1024 / 1024:.1f} GB")
-    
+    logger.info(
+        f"Total memory: {psutil.virtual_memory().total / 1024 / 1024 / 1024:.1f} GB"
+    )
+    logger.info(
+        f"Available memory: {psutil.virtual_memory().available / 1024 / 1024 / 1024:.1f} GB"
+    )
+
     # Process info
     process = psutil.Process()
     logger.info(f"Process PID: {process.pid}")
     logger.info(f"Process memory: {process.memory_info().rss / 1024 / 1024:.1f} MB")
     logger.info(f"Process CPU: {process.cpu_percent():.1f}%")
-    
+
     # Environment
     logger.info(f"Working directory: {os.getcwd()}")
     logger.info(f"Log file: {log_filename}")
-    
+
     logger.info("=" * 80)
+
 
 class ComprehensivePollGenerator:
     """Generates comprehensive test polls covering all possible combinations"""
-    
-    def __init__(self, dry_run: bool = False, limit: Optional[int] = None, 
-                 server_id: Optional[str] = None, channel_id: Optional[str] = None,
-                 user_id: Optional[str] = None, role_id: Optional[str] = None,
-                 delay_between_polls: float = 2.0):
+
+    def __init__(
+        self,
+        dry_run: bool = False,
+        limit: Optional[int] = None,
+        server_id: Optional[str] = None,
+        channel_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        role_id: Optional[str] = None,
+        delay_between_polls: float = 2.0,
+    ):
         self.dry_run = dry_run
         self.limit = limit
         self.generated_count = 0
@@ -141,28 +151,32 @@ class ComprehensivePollGenerator:
         self.error_count = 0
         self.combinations = []
         self.should_cleanup = True  # Default to cleanup
-        
+
         # Rate limiting - simple delay between polls
         self.delay_between_polls = delay_between_polls
-        
+
         # Detailed tracking
         self.detailed_errors = []
         self.timing_data = []
         self.memory_snapshots = []
         self.operation_counts = {
-            'database_operations': 0,
-            'image_operations': 0,
-            'emoji_operations': 0,
-            'discord_operations': 0,
-            'validation_operations': 0
+            "database_operations": 0,
+            "image_operations": 0,
+            "emoji_operations": 0,
+            "discord_operations": 0,
+            "validation_operations": 0,
         }
-        
+
         # Test data - use provided IDs or defaults
         self.test_user_id = user_id or "123456789012345678"  # Mock Discord user ID
-        self.test_server_id = server_id or "987654321098765432"  # Mock Discord server ID
-        self.test_channel_id = channel_id or "111222333444555666"  # Mock Discord channel ID
+        self.test_server_id = (
+            server_id or "987654321098765432"
+        )  # Mock Discord server ID
+        self.test_channel_id = (
+            channel_id or "111222333444555666"
+        )  # Mock Discord channel ID
         self.test_role_id = role_id or "777888999000111222"  # Mock Discord role ID
-        
+
         # Log initialization details
         logger.info("=" * 80)
         logger.info("POLL GENERATOR INITIALIZATION")
@@ -175,7 +189,7 @@ class ComprehensivePollGenerator:
         logger.info(f"Test channel ID: {self.test_channel_id}")
         logger.info(f"Test role ID: {self.test_role_id}")
         logger.info("=" * 80)
-        
+
         # Sample poll content
         self.poll_names = [
             "Test Poll",
@@ -187,9 +201,9 @@ class ComprehensivePollGenerator:
             "Opinion Poll",
             "Preference Survey",
             "Vote Now",
-            "Choose Wisely"
+            "Choose Wisely",
         ]
-        
+
         self.poll_questions = [
             "What is your favorite option?",
             "Which choice do you prefer?",
@@ -200,9 +214,9 @@ class ComprehensivePollGenerator:
             "What do you think about this?",
             "Select your preference:",
             "What would you choose?",
-            "Which one do you like most?"
+            "Which one do you like most?",
         ]
-        
+
         self.option_templates = {
             2: ["Option A", "Option B"],
             3: ["First Choice", "Second Choice", "Third Choice"],
@@ -210,77 +224,230 @@ class ComprehensivePollGenerator:
             5: ["Red", "Blue", "Green", "Yellow", "Purple"],
             6: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
             7: ["Spring", "Summer", "Fall", "Winter", "Rainy", "Snowy", "Sunny"],
-            8: ["Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig", "Grape", "Honeydew"],
+            8: [
+                "Apple",
+                "Banana",
+                "Cherry",
+                "Date",
+                "Elderberry",
+                "Fig",
+                "Grape",
+                "Honeydew",
+            ],
             9: ["One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"],
-            10: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
+            10: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
         }
-        
+
         # Emoji sets for testing
-        self.unicode_emojis = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇"]
+        self.unicode_emojis = [
+            "😀",
+            "😃",
+            "😄",
+            "😁",
+            "😆",
+            "😅",
+            "😂",
+            "🤣",
+            "😊",
+            "😇",
+        ]
         self.letter_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
         self.symbol_emojis = ["⭐", "❤️", "🔥", "👍", "👎", "✅", "❌", "⚠️", "❓", "❗"]
-        
+
         # Extended emoji sets for random selection
         self.all_unicode_emojis = [
-            "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
-            "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
-            "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🤩",
-            "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣",
-            "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬"
+            "😀",
+            "😃",
+            "😄",
+            "😁",
+            "😆",
+            "😅",
+            "😂",
+            "🤣",
+            "😊",
+            "😇",
+            "🙂",
+            "🙃",
+            "😉",
+            "😌",
+            "😍",
+            "🥰",
+            "😘",
+            "😗",
+            "😙",
+            "😚",
+            "😋",
+            "😛",
+            "😝",
+            "😜",
+            "🤪",
+            "🤨",
+            "🧐",
+            "🤓",
+            "😎",
+            "🤩",
+            "🥳",
+            "😏",
+            "😒",
+            "😞",
+            "😔",
+            "😟",
+            "😕",
+            "🙁",
+            "☹️",
+            "😣",
+            "😖",
+            "😫",
+            "😩",
+            "🥺",
+            "😢",
+            "😭",
+            "😤",
+            "😠",
+            "😡",
+            "🤬",
         ]
-        
+
         self.all_symbol_emojis = [
-            "⭐", "❤️", "🔥", "👍", "👎", "✅", "❌", "⚠️", "❓", "❗",
-            "💯", "💢", "💥", "💫", "💦", "💨", "🕳️", "💣", "💤", "👋",
-            "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟",
-            "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎"
+            "⭐",
+            "❤️",
+            "🔥",
+            "👍",
+            "👎",
+            "✅",
+            "❌",
+            "⚠️",
+            "❓",
+            "❗",
+            "💯",
+            "💢",
+            "💥",
+            "💫",
+            "💦",
+            "💨",
+            "🕳️",
+            "💣",
+            "💤",
+            "👋",
+            "🤚",
+            "🖐️",
+            "✋",
+            "🖖",
+            "👌",
+            "🤌",
+            "🤏",
+            "✌️",
+            "🤞",
+            "🤟",
+            "🤘",
+            "🤙",
+            "👈",
+            "👉",
+            "👆",
+            "🖕",
+            "👇",
+            "☝️",
+            "👍",
+            "👎",
         ]
-        
+
         self.all_letter_emojis = [
-            "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯",
-            "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹",
-            "🇺", "🇻", "🇼", "🇽", "🇾", "🇿", "1️⃣", "2️⃣", "3️⃣", "4️⃣",
-            "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔢", "#️⃣", "*️⃣", "⏏️"
+            "🇦",
+            "🇧",
+            "🇨",
+            "🇩",
+            "🇪",
+            "🇫",
+            "🇬",
+            "🇭",
+            "🇮",
+            "🇯",
+            "🇰",
+            "🇱",
+            "🇲",
+            "🇳",
+            "🇴",
+            "🇵",
+            "🇶",
+            "🇷",
+            "🇸",
+            "🇹",
+            "🇺",
+            "🇻",
+            "🇼",
+            "🇽",
+            "🇾",
+            "🇿",
+            "1️⃣",
+            "2️⃣",
+            "3️⃣",
+            "4️⃣",
+            "5️⃣",
+            "6️⃣",
+            "7️⃣",
+            "8️⃣",
+            "9️⃣",
+            "🔟",
+            "🔢",
+            "#️⃣",
+            "*️⃣",
+            "⏏️",
         ]
-        
+
         # Timezones for testing
         self.test_timezones = [
             "UTC",
             "US/Eastern",
-            "US/Central", 
+            "US/Central",
             "US/Mountain",
             "US/Pacific",
             "Europe/London",
             "Europe/Paris",
             "Asia/Tokyo",
-            "Australia/Sydney"
+            "Australia/Sydney",
         ]
-        
+
         # Initialize image generator for real test images
         self.image_generator = TestImageGenerator()
-        
+
         # Image types for different scenarios
-        self.image_types = ["small", "medium", "large", "pattern", "unicode", "minimal", "real"]
-    
+        self.image_types = [
+            "small",
+            "medium",
+            "large",
+            "pattern",
+            "unicode",
+            "minimal",
+            "real",
+        ]
+
     def generate_all_combinations(self) -> List[Dict[str, Any]]:
         """Generate all possible poll combinations"""
         combinations = []
-        
+
         # Option counts to test
         option_counts = [2, 3, 4, 5, 6, 7, 8, 9, 10]
-        
+
         # Boolean flags to test
         anonymous_options = [True, False]
         multiple_choice_options = [True, False]
         ping_role_options = [True, False]
         image_options = [True, False]
-        
+
         # Emoji types to test
-        emoji_types = ["default", "unicode", "symbols", "mixed", "random", "library_random", "custom"]
-        
+        emoji_types = [
+            "default",
+            "unicode",
+            "symbols",
+            "mixed",
+            "random",
+            "library_random",
+            "custom",
+        ]
+
         # Scheduling options
         schedule_types = ["immediate", "future", "far_future"]
-        
+
         # Generate combinations
         combination_id = 0
         for option_count in option_counts:
@@ -293,7 +460,7 @@ class ComprehensivePollGenerator:
                                     # Skip custom emojis for now (requires Discord bot)
                                     if emoji_type == "custom":
                                         continue
-                                    
+
                                     combination = {
                                         "id": combination_id,
                                         "option_count": option_count,
@@ -303,125 +470,139 @@ class ComprehensivePollGenerator:
                                         "has_image": has_image,
                                         "emoji_type": emoji_type,
                                         "schedule_type": schedule_type,
-                                        "timezone": self.test_timezones[combination_id % len(self.test_timezones)]
+                                        "timezone": self.test_timezones[
+                                            combination_id % len(self.test_timezones)
+                                        ],
                                     }
                                     combinations.append(combination)
                                     combination_id += 1
-        
+
         # Add edge cases
         edge_cases = self.generate_edge_cases()
         combinations.extend(edge_cases)
-        
+
         logger.info(f"Generated {len(combinations)} poll combinations")
         return combinations
-    
+
     def generate_edge_cases(self) -> List[Dict[str, Any]]:
         """Generate edge case poll combinations"""
         edge_cases = []
-        
+
         # Edge case 1: Maximum options with all features enabled
-        edge_cases.append({
-            "id": "edge_max_features",
-            "option_count": 10,
-            "anonymous": True,
-            "multiple_choice": True,
-            "ping_role_enabled": True,
-            "has_image": True,
-            "emoji_type": "mixed",
-            "schedule_type": "future",
-            "timezone": "US/Eastern",
-            "name": "Maximum Features Test Poll",
-            "question": "This poll tests all maximum features enabled at once with 10 options, anonymous voting, multiple choice, role ping, and image."
-        })
-        
+        edge_cases.append(
+            {
+                "id": "edge_max_features",
+                "option_count": 10,
+                "anonymous": True,
+                "multiple_choice": True,
+                "ping_role_enabled": True,
+                "has_image": True,
+                "emoji_type": "mixed",
+                "schedule_type": "future",
+                "timezone": "US/Eastern",
+                "name": "Maximum Features Test Poll",
+                "question": "This poll tests all maximum features enabled at once with 10 options, anonymous voting, multiple choice, role ping, and image.",
+            }
+        )
+
         # Edge case 2: Minimum options with no extra features
-        edge_cases.append({
-            "id": "edge_min_features",
-            "option_count": 2,
-            "anonymous": False,
-            "multiple_choice": False,
-            "ping_role_enabled": False,
-            "has_image": False,
-            "emoji_type": "default",
-            "schedule_type": "immediate",
-            "timezone": "UTC",
-            "name": "Minimal Test Poll",
-            "question": "Simple two-option poll with no extra features."
-        })
-        
+        edge_cases.append(
+            {
+                "id": "edge_min_features",
+                "option_count": 2,
+                "anonymous": False,
+                "multiple_choice": False,
+                "ping_role_enabled": False,
+                "has_image": False,
+                "emoji_type": "default",
+                "schedule_type": "immediate",
+                "timezone": "UTC",
+                "name": "Minimal Test Poll",
+                "question": "Simple two-option poll with no extra features.",
+            }
+        )
+
         # Edge case 3: Long content test
-        edge_cases.append({
-            "id": "edge_long_content",
-            "option_count": 5,
-            "anonymous": False,
-            "multiple_choice": True,
-            "ping_role_enabled": False,
-            "has_image": False,
-            "emoji_type": "unicode",
-            "schedule_type": "future",
-            "timezone": "Europe/London",
-            "name": "Very Long Poll Name That Tests The Maximum Length Limits For Poll Names In The System",
-            "question": "This is a very long poll question that tests the maximum length limits for poll questions in the system. It contains multiple sentences and should test how the system handles longer text content. The question continues to be quite lengthy to ensure we test the boundaries of what the system can handle for poll question text content.",
-            "long_options": True
-        })
-        
+        edge_cases.append(
+            {
+                "id": "edge_long_content",
+                "option_count": 5,
+                "anonymous": False,
+                "multiple_choice": True,
+                "ping_role_enabled": False,
+                "has_image": False,
+                "emoji_type": "unicode",
+                "schedule_type": "future",
+                "timezone": "Europe/London",
+                "name": "Very Long Poll Name That Tests The Maximum Length Limits For Poll Names In The System",
+                "question": "This is a very long poll question that tests the maximum length limits for poll questions in the system. It contains multiple sentences and should test how the system handles longer text content. The question continues to be quite lengthy to ensure we test the boundaries of what the system can handle for poll question text content.",
+                "long_options": True,
+            }
+        )
+
         # Edge case 4: Special characters and Unicode
-        edge_cases.append({
-            "id": "edge_special_chars",
-            "option_count": 4,
-            "anonymous": True,
-            "multiple_choice": False,
-            "ping_role_enabled": True,
-            "has_image": True,
-            "emoji_type": "symbols",
-            "schedule_type": "immediate",
-            "timezone": "Asia/Tokyo",
-            "name": "Special Characters Test: !@#$%^&*()_+-=[]{}|;':\",./<>?",
-            "question": "Testing special characters: àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ and symbols: ™®©℠℡№℮",
-            "special_options": True
-        })
-        
+        edge_cases.append(
+            {
+                "id": "edge_special_chars",
+                "option_count": 4,
+                "anonymous": True,
+                "multiple_choice": False,
+                "ping_role_enabled": True,
+                "has_image": True,
+                "emoji_type": "symbols",
+                "schedule_type": "immediate",
+                "timezone": "Asia/Tokyo",
+                "name": "Special Characters Test: !@#$%^&*()_+-=[]{}|;':\",./<>?",
+                "question": "Testing special characters: àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ and symbols: ™®©℠℡№℮",
+                "special_options": True,
+            }
+        )
+
         # Edge case 5: Different timezone combinations
         for i, tz in enumerate(self.test_timezones):
-            edge_cases.append({
-                "id": f"edge_timezone_{i}",
-                "option_count": 3,
-                "anonymous": i % 2 == 0,
-                "multiple_choice": i % 3 == 0,
-                "ping_role_enabled": i % 4 == 0,
-                "has_image": i % 5 == 0,
-                "emoji_type": ["default", "unicode", "symbols"][i % 3],
-                "schedule_type": "future",
-                "timezone": tz,
-                "name": f"Timezone Test {tz}",
-                "question": f"Testing poll creation in {tz} timezone."
-            })
-        
+            edge_cases.append(
+                {
+                    "id": f"edge_timezone_{i}",
+                    "option_count": 3,
+                    "anonymous": i % 2 == 0,
+                    "multiple_choice": i % 3 == 0,
+                    "ping_role_enabled": i % 4 == 0,
+                    "has_image": i % 5 == 0,
+                    "emoji_type": ["default", "unicode", "symbols"][i % 3],
+                    "schedule_type": "future",
+                    "timezone": tz,
+                    "name": f"Timezone Test {tz}",
+                    "question": f"Testing poll creation in {tz} timezone.",
+                }
+            )
+
         logger.info(f"Generated {len(edge_cases)} edge case combinations")
         return edge_cases
-    
+
     def create_poll_data(self, combination: Dict[str, Any]) -> Dict[str, Any]:
         """Create poll data from combination specification"""
         option_count = combination["option_count"]
-        
+
         # Generate poll name
         if "name" in combination:
             name = combination["name"]
         else:
             base_name = self.poll_names[combination["id"] % len(self.poll_names)]
             name = f"{base_name} ({option_count} options, {combination['emoji_type']} emojis)"
-        
+
         # Generate poll question
         if "question" in combination:
             question = combination["question"]
         else:
-            base_question = self.poll_questions[combination["id"] % len(self.poll_questions)]
+            base_question = self.poll_questions[
+                combination["id"] % len(self.poll_questions)
+            ]
             question = f"{base_question} [Test ID: {combination['id']}]"
-        
+
         # Generate options
         if combination.get("long_options"):
             options = [
-                f"This is a very long option text that tests the maximum length limits for poll options in the system - Option {i+1}"
+                f"This is a very long option text that tests the maximum length limits for poll options in the system - Option {i + 1}"
                 for i in range(option_count)
             ]
         elif combination.get("special_options"):
@@ -429,15 +610,15 @@ class ComprehensivePollGenerator:
                 "Option 1: Special chars !@#$%^&*()_+-=[]{}|;':\",./<>?",
                 "Option 2: Unicode àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ",
                 "Option 3: Symbols ™®©℠℡№℮",
-                "Option 4: Mixed content 123 ABC !@# àáâ ™®©"
+                "Option 4: Mixed content 123 ABC !@# àáâ ™®©",
             ][:option_count]
         else:
             base_options = self.option_templates[option_count]
             options = [f"{opt} (Test {combination['id']})" for opt in base_options]
-        
+
         # Generate emojis based on type
         emojis = self.generate_emojis(combination["emoji_type"], option_count)
-        
+
         # Generate times
         now = datetime.now(pytz.UTC)
         if combination["schedule_type"] == "immediate":
@@ -449,7 +630,7 @@ class ComprehensivePollGenerator:
         else:  # far_future
             open_time = now + timedelta(days=1)
             close_time = open_time + timedelta(days=1)
-        
+
         poll_data = {
             "name": name,
             "question": question,
@@ -463,16 +644,18 @@ class ComprehensivePollGenerator:
             "anonymous": combination["anonymous"],
             "multiple_choice": combination["multiple_choice"],
             "ping_role_enabled": combination["ping_role_enabled"],
-            "ping_role_id": self.test_role_id if combination["ping_role_enabled"] else None,
-            "creator_id": self.test_user_id
+            "ping_role_id": self.test_role_id
+            if combination["ping_role_enabled"]
+            else None,
+            "creator_id": self.test_user_id,
         }
-        
+
         return poll_data
-    
+
     def generate_emojis(self, emoji_type: str, count: int) -> List[str]:
         """Generate emojis based on type and count using the emoji library"""
         import random
-        
+
         if emoji_type == "default":
             return self.letter_emojis[:count]
         elif emoji_type == "unicode":
@@ -496,56 +679,68 @@ class ComprehensivePollGenerator:
                 # Try to get random poll emojis first (optimized for polls)
                 return get_random_poll_emojis(count)
             except Exception as e:
-                logger.warning(f"Failed to get random poll emojis: {e}, falling back to manual selection")
+                logger.warning(
+                    f"Failed to get random poll emojis: {e}, falling back to manual selection"
+                )
                 # Fallback to manual random selection
-                all_emojis = self.all_unicode_emojis + self.all_symbol_emojis + self.all_letter_emojis
+                all_emojis = (
+                    self.all_unicode_emojis
+                    + self.all_symbol_emojis
+                    + self.all_letter_emojis
+                )
                 return random.sample(all_emojis, min(count, len(all_emojis)))
         else:
             # Fallback to default
             return self.letter_emojis[:count]
-    
+
     async def create_single_poll(self, combination: Dict[str, Any]) -> Tuple[bool, str]:
         """Create a single poll from combination data"""
         try:
             # Apply delay between polls (simple rate limiting)
             if not self.dry_run and self.delay_between_polls > 0:
-                logger.info(f"⏳ Waiting {self.delay_between_polls} seconds before creating poll...")
+                logger.info(
+                    f"⏳ Waiting {self.delay_between_polls} seconds before creating poll..."
+                )
                 await asyncio.sleep(self.delay_between_polls)
-            
+
             poll_data = self.create_poll_data(combination)
-            
+
             if self.dry_run:
                 logger.info(f"DRY RUN: Would create poll - {poll_data['name']}")
                 return True, f"DRY RUN: Poll {combination['id']} would be created"
-            
+
             # Get bot instance (may be None in test environment)
             bot = get_bot_instance()
-            
+
             # Create bulletproof poll operations
             bulletproof_ops = BulletproofPollOperations(bot)
-            
+
             # Handle image data if needed
             image_file_data = None
             image_filename = None
             image_message_text = None
-            
+
             if combination["has_image"]:
                 # Generate appropriate test image based on combination
                 image_type = self.image_types[combination["id"] % len(self.image_types)]
-                image_file_data, image_filename = self.image_generator.get_image_for_scenario(
-                    image_type, combination['id']
+                image_file_data, image_filename = (
+                    self.image_generator.get_image_for_scenario(
+                        image_type, combination["id"]
+                    )
                 )
-                image_message_text = f"Test image for poll {combination['id']} ({image_type})"
-            
+                image_message_text = (
+                    f"Test image for poll {combination['id']} ({image_type})"
+                )
+
             # Create the poll
             result = await bulletproof_ops.create_bulletproof_poll(
                 poll_data=poll_data,
                 user_id=self.test_user_id,
                 image_file=image_file_data,
                 image_filename=image_filename,
-                image_message_text=image_message_text
+                image_message_text=image_message_text,
             )
-            
+
             if result["success"]:
                 poll_id = result["poll_id"]
                 logger.info(f"✅ Created poll {poll_id}: {poll_data['name']}")
@@ -553,62 +748,76 @@ class ComprehensivePollGenerator:
             else:
                 error_msg = result.get("error", "Unknown error")
                 step = result.get("step", "unknown")
-                
+
                 # Provide more helpful error messages for common issues
                 if "Channel" in error_msg and "not found" in error_msg:
-                    logger.error(f"❌ Discord channel issue for poll {combination['id']}: {error_msg}")
-                    logger.error(f"   💡 This usually means:")
-                    logger.error(f"   - The bot is not connected to Discord")
-                    logger.error(f"   - The bot is not in the server containing this channel")
-                    logger.error(f"   - The channel ID is incorrect")
-                    logger.error(f"   - The bot doesn't have permission to see the channel")
-                    logger.error(f"   📝 Try using --dry-run to test without Discord validation")
+                    logger.error(
+                        f"❌ Discord channel issue for poll {combination['id']}: {error_msg}"
+                    )
+                    logger.error("   💡 This usually means:")
+                    logger.error("   - The bot is not connected to Discord")
+                    logger.error(
+                        "   - The bot is not in the server containing this channel"
+                    )
+                    logger.error("   - The channel ID is incorrect")
+                    logger.error(
+                        "   - The bot doesn't have permission to see the channel"
+                    )
+                    logger.error(
+                        "   📝 Try using --dry-run to test without Discord validation"
+                    )
                 elif step == "discord_validation":
-                    logger.error(f"❌ Discord validation failed for poll {combination['id']}: {error_msg}")
-                    logger.error(f"   💡 Check bot permissions and server access")
+                    logger.error(
+                        f"❌ Discord validation failed for poll {combination['id']}: {error_msg}"
+                    )
+                    logger.error("   💡 Check bot permissions and server access")
                 else:
-                    logger.error(f"❌ Failed to create poll {combination['id']} at step '{step}': {error_msg}")
-                
+                    logger.error(
+                        f"❌ Failed to create poll {combination['id']} at step '{step}': {error_msg}"
+                    )
+
                 return False, error_msg
-                
+
         except Exception as e:
             logger.error(f"❌ Exception creating poll {combination['id']}: {e}")
             return False, str(e)
-    
+
     async def generate_all_polls(self):
         """Generate all poll combinations"""
         logger.info("Starting comprehensive poll generation...")
-        
+
         # Initialize database
         init_database()
-        
+
         # Generate all combinations
         self.combinations = self.generate_all_combinations()
-        
+
         if self.limit:
-            self.combinations = self.combinations[:self.limit]
+            self.combinations = self.combinations[: self.limit]
             logger.info(f"Limited to first {self.limit} combinations")
-        
+
         logger.info(f"Will generate {len(self.combinations)} polls")
-        
+
         # Create polls
         for i, combination in enumerate(self.combinations):
-            logger.info(f"Creating poll {i+1}/{len(self.combinations)} (ID: {combination['id']})")
-            
+            logger.info(
+                f"Creating poll {i + 1}/{len(self.combinations)} (ID: {combination['id']})"
+            )
+
             success, message = await self.create_single_poll(combination)
-            
+
             self.generated_count += 1
             if success:
                 self.success_count += 1
             else:
                 self.error_count += 1
-            
+
             # Add small delay to avoid overwhelming the system
             await asyncio.sleep(0.1)
-        
+
         # Print summary
         self.print_summary()
-    
+
     def print_summary(self):
         """Print generation summary"""
         logger.info("=" * 60)
@@ -617,173 +826,219 @@ class ComprehensivePollGenerator:
         logger.info(f"Total combinations generated: {self.generated_count}")
         logger.info(f"Successful creations: {self.success_count}")
         logger.info(f"Failed creations: {self.error_count}")
-        logger.info(f"Success rate: {(self.success_count/self.generated_count*100):.1f}%" if self.generated_count > 0 else "N/A")
-        
+        logger.info(
+            f"Success rate: {(self.success_count / self.generated_count * 100):.1f}%"
+            if self.generated_count > 0
+            else "N/A"
+        )
+
         if self.dry_run:
             logger.info("NOTE: This was a DRY RUN - no polls were actually created")
-        
+
         logger.info("=" * 60)
-        
+
         # Print combination breakdown
         logger.info("COMBINATION BREAKDOWN:")
         option_counts = {}
         emoji_types = {}
         schedule_types = {}
-        
+
         for combo in self.combinations:
             # Count option counts
             count = combo["option_count"]
             option_counts[count] = option_counts.get(count, 0) + 1
-            
+
             # Count emoji types
             emoji_type = combo["emoji_type"]
             emoji_types[emoji_type] = emoji_types.get(emoji_type, 0) + 1
-            
+
             # Count schedule types
             schedule_type = combo["schedule_type"]
             schedule_types[schedule_type] = schedule_types.get(schedule_type, 0) + 1
-        
+
         logger.info(f"Option counts: {dict(sorted(option_counts.items()))}")
         logger.info(f"Emoji types: {emoji_types}")
         logger.info(f"Schedule types: {schedule_types}")
         logger.info("=" * 60)
-    
+
     async def generate_polls_for_all_images(self):
         """Generate polls using random combinations with each real image"""
         logger.info("Starting comprehensive poll generation with ALL IMAGES...")
-        logger.info("This will create polls using RANDOM COMBINATIONS with each real image!")
-        
+        logger.info(
+            "This will create polls using RANDOM COMBINATIONS with each real image!"
+        )
+
         # Initialize database
         init_database()
-        
+
         # Setup real images
-        if not hasattr(self.image_generator, 'real_images_cache') or not self.image_generator.real_images_cache:
+        if (
+            not hasattr(self.image_generator, "real_images_cache")
+            or not self.image_generator.real_images_cache
+        ):
             self.image_generator._setup_real_images()
-        
+
         total_images = len(self.image_generator.real_images_cache)
         logger.info(f"Found {total_images} real images to create polls for")
-        
+
         if total_images == 0:
-            logger.error("No real images found! Make sure the sample-images repository is available.")
+            logger.error(
+                "No real images found! Make sure the sample-images repository is available."
+            )
             return
-        
+
         # Generate all combinations (but force has_image=True for all)
         base_combinations = self.generate_all_combinations()
-        
+
         # Filter to only combinations that have images
-        image_combinations = [combo for combo in base_combinations if combo["has_image"]]
-        logger.info(f"Available {len(image_combinations)} combinations that include images")
-        
+        image_combinations = [
+            combo for combo in base_combinations if combo["has_image"]
+        ]
+        logger.info(
+            f"Available {len(image_combinations)} combinations that include images"
+        )
+
         # Apply limit to images if specified
         if self.limit:
             total_images = min(self.limit, total_images)
             logger.info(f"Limited to first {total_images} images")
-        
-        logger.info(f"Will create {total_images} total polls (1 random combination per image)")
-        
+
+        logger.info(
+            f"Will create {total_images} total polls (1 random combination per image)"
+        )
+
         start_time = datetime.now()
-        
+
         # Track combination usage for tallying
         combination_usage = {}
-        
+
         # Create one poll per image with a random combination
-        for img_idx, image_path in enumerate(self.image_generator.real_images_cache[:total_images]):
+        for img_idx, image_path in enumerate(
+            self.image_generator.real_images_cache[:total_images]
+        ):
             image_name = os.path.basename(image_path)
-            
+
             # Select a random combination for this image
             import random
+
             combination = random.choice(image_combinations)
-            
+
             # Track combination usage
             combo_key = f"{combination['option_count']}opt_{combination['emoji_type']}_{combination['schedule_type']}_{'anon' if combination['anonymous'] else 'pub'}_{'multi' if combination['multiple_choice'] else 'single'}_{'ping' if combination['ping_role_enabled'] else 'noping'}"
             combination_usage[combo_key] = combination_usage.get(combo_key, 0) + 1
-            
-            logger.info(f"Creating poll {img_idx+1}/{total_images} - Image: {image_name}, Combo: {combo_key}")
-            
-            success = await self.create_poll_with_image_and_combination(image_path, combination, img_idx + 1)
-            
+
+            logger.info(
+                f"Creating poll {img_idx + 1}/{total_images} - Image: {image_name}, Combo: {combo_key}"
+            )
+
+            success = await self.create_poll_with_image_and_combination(
+                image_path, combination, img_idx + 1
+            )
+
             self.generated_count += 1
             if success:
                 self.success_count += 1
             else:
                 self.error_count += 1
-            
+
             # Add small delay to avoid overwhelming the system
             await asyncio.sleep(0.1)
-            
+
             # Progress update every 100 polls
             if (img_idx + 1) % 100 == 0:
                 elapsed = datetime.now() - start_time
                 rate = (img_idx + 1) / elapsed.total_seconds()
-                logger.info(f"Progress: {img_idx+1}/{total_images} polls created ({rate:.1f} polls/sec)")
-        
+                logger.info(
+                    f"Progress: {img_idx + 1}/{total_images} polls created ({rate:.1f} polls/sec)"
+                )
+
         # Print summary with combination tallies
         self.print_all_images_summary_with_tallies(start_time, combination_usage)
-    
-    async def create_poll_with_image_and_combination(self, image_path: str, combination: Dict[str, Any], poll_number: int) -> bool:
+
+    async def create_poll_with_image_and_combination(
+        self, image_path: str, combination: Dict[str, Any], poll_number: int
+    ) -> bool:
         """Create a poll with a specific image using a full combination"""
         try:
             # Apply delay between polls (simple rate limiting)
             if not self.dry_run and self.delay_between_polls > 0:
-                logger.info(f"⏳ Waiting {self.delay_between_polls} seconds before creating image poll...")
+                logger.info(
+                    f"⏳ Waiting {self.delay_between_polls} seconds before creating image poll..."
+                )
                 await asyncio.sleep(self.delay_between_polls)
-            
+
             # Create poll data from the combination
             poll_data = self.create_poll_data(combination)
-            
+
             # Override the poll name and question to be image-specific
             image_name = os.path.basename(image_path)
-            poll_data["name"] = f"Real Image Poll #{poll_number}: {image_name} (Combo {combination['id']})"
-            poll_data["question"] = f"What do you think of this image? ({image_name}) - Testing combination {combination['id']}"
-            
+            poll_data["name"] = (
+                f"Real Image Poll #{poll_number}: {image_name} (Combo {combination['id']})"
+            )
+            poll_data["question"] = (
+                f"What do you think of this image? ({image_name}) - Testing combination {combination['id']}"
+            )
+
             if self.dry_run:
-                logger.info(f"DRY RUN: Would create poll with image {image_name} using combination {combination['id']}")
+                logger.info(
+                    f"DRY RUN: Would create poll with image {image_name} using combination {combination['id']}"
+                )
                 return True
-            
+
             # Get bot instance (may be None in test environment)
             bot = get_bot_instance()
-            
+
             # Create bulletproof poll operations
             bulletproof_ops = BulletproofPollOperations(bot)
-            
+
             # Load the specific real image
             try:
-                with open(image_path, 'rb') as f:
+                with open(image_path, "rb") as f:
                     image_file_data = f.read()
                 image_filename = image_name
-                image_message_text = f"Real image test: {image_name} (Combination {combination['id']})"
+                image_message_text = (
+                    f"Real image test: {image_name} (Combination {combination['id']})"
+                )
             except Exception as e:
                 logger.error(f"Failed to load image {image_path}: {e}")
                 return False
-            
+
             # Create the poll
             result = await bulletproof_ops.create_bulletproof_poll(
                 poll_data=poll_data,
                 user_id=self.test_user_id,
                 image_file=image_file_data,
                 image_filename=image_filename,
-                image_message_text=image_message_text
+                image_message_text=image_message_text,
             )
-            
+
             if result["success"]:
                 poll_id = result["poll_id"]
-                logger.info(f"✅ Created poll {poll_id} with image {image_name} using combination {combination['id']}")
+                logger.info(
+                    f"✅ Created poll {poll_id} with image {image_name} using combination {combination['id']}"
+                )
                 return True
             else:
                 error_msg = result.get("error", "Unknown error")
-                logger.error(f"❌ Failed to create poll with image {image_name} using combination {combination['id']}: {error_msg}")
+                logger.error(
+                    f"❌ Failed to create poll with image {image_name} using combination {combination['id']}: {error_msg}"
+                )
                 return False
-                
+
         except Exception as e:
-            logger.error(f"❌ Exception creating poll with image {image_path} using combination {combination['id']}: {e}")
+            logger.error(
+                f"❌ Exception creating poll with image {image_path} using combination {combination['id']}: {e}"
+            )
             return False
 
-    async def create_poll_with_specific_image(self, image_path: str, index: int) -> bool:
+    async def create_poll_with_specific_image(
+        self, image_path: str, index: int
+    ) -> bool:
         """Create a poll with a specific image (legacy method for backward compatibility)"""
         try:
             # Create a basic poll configuration for this image
             option_count = 2 + (index % 9)  # 2-10 options
-            
+
             combination = {
                 "id": f"image_{index}",
                 "option_count": option_count,
@@ -793,43 +1048,57 @@ class ComprehensivePollGenerator:
                 "has_image": True,
                 "emoji_type": ["default", "unicode", "symbols", "mixed"][index % 4],
                 "schedule_type": "immediate",
-                "timezone": self.test_timezones[index % len(self.test_timezones)]
+                "timezone": self.test_timezones[index % len(self.test_timezones)],
             }
-            
-            return await self.create_poll_with_image_and_combination(image_path, combination, index + 1)
-                
+
+            return await self.create_poll_with_image_and_combination(
+                image_path, combination, index + 1
+            )
+
         except Exception as e:
             logger.error(f"❌ Exception creating poll with image {image_path}: {e}")
             return False
-    
-    def print_all_images_summary_with_tallies(self, start_time: datetime, combination_usage: Dict[str, int]):
+
+    def print_all_images_summary_with_tallies(
+        self, start_time: datetime, combination_usage: Dict[str, int]
+    ):
         """Print summary for all images generation with combination tallies"""
         end_time = datetime.now()
         duration = end_time - start_time
-        
+
         logger.info("=" * 60)
         logger.info("ALL IMAGES POLL GENERATION SUMMARY")
         logger.info("=" * 60)
         logger.info(f"Total images processed: {self.generated_count}")
         logger.info(f"Successful poll creations: {self.success_count}")
         logger.info(f"Failed poll creations: {self.error_count}")
-        logger.info(f"Success rate: {(self.success_count/self.generated_count*100):.1f}%" if self.generated_count > 0 else "N/A")
+        logger.info(
+            f"Success rate: {(self.success_count / self.generated_count * 100):.1f}%"
+            if self.generated_count > 0
+            else "N/A"
+        )
         logger.info(f"Total execution time: {duration.total_seconds():.2f} seconds")
-        logger.info(f"Average time per poll: {(duration.total_seconds()/self.generated_count):.2f} seconds" if self.generated_count > 0 else "N/A")
-        
+        logger.info(
+            f"Average time per poll: {(duration.total_seconds() / self.generated_count):.2f} seconds"
+            if self.generated_count > 0
+            else "N/A"
+        )
+
         if self.dry_run:
             logger.info("NOTE: This was a DRY RUN - no polls were actually created")
-        
+
         logger.info("=" * 60)
         logger.info("COMBINATION USAGE TALLIES:")
         logger.info("=" * 60)
-        
+
         # Sort combinations by usage count (most used first)
-        sorted_combinations = sorted(combination_usage.items(), key=lambda x: x[1], reverse=True)
-        
+        sorted_combinations = sorted(
+            combination_usage.items(), key=lambda x: x[1], reverse=True
+        )
+
         for combo_key, count in sorted_combinations:
             logger.info(f"{combo_key}: {count} polls")
-        
+
         logger.info("=" * 60)
         logger.info(f"Total unique combinations used: {len(combination_usage)}")
         logger.info("=" * 60)
@@ -838,22 +1107,30 @@ class ComprehensivePollGenerator:
         """Print summary for all images generation"""
         end_time = datetime.now()
         duration = end_time - start_time
-        
+
         logger.info("=" * 60)
         logger.info("ALL IMAGES POLL GENERATION SUMMARY")
         logger.info("=" * 60)
         logger.info(f"Total images processed: {self.generated_count}")
         logger.info(f"Successful poll creations: {self.success_count}")
         logger.info(f"Failed poll creations: {self.error_count}")
-        logger.info(f"Success rate: {(self.success_count/self.generated_count*100):.1f}%" if self.generated_count > 0 else "N/A")
+        logger.info(
+            f"Success rate: {(self.success_count / self.generated_count * 100):.1f}%"
+            if self.generated_count > 0
+            else "N/A"
+        )
         logger.info(f"Total execution time: {duration.total_seconds():.2f} seconds")
-        logger.info(f"Average time per poll: {(duration.total_seconds()/self.generated_count):.2f} seconds" if self.generated_count > 0 else "N/A")
-        
+        logger.info(
+            f"Average time per poll: {(duration.total_seconds() / self.generated_count):.2f} seconds"
+            if self.generated_count > 0
+            else "N/A"
+        )
+
         if self.dry_run:
             logger.info("NOTE: This was a DRY RUN - no polls were actually created")
-        
+
         logger.info("=" * 60)
-    
+
     def export_combinations_json(self, filename: str = "poll_combinations.json"):
         """Export all combinations to JSON file for analysis"""
         try:
@@ -861,130 +1138,163 @@ class ComprehensivePollGenerator:
             exportable_combinations = []
             for combo in self.combinations:
                 poll_data = self.create_poll_data(combo)
-                
+
                 # Convert datetime objects to ISO format strings
                 exportable_data = {**poll_data}
                 exportable_data["open_time"] = poll_data["open_time"].isoformat()
                 exportable_data["close_time"] = poll_data["close_time"].isoformat()
                 exportable_data["combination_id"] = combo["id"]
                 exportable_data["combination_config"] = combo
-                
+
                 exportable_combinations.append(exportable_data)
-            
-            with open(filename, 'w', encoding='utf-8') as f:
+
+            with open(filename, "w", encoding="utf-8") as f:
                 json.dump(exportable_combinations, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Exported {len(exportable_combinations)} combinations to {filename}")
-            
+
+            logger.info(
+                f"Exported {len(exportable_combinations)} combinations to {filename}"
+            )
+
         except Exception as e:
             logger.error(f"Failed to export combinations: {e}")
+
 
 async def main():
     """Main function"""
     parser = argparse.ArgumentParser(description="Generate comprehensive test polls")
-    parser.add_argument("--dry-run", action="store_true", 
-                       help="Show what would be created without actually creating polls")
-    parser.add_argument("--limit", type=int, 
-                       help="Limit the number of polls to create")
-    parser.add_argument("--export-json", action="store_true",
-                       help="Export poll combinations to JSON file")
-    parser.add_argument("--use-real-images", action="store_true",
-                       help="Use real images from sample-images repository")
-    parser.add_argument("--use-all-images", action="store_true",
-                       help="Create a poll for each image in the repository (2000+ polls)")
-    parser.add_argument("--no-cleanup", action="store_true",
-                       help="Keep the sample-images repository after testing")
-    
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be created without actually creating polls",
+    )
+    parser.add_argument("--limit", type=int, help="Limit the number of polls to create")
+    parser.add_argument(
+        "--export-json",
+        action="store_true",
+        help="Export poll combinations to JSON file",
+    )
+    parser.add_argument(
+        "--use-real-images",
+        action="store_true",
+        help="Use real images from sample-images repository",
+    )
+    parser.add_argument(
+        "--use-all-images",
+        action="store_true",
+        help="Create a poll for each image in the repository (2000+ polls)",
+    )
+    parser.add_argument(
+        "--no-cleanup",
+        action="store_true",
+        help="Keep the sample-images repository after testing",
+    )
+
     # Discord configuration options
-    parser.add_argument("--server-id", type=str,
-                       help="Discord server/guild ID to create polls in")
-    parser.add_argument("--channel-id", type=str,
-                       help="Discord channel ID to create polls in")
-    parser.add_argument("--user-id", type=str,
-                       help="Discord user ID to use as poll creator")
-    parser.add_argument("--role-id", type=str,
-                       help="Discord role ID to use for role pings")
-    
+    parser.add_argument(
+        "--server-id", type=str, help="Discord server/guild ID to create polls in"
+    )
+    parser.add_argument(
+        "--channel-id", type=str, help="Discord channel ID to create polls in"
+    )
+    parser.add_argument(
+        "--user-id", type=str, help="Discord user ID to use as poll creator"
+    )
+    parser.add_argument(
+        "--role-id", type=str, help="Discord role ID to use for role pings"
+    )
+
     # Rate limiting option
-    parser.add_argument("--delay", type=float, default=2.0,
-                       help="Seconds to wait between creating polls (default: 2.0)")
-    
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=2.0,
+        help="Seconds to wait between creating polls (default: 2.0)",
+    )
+
     args = parser.parse_args()
-    
+
     # Initialize database first
     init_database()
-    
+
     # Start Discord bot connection if not in dry-run or export mode
     bot_task = None
     if not args.dry_run and not args.export_json:
         logger.info("Starting Discord bot connection...")
         try:
             from polly.discord_bot import get_bot_instance, start_bot
+
             bot = get_bot_instance()
-            
+
             # Start bot in background task
             bot_task = asyncio.create_task(start_bot())
-            
+
             # Wait for bot to be ready
             logger.info("Waiting for bot to connect to Discord...")
             timeout = 30  # 30 second timeout
             start_time = asyncio.get_event_loop().time()
-            
+
             while not bot.is_ready():
                 if asyncio.get_event_loop().time() - start_time > timeout:
                     raise TimeoutError("Bot failed to connect within 30 seconds")
                 await asyncio.sleep(0.5)
-            
+
             logger.info(f"✅ Bot connected as {bot.user}")
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to start Discord bot: {e}")
-            logger.error("💡 Make sure DISCORD_TOKEN is set and the bot has proper permissions")
+            logger.error(
+                "💡 Make sure DISCORD_TOKEN is set and the bot has proper permissions"
+            )
             if bot_task:
                 bot_task.cancel()
             return
-    
+
     try:
         generator = ComprehensivePollGenerator(
-            dry_run=args.dry_run, 
+            dry_run=args.dry_run,
             limit=args.limit,
             server_id=args.server_id,
             channel_id=args.channel_id,
             user_id=args.user_id,
             role_id=args.role_id,
-            delay_between_polls=args.delay
+            delay_between_polls=args.delay,
         )
-        
+
         # Enable real images if requested
         if args.use_real_images or args.use_all_images:
             generator.image_generator = TestImageGenerator(use_real_images=True)
             logger.info("Real images enabled - will use sample-images repository")
-            
+
             # Store cleanup preference for later use
             generator.should_cleanup = not args.no_cleanup
             if args.no_cleanup:
-                logger.info("Repository cleanup disabled - will keep sample-images after testing")
-        
+                logger.info(
+                    "Repository cleanup disabled - will keep sample-images after testing"
+                )
+
         # Handle --use-all-images mode
         if args.use_all_images:
-            logger.info("USE ALL IMAGES MODE: Will create a poll for each image in repository")
+            logger.info(
+                "USE ALL IMAGES MODE: Will create a poll for each image in repository"
+            )
             await generator.generate_polls_for_all_images()
         elif args.export_json:
             # Just export combinations without creating polls
             generator.combinations = generator.generate_all_combinations()
             if args.limit:
-                generator.combinations = generator.combinations[:args.limit]
+                generator.combinations = generator.combinations[: args.limit]
             generator.export_combinations_json()
         else:
             # Generate actual polls
             await generator.generate_all_polls()
-            
+
     finally:
         # Clean up bot connection
         if bot_task and not bot_task.done():
             logger.info("Shutting down Discord bot...")
             try:
                 from polly.discord_bot import shutdown_bot
+
                 await shutdown_bot()
                 bot_task.cancel()
                 try:
@@ -993,6 +1303,7 @@ async def main():
                     pass
             except Exception as e:
                 logger.error(f"Error shutting down bot: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

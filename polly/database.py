@@ -3,7 +3,16 @@ Polly Database Models
 SQLite database with SQLAlchemy ORM for polls, votes, and users.
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    ForeignKey,
+    Boolean,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
 from typing import List, Optional
@@ -13,7 +22,7 @@ import json
 
 class TypeSafeColumn:
     """Type-safe column access for SQLAlchemy models"""
-    
+
     @staticmethod
     def get_string(obj, column_name: str, default: str = "") -> str:
         """Safely get string value from SQLAlchemy column"""
@@ -22,7 +31,7 @@ class TypeSafeColumn:
             return str(value) if value is not None else default
         except (AttributeError, TypeError):
             return default
-    
+
     @staticmethod
     def get_int(obj, column_name: str, default: int = 0) -> int:
         """Safely get integer value from SQLAlchemy column"""
@@ -31,7 +40,7 @@ class TypeSafeColumn:
             return int(value) if value is not None else default
         except (AttributeError, TypeError, ValueError):
             return default
-    
+
     @staticmethod
     def get_bool(obj, column_name: str, default: bool = False) -> bool:
         """Safely get boolean value from SQLAlchemy column"""
@@ -45,7 +54,7 @@ class TypeSafeColumn:
             return bool(value)
         except (AttributeError, TypeError, ValueError):
             return default
-    
+
     @staticmethod
     def get_datetime(obj, column_name: str, default: Optional[object] = None):
         """Safely get datetime value from SQLAlchemy column"""
@@ -54,6 +63,7 @@ class TypeSafeColumn:
             return value if value is not None else default
         except AttributeError:
             return default
+
 
 # Database setup
 DATABASE_URL = config("DATABASE_URL", default="sqlite:///./db/polly.db")
@@ -64,6 +74,7 @@ Base = declarative_base()
 
 class Poll(Base):
     """Poll model with name, question, options, and scheduling"""
+
     __tablename__ = "polls"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -97,13 +108,12 @@ class Poll(Base):
     status = Column(String(20), default="scheduled")  # scheduled/active/closed
 
     # Relationship to votes
-    votes = relationship("Vote", back_populates="poll",
-                         cascade="all, delete-orphan")
+    votes = relationship("Vote", back_populates="poll", cascade="all, delete-orphan")
 
     @property
     def options(self) -> List[str]:
         """Get poll options as Python list"""
-        options_str = getattr(self, 'options_json', None)
+        options_str = getattr(self, "options_json", None)
         if options_str:
             return json.loads(options_str)
         return []
@@ -167,6 +177,7 @@ class Poll(Base):
 
 class Vote(Base):
     """Vote model linking users to poll options"""
+
     __tablename__ = "votes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -181,6 +192,7 @@ class Vote(Base):
 
 class User(Base):
     """User model for web authentication"""
+
     __tablename__ = "users"
 
     id = Column(String(50), primary_key=True)  # Discord user ID as primary key
@@ -192,6 +204,7 @@ class User(Base):
 
 class UserPreference(Base):
     """User preferences for poll creation"""
+
     __tablename__ = "user_preferences"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -201,8 +214,7 @@ class UserPreference(Base):
     last_channel_id = Column(String(50), nullable=True)
     # Last selected role for pinging
     last_role_id = Column(String(50), nullable=True)
-    default_timezone = Column(
-        String(50), default="US/Eastern")  # Default timezone
+    default_timezone = Column(String(50), default="US/Eastern")  # Default timezone
     # Track if user has explicitly set their timezone preference
     timezone_explicitly_set = Column(Boolean, default=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -213,6 +225,7 @@ class UserPreference(Base):
 
 class Guild(Base):
     """Cache Discord guild information"""
+
     __tablename__ = "guilds"
 
     id = Column(String(50), primary_key=True)  # Discord guild ID
@@ -224,6 +237,7 @@ class Guild(Base):
 
 class Channel(Base):
     """Cache Discord channel information"""
+
     __tablename__ = "channels"
 
     id = Column(String(50), primary_key=True)  # Discord channel ID
@@ -239,6 +253,7 @@ class Channel(Base):
 
 # Database utility functions
 
+
 def get_db():
     """Get database session"""
     db = SessionLocal()
@@ -251,7 +266,7 @@ def get_db():
 def init_database():
     """Initialize database tables using migration system"""
     from .migrations import initialize_database_if_missing
-    
+
     success = initialize_database_if_missing()
     if success:
         print("Database initialized successfully!")

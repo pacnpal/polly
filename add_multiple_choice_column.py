@@ -27,7 +27,7 @@ def add_multiple_choice_column():
         cursor.execute("PRAGMA table_info(polls)")
         columns = [column[1] for column in cursor.fetchall()]
 
-        if 'multiple_choice' in columns:
+        if "multiple_choice" in columns:
             print("✅ multiple_choice column already exists")
             return True
 
@@ -46,7 +46,7 @@ def add_multiple_choice_column():
         cursor.execute("PRAGMA table_info(polls)")
         columns = [column[1] for column in cursor.fetchall()]
 
-        if 'multiple_choice' in columns:
+        if "multiple_choice" in columns:
             print("✅ Column addition verified")
             return True
         else:

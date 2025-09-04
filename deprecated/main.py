@@ -2,16 +2,32 @@
 Polly Main Application
 Discord bot + FastAPI web server with admin-only poll creation.
 """
+
 # Load environment variables FIRST before importing other modules
 from .discord_utils import (
-    get_user_guilds_with_channels, create_poll_embed, post_poll_to_channel,
-    update_poll_message, user_has_admin_permissions
+    get_user_guilds_with_channels,
+    create_poll_embed,
+    post_poll_to_channel,
+    update_poll_message,
+    user_has_admin_permissions,
 )
 from .auth import (
-    save_user_to_db, get_discord_oauth_url, exchange_code_for_token,
-    get_discord_user, create_access_token, require_auth, DiscordUser
+    save_user_to_db,
+    get_discord_oauth_url,
+    exchange_code_for_token,
+    get_discord_user,
+    create_access_token,
+    require_auth,
+    DiscordUser,
 )
-from .database import init_database, get_db_session, Poll, Vote, POLL_EMOJIS, UserPreference
+from .database import (
+    init_database,
+    get_db_session,
+    Poll,
+    Vote,
+    POLL_EMOJIS,
+    UserPreference,
+)
 from .bulletproof_operations import BulletproofPollOperations
 from .error_handler import PollErrorHandler
 import uvicorn
@@ -32,6 +48,7 @@ import os
 import uuid
 import aiofiles
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -44,11 +61,8 @@ if not DISCORD_TOKEN:
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/polly.log'),
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("logs/polly.log"), logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
@@ -65,7 +79,7 @@ intents.message_content = True
 intents.guilds = True
 intents.reactions = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Scheduler for poll timing
 scheduler = AsyncIOScheduler()
@@ -83,6 +97,7 @@ async def cleanup_image(image_path: str) -> bool:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
+
         notify_error(e, "Image Cleanup", image_path=image_path)
     return False
 
@@ -98,6 +113,7 @@ async def cleanup_poll_images(poll_id: int) -> None:
         logger.error(f"Error cleaning up poll {poll_id} images: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
+
         notify_error(e, "Poll Image Cleanup", poll_id=poll_id)
     finally:
         db.close()
@@ -114,6 +130,7 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
         logger.warning(f"Error extracting form data for key '{key}': {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
+
         notify_error(e, "Form Data Extraction", key=key, default=default)
         return default
 
@@ -136,7 +153,7 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         "Eastern": "US/Eastern",
         "Central": "US/Central",
         "Mountain": "US/Mountain",
-        "Pacific": "US/Pacific"
+        "Pacific": "US/Pacific",
     }
 
     # Check if it's a mapped timezone
@@ -154,6 +171,7 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         logger.error(f"Error validating timezone '{timezone_str}': {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
+
         notify_error(e, "Timezone Validation", timezone_str=timezone_str)
         return "UTC"
 
@@ -181,13 +199,15 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
 
         # Debug logging to help troubleshoot timezone issues
         logger.debug(
-            f"Timezone parsing: '{datetime_str}' in '{timezone_str}' -> {localized_dt} -> {utc_dt}")
+            f"Timezone parsing: '{datetime_str}' in '{timezone_str}' -> {localized_dt} -> {utc_dt}"
+        )
 
         return utc_dt
 
     except Exception as e:
         logger.error(
-            f"Error parsing datetime '{datetime_str}' with timezone '{timezone_str}': {e}")
+            f"Error parsing datetime '{datetime_str}' with timezone '{timezone_str}': {e}"
+        )
         # Fallback: parse as UTC
         try:
             dt = datetime.fromisoformat(datetime_str)
@@ -198,8 +218,13 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
             logger.error(f"Fallback datetime parsing failed: {fallback_error}")
             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
             from .error_handler import notify_error
-            notify_error(fallback_error, "Fallback Datetime Parsing",
-                         datetime_str=datetime_str, timezone_str=timezone_str)
+
+            notify_error(
+                fallback_error,
+                "Fallback Datetime Parsing",
+                datetime_str=datetime_str,
+                timezone_str=timezone_str,
+            )
             # Last resort: return current time
             return datetime.now(pytz.UTC)
 
@@ -207,7 +232,11 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
 async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
     """Validate uploaded image file and return validation result"""
     try:
-        if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
+        if (
+            not image_file
+            or not hasattr(image_file, "filename")
+            or not image_file.filename
+        ):
             return True, "", None
 
         # Read file content
@@ -218,8 +247,11 @@ async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
             return False, "Image file too large (max 8MB)", None
 
         # Validate file type
-        allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-        if hasattr(image_file, 'content_type') and image_file.content_type not in allowed_types:
+        allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+        if (
+            hasattr(image_file, "content_type")
+            and image_file.content_type not in allowed_types
+        ):
             return False, "Invalid image format (JPEG, PNG, GIF, WebP only)", None
 
         return True, "", content
@@ -227,6 +259,7 @@ async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
         logger.error(f"Error validating image file: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "Image File Validation")
         return False, "Error processing image file", None
 
@@ -234,7 +267,7 @@ async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
 async def save_image_file(content: bytes, filename: str) -> str | None:
     """Save image file with proper error handling"""
     try:
-        file_extension = filename.split('.')[-1].lower()
+        file_extension = filename.split(".")[-1].lower()
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
         image_path = f"static/uploads/{unique_filename}"
 
@@ -251,6 +284,7 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
         logger.error(f"Error saving image file: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "Image File Saving", filename=filename)
         return None
 
@@ -259,28 +293,30 @@ def get_user_preferences(user_id: str) -> dict:
     """Get user preferences for poll creation"""
     db = get_db_session()
     try:
-        prefs = db.query(UserPreference).filter(
-            UserPreference.user_id == user_id).first()
+        prefs = (
+            db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
+        )
         if prefs:
             return {
                 "last_server_id": prefs.last_server_id,
                 "last_channel_id": prefs.last_channel_id,
-                "default_timezone": prefs.default_timezone or "US/Eastern"
+                "default_timezone": prefs.default_timezone or "US/Eastern",
             }
         return {
             "last_server_id": None,
             "last_channel_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
         }
     except Exception as e:
         logger.error(f"Error getting user preferences for {user_id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
+
         notify_error(e, "User Preferences Retrieval", user_id=user_id)
         return {
             "last_server_id": None,
             "last_channel_id": None,
-            "default_timezone": "US/Eastern"
+            "default_timezone": "US/Eastern",
         }
     finally:
         db.close()
@@ -297,57 +333,108 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
         user_tz = pytz.timezone(validate_and_normalize_timezone(user_timezone))
         local_dt = dt.astimezone(user_tz)
 
-        return local_dt.strftime('%b %d, %I:%M %p')
+        return local_dt.strftime("%b %d, %I:%M %p")
     except Exception as e:
         logger.error(
-            f"Error formatting datetime {dt} for timezone {user_timezone}: {e}")
+            f"Error formatting datetime {dt} for timezone {user_timezone}: {e}"
+        )
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
-        notify_error(e, "Datetime Formatting", dt=str(
-            dt), user_timezone=user_timezone)
+
+        notify_error(e, "Datetime Formatting", dt=str(dt), user_timezone=user_timezone)
         # Fallback to UTC
-        return dt.strftime('%b %d, %I:%M %p UTC')
+        return dt.strftime("%b %d, %I:%M %p UTC")
 
 
 def get_common_timezones() -> list:
     """Get comprehensive list of timezones with display names"""
     common_timezones = [
         # North America
-        "US/Eastern", "US/Central", "US/Mountain", "US/Pacific", "US/Alaska", "US/Hawaii",
-        "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-        "America/Anchorage", "America/Honolulu", "America/Toronto", "America/Vancouver",
-        "America/Mexico_City", "America/Sao_Paulo", "America/Argentina/Buenos_Aires",
-
+        "US/Eastern",
+        "US/Central",
+        "US/Mountain",
+        "US/Pacific",
+        "US/Alaska",
+        "US/Hawaii",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Anchorage",
+        "America/Honolulu",
+        "America/Toronto",
+        "America/Vancouver",
+        "America/Mexico_City",
+        "America/Sao_Paulo",
+        "America/Argentina/Buenos_Aires",
         # Europe
-        "UTC", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Rome",
-        "Europe/Madrid", "Europe/Amsterdam", "Europe/Brussels", "Europe/Vienna",
-        "Europe/Prague", "Europe/Warsaw", "Europe/Stockholm", "Europe/Helsinki",
-        "Europe/Oslo", "Europe/Copenhagen", "Europe/Zurich", "Europe/Athens",
-        "Europe/Istanbul", "Europe/Moscow",
-
+        "UTC",
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Europe/Rome",
+        "Europe/Madrid",
+        "Europe/Amsterdam",
+        "Europe/Brussels",
+        "Europe/Vienna",
+        "Europe/Prague",
+        "Europe/Warsaw",
+        "Europe/Stockholm",
+        "Europe/Helsinki",
+        "Europe/Oslo",
+        "Europe/Copenhagen",
+        "Europe/Zurich",
+        "Europe/Athens",
+        "Europe/Istanbul",
+        "Europe/Moscow",
         # Asia Pacific
-        "Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Singapore",
-        "Asia/Bangkok", "Asia/Jakarta", "Asia/Manila", "Asia/Kuala_Lumpur",
-        "Asia/Mumbai", "Asia/Kolkata", "Asia/Dubai", "Asia/Tehran", "Asia/Jerusalem",
-        "Australia/Sydney", "Australia/Melbourne", "Australia/Perth", "Australia/Brisbane",
-        "Pacific/Auckland", "Pacific/Fiji", "Pacific/Honolulu",
-
+        "Asia/Tokyo",
+        "Asia/Seoul",
+        "Asia/Shanghai",
+        "Asia/Hong_Kong",
+        "Asia/Singapore",
+        "Asia/Bangkok",
+        "Asia/Jakarta",
+        "Asia/Manila",
+        "Asia/Kuala_Lumpur",
+        "Asia/Mumbai",
+        "Asia/Kolkata",
+        "Asia/Dubai",
+        "Asia/Tehran",
+        "Asia/Jerusalem",
+        "Australia/Sydney",
+        "Australia/Melbourne",
+        "Australia/Perth",
+        "Australia/Brisbane",
+        "Pacific/Auckland",
+        "Pacific/Fiji",
+        "Pacific/Honolulu",
         # Africa
-        "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
-        "Africa/Casablanca", "Africa/Tunis", "Africa/Algiers",
-
+        "Africa/Cairo",
+        "Africa/Johannesburg",
+        "Africa/Lagos",
+        "Africa/Nairobi",
+        "Africa/Casablanca",
+        "Africa/Tunis",
+        "Africa/Algiers",
         # South America
-        "America/Lima", "America/Bogota", "America/Santiago", "America/Caracas",
-
+        "America/Lima",
+        "America/Bogota",
+        "America/Santiago",
+        "America/Caracas",
         # Other
-        "GMT", "EST", "CST", "MST", "PST"
+        "GMT",
+        "EST",
+        "CST",
+        "MST",
+        "PST",
     ]
 
     timezones = []
     for tz_name in common_timezones:
         try:
             tz_obj = pytz.timezone(tz_name)
-            offset = datetime.now(tz_obj).strftime('%z')
+            offset = datetime.now(tz_obj).strftime("%z")
             # Format offset nicely
             if offset:
                 offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
@@ -355,29 +442,28 @@ def get_common_timezones() -> list:
                 offset_formatted = "UTC"
 
             # Create a more readable display name
-            display_name = tz_name.replace('_', ' ').replace('/', ' / ')
-            timezones.append({
-                "name": tz_name,
-                "display": f"{display_name} ({offset_formatted})"
-            })
+            display_name = tz_name.replace("_", " ").replace("/", " / ")
+            timezones.append(
+                {"name": tz_name, "display": f"{display_name} ({offset_formatted})"}
+            )
         except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
             logger.warning(f"Error formatting timezone {tz_name}: {e}")
-            timezones.append({
-                "name": tz_name,
-                "display": tz_name
-            })
+            timezones.append({"name": tz_name, "display": tz_name})
 
     # Sort by offset for better UX
-    timezones.sort(key=lambda x: x['display'])
+    timezones.sort(key=lambda x: x["display"])
     return timezones
 
 
-def save_user_preferences(user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None):
+def save_user_preferences(
+    user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None
+):
     """Save user preferences for poll creation"""
     db = get_db_session()
     try:
-        prefs = db.query(UserPreference).filter(
-            UserPreference.user_id == user_id).first()
+        prefs = (
+            db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
+        )
 
         if prefs:
             # Update existing preferences
@@ -394,19 +480,27 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
                 user_id=user_id,
                 last_server_id=server_id,
                 last_channel_id=channel_id,
-                default_timezone=timezone or "US/Eastern"
+                default_timezone=timezone or "US/Eastern",
             )
             db.add(prefs)
 
         db.commit()
         logger.debug(
-            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}")
+            f"Saved preferences for user {user_id}: server={server_id}, channel={channel_id}"
+        )
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
-        notify_error(e, "User Preferences Saving", user_id=user_id,
-                     server_id=server_id, channel_id=channel_id, timezone=timezone)
+
+        notify_error(
+            e,
+            "User Preferences Saving",
+            user_id=user_id,
+            server_id=server_id,
+            channel_id=channel_id,
+            timezone=timezone,
+        )
         db.rollback()
     finally:
         db.close()
@@ -415,7 +509,7 @@ def save_user_preferences(user_id: str, server_id: str = None, channel_id: str =
 @bot.event
 async def on_ready():
     """Bot ready event"""
-    logger.info(f'{bot.user} has connected to Discord!')
+    logger.info(f"{bot.user} has connected to Discord!")
 
     # Sync slash commands
     try:
@@ -425,10 +519,13 @@ async def on_ready():
         logger.error(f"Failed to sync commands: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
+
         notify_error(e, "Discord Command Sync")
 
 
-@bot.tree.command(name="quickpoll", description="Create a quick poll in the current channel")
+@bot.tree.command(
+    name="quickpoll", description="Create a quick poll in the current channel"
+)
 async def create_quick_poll_command(
     interaction: discord.Interaction,
     question: str,
@@ -437,28 +534,27 @@ async def create_quick_poll_command(
     option3: str = None,
     option4: str = None,
     option5: str = None,
-    anonymous: bool = False
+    anonymous: bool = False,
 ):
     """Create a quick poll via Discord slash command"""
     # Check if user has admin permissions
     if not user_has_admin_permissions(interaction.user):
         await interaction.response.send_message(
             "❌ You need Administrator or Manage Server permissions to create polls.",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
     # Collect options
     options = [option1, option2]
-    emojis = ["🇦", "🇧", "🇨", "🇩", "🇪"][:len(options)]
+    emojis = ["🇦", "🇧", "🇨", "🇩", "🇪"][: len(options)]
     for opt in [option3, option4, option5]:
         if opt:
             options.append(opt)
 
     if len(options) > 10:
         await interaction.response.send_message(
-            "❌ Maximum 10 poll options allowed.",
-            ephemeral=True
+            "❌ Maximum 10 poll options allowed.", ephemeral=True
         )
         return
 
@@ -473,19 +569,21 @@ async def create_quick_poll_command(
             server_id=str(interaction.guild_id),
             server_name=interaction.guild.name if interaction.guild else "Unknown",
             channel_id=str(interaction.channel_id),
-            channel_name=getattr(interaction.channel, 'name', 'Unknown'),
+            channel_name=getattr(interaction.channel, "name", "Unknown"),
             creator_id=str(interaction.user.id),
             open_time=datetime.now(pytz.UTC),
             close_time=datetime.now(pytz.UTC) + timedelta(hours=24),
             anonymous=anonymous,
-            status="active"
+            status="active",
         )
         db.add(poll)
         db.commit()
         db.refresh(poll)
 
         # Create embed
-        embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
+        embed = await create_poll_embed(
+            poll, show_results=bool(poll.should_show_results())
+        )
 
         await interaction.response.send_message(embed=embed)
 
@@ -503,18 +601,28 @@ async def create_quick_poll_command(
             close_poll,
             DateTrigger(run_date=poll.close_time),
             args=[int(poll.id)],
-            id=f"close_poll_{int(poll.id)}"
+            id=f"close_poll_{int(poll.id)}",
         )
 
     except Exception as e:
         logger.error(f"Error creating poll: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Quick Poll Creation", question=question, user_id=str(interaction.user.id))
+
+        await notify_error_async(
+            e,
+            "Quick Poll Creation",
+            question=question,
+            user_id=str(interaction.user.id),
+        )
         if not interaction.response.is_done():
-            await interaction.response.send_message("❌ Error creating poll. Please try again.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Error creating poll. Please try again.", ephemeral=True
+            )
         else:
-            await interaction.followup.send("❌ Error creating poll. Please try again.", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Error creating poll. Please try again.", ephemeral=True
+            )
     finally:
         db.close()
 
@@ -528,8 +636,9 @@ async def on_reaction_add(reaction, user):
     # Check if this is a poll message
     db = get_db_session()
     try:
-        poll = db.query(Poll).filter(Poll.message_id ==
-                                     str(reaction.message.id)).first()
+        poll = (
+            db.query(Poll).filter(Poll.message_id == str(reaction.message.id)).first()
+        )
         if not poll or poll.status != "active":
             return
 
@@ -556,8 +665,8 @@ async def on_reaction_add(reaction, user):
             vote_action = result.get("action", "unknown")
 
             # Check poll properties safely - handle potential None values
-            is_anonymous = getattr(poll, 'anonymous', False)
-            is_multiple_choice = getattr(poll, 'multiple_choice', False)
+            is_anonymous = getattr(poll, "anonymous", False)
+            is_multiple_choice = getattr(poll, "multiple_choice", False)
 
             # Convert to boolean if needed (SQLAlchemy columns might return special types)
             if is_anonymous is not None:
@@ -574,9 +683,10 @@ async def on_reaction_add(reaction, user):
             # Always remove reactions for single choice polls (traditional behavior)
             # For multiple choice non-anonymous polls: keep reactions to show selections
             should_remove_reaction = (
-                is_anonymous or  # Anonymous polls: always remove
-                not is_multiple_choice or  # Single choice polls: always remove
-                vote_action == "removed"  # Multiple choice: remove if vote was toggled off
+                is_anonymous  # Anonymous polls: always remove
+                or not is_multiple_choice  # Single choice polls: always remove
+                or vote_action
+                == "removed"  # Multiple choice: remove if vote was toggled off
             )
 
             if should_remove_reaction:
@@ -584,15 +694,18 @@ async def on_reaction_add(reaction, user):
                     await reaction.remove(user)
                     logger.debug(
                         f"✅ Vote {vote_action} and reaction removed for user {user.id} on poll {poll_id} "
-                        f"(anonymous={is_anonymous}, multiple_choice={is_multiple_choice})")
+                        f"(anonymous={is_anonymous}, multiple_choice={is_multiple_choice})"
+                    )
                 except Exception as remove_error:
                     logger.warning(
-                        f"⚠️ Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
+                        f"⚠️ Vote recorded but failed to remove reaction from user {user.id}: {remove_error}"
+                    )
                     # Vote is still counted even if reaction removal fails
             else:
                 # Multiple choice non-anonymous: keep reaction to show user's selection
                 logger.debug(
-                    f"✅ Multiple choice non-anonymous vote {vote_action}, keeping reaction for user {user.id} on poll {poll_id}")
+                    f"✅ Multiple choice non-anonymous vote {vote_action}, keeping reaction for user {user.id} on poll {poll_id}"
+                )
 
             # Always update poll embed for live updates (key requirement)
             try:
@@ -600,36 +713,49 @@ async def on_reaction_add(reaction, user):
                 logger.debug(f"✅ Poll message updated for poll {poll_id}")
             except Exception as update_error:
                 logger.error(
-                    f"❌ Failed to update poll message for poll {poll_id}: {update_error}")
+                    f"❌ Failed to update poll message for poll {poll_id}: {update_error}"
+                )
         else:
             # Vote failed - do NOT remove reaction, log the error
             error_msg = await PollErrorHandler.handle_vote_error(
                 Exception(result["error"]), poll_id, str(user.id), bot
             )
             logger.error(
-                f"❌ Vote FAILED for user {user.id} on poll {poll_id}: {error_msg}")
+                f"❌ Vote FAILED for user {user.id} on poll {poll_id}: {error_msg}"
+            )
             # Reaction stays so user can try again
 
     except Exception as e:
         # Handle unexpected voting errors with bot owner notification
         try:
-            poll_id_for_error = int(poll.id) if 'poll' in locals(
-            ) and poll and hasattr(poll, 'id') else 0
+            poll_id_for_error = (
+                int(poll.id)
+                if "poll" in locals() and poll and hasattr(poll, "id")
+                else 0
+            )
             error_msg = await PollErrorHandler.handle_vote_error(
                 e, poll_id_for_error, str(user.id), bot
             )
             logger.error(f"Error handling vote: {error_msg}")
             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
             from .error_handler import notify_error_async
-            await notify_error_async(e, "Reaction Vote Handling Critical Error",
-                                     poll_id=poll_id_for_error, user_id=str(user.id))
+
+            await notify_error_async(
+                e,
+                "Reaction Vote Handling Critical Error",
+                poll_id=poll_id_for_error,
+                user_id=str(user.id),
+            )
         except Exception as error_handling_error:
             logger.error(
-                f"Critical error in vote error handling: {error_handling_error}")
+                f"Critical error in vote error handling: {error_handling_error}"
+            )
             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
             from .error_handler import notify_error_async
-            await notify_error_async(error_handling_error, "Vote Error Handler Failure",
-                                     user_id=str(user.id))
+
+            await notify_error_async(
+                error_handling_error, "Vote Error Handler Failure", user_id=str(user.id)
+            )
     finally:
         db.close()
 
@@ -647,16 +773,16 @@ async def close_poll(poll_id: int):
                 Exception(result["error"]), poll_id, bot
             )
             logger.error(
-                f"Bulletproof poll closure failed for poll {poll_id}: {error_msg}")
+                f"Bulletproof poll closure failed for poll {poll_id}: {error_msg}"
+            )
         else:
             logger.info(
-                f"Successfully closed poll {poll_id} using bulletproof operations")
+                f"Successfully closed poll {poll_id} using bulletproof operations"
+            )
 
     except Exception as e:
         # Handle unexpected closure errors with bot owner notification
-        error_msg = await PollErrorHandler.handle_poll_closure_error(
-            e, poll_id, bot
-        )
+        error_msg = await PollErrorHandler.handle_poll_closure_error(e, poll_id, bot)
         logger.error(f"Error in close_poll function: {error_msg}")
 
 
@@ -692,7 +818,8 @@ async def restore_scheduled_jobs():
         return
 
     logger.debug(
-        f"✅ SCHEDULER RESTORE - Scheduler is running, state: {scheduler.state}")
+        f"✅ SCHEDULER RESTORE - Scheduler is running, state: {scheduler.state}"
+    )
 
     # Debug bot status
     if not bot:
@@ -700,24 +827,23 @@ async def restore_scheduled_jobs():
         return
 
     if not bot.is_ready():
-        logger.warning(
-            "⚠️ SCHEDULER RESTORE - Bot is not ready yet, jobs may fail")
+        logger.warning("⚠️ SCHEDULER RESTORE - Bot is not ready yet, jobs may fail")
     else:
         logger.debug(f"✅ SCHEDULER RESTORE - Bot is ready: {bot.user}")
 
     db = get_db_session()
     try:
         # Get all scheduled polls with debugging
-        logger.debug(
-            "🔍 SCHEDULER RESTORE - Querying database for scheduled polls")
-        scheduled_polls = db.query(Poll).filter(
-            Poll.status == "scheduled").all()
+        logger.debug("🔍 SCHEDULER RESTORE - Querying database for scheduled polls")
+        scheduled_polls = db.query(Poll).filter(Poll.status == "scheduled").all()
         logger.info(
-            f"📊 SCHEDULER RESTORE - Found {len(scheduled_polls)} scheduled polls to restore")
+            f"📊 SCHEDULER RESTORE - Found {len(scheduled_polls)} scheduled polls to restore"
+        )
 
         if not scheduled_polls:
             logger.info(
-                "✅ SCHEDULER RESTORE - No scheduled polls found, restoration complete")
+                "✅ SCHEDULER RESTORE - No scheduled polls found, restoration complete"
+            )
             return
 
         # Get current time for comparison
@@ -731,9 +857,11 @@ async def restore_scheduled_jobs():
         for poll in scheduled_polls:
             try:
                 logger.info(
-                    f"🔄 SCHEDULER RESTORE - Processing poll {int(poll.id)}: '{poll.name}'")
+                    f"🔄 SCHEDULER RESTORE - Processing poll {int(poll.id)}: '{poll.name}'"
+                )
                 logger.debug(
-                    f"Poll {int(poll.id)} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}")
+                    f"Poll {int(poll.id)} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}"
+                )
 
                 # All polls should be scheduled only - no immediate posting during restore
                 # Schedule poll to open at its designated time
@@ -741,10 +869,12 @@ async def restore_scheduled_jobs():
 
                 if poll.open_time <= now:
                     logger.info(
-                        f"📅 SCHEDULER RESTORE - Poll {int(poll.id)} is overdue by {abs(time_until_open):.0f} seconds, scheduling for immediate posting")
+                        f"📅 SCHEDULER RESTORE - Poll {int(poll.id)} is overdue by {abs(time_until_open):.0f} seconds, scheduling for immediate posting"
+                    )
                 else:
                     logger.info(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to open in {time_until_open:.0f} seconds at {poll.open_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to open in {time_until_open:.0f} seconds at {poll.open_time}"
+                    )
 
                 try:
                     scheduler.add_job(
@@ -753,19 +883,22 @@ async def restore_scheduled_jobs():
                         # Pass poll_id instead of poll object
                         args=[bot, int(poll.id)],
                         id=f"open_poll_{int(poll.id)}",
-                        replace_existing=True
+                        replace_existing=True,
                     )
                     logger.debug(
-                        f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {int(poll.id)}")
+                        f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {int(poll.id)}"
+                    )
                 except Exception as schedule_exc:
                     logger.error(
-                        f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {int(poll.id)}: {schedule_exc}")
+                        f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {int(poll.id)}: {schedule_exc}"
+                    )
 
                 # Always schedule poll to close (whether it's active or scheduled)
                 if poll.close_time > now:
                     time_until_close = (poll.close_time - now).total_seconds()
                     logger.debug(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to close in {time_until_close:.0f} seconds at {poll.close_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {int(poll.id)} to close in {time_until_close:.0f} seconds at {poll.close_time}"
+                    )
 
                     try:
                         scheduler.add_job(
@@ -773,58 +906,68 @@ async def restore_scheduled_jobs():
                             DateTrigger(run_date=poll.close_time),
                             args=[int(poll.id)],
                             id=f"close_poll_{int(poll.id)}",
-                            replace_existing=True
+                            replace_existing=True,
                         )
                         logger.debug(
-                            f"✅ SCHEDULER RESTORE - Scheduled closing job for poll {int(poll.id)}")
+                            f"✅ SCHEDULER RESTORE - Scheduled closing job for poll {int(poll.id)}"
+                        )
                     except Exception as schedule_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {int(poll.id)}: {schedule_exc}")
+                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {int(poll.id)}: {schedule_exc}"
+                        )
                 else:
                     # Poll should have already closed
                     time_overdue = (now - poll.close_time).total_seconds()
                     logger.warning(
-                        f"⏰ SCHEDULER RESTORE - Poll {int(poll.id)} close time is {time_overdue:.0f} seconds overdue, closing now")
+                        f"⏰ SCHEDULER RESTORE - Poll {int(poll.id)} close time is {time_overdue:.0f} seconds overdue, closing now"
+                    )
 
                     try:
                         await close_poll(int(poll.id))
                         immediate_closes += 1
                         logger.info(
-                            f"✅ SCHEDULER RESTORE - Successfully closed overdue poll {int(poll.id)}")
+                            f"✅ SCHEDULER RESTORE - Successfully closed overdue poll {int(poll.id)}"
+                        )
                     except Exception as close_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Exception closing poll {int(poll.id)}: {close_exc}")
+                            f"❌ SCHEDULER RESTORE - Exception closing poll {int(poll.id)}: {close_exc}"
+                        )
                         logger.exception(
-                            f"Full traceback for poll {int(poll.id)} closing:")
+                            f"Full traceback for poll {int(poll.id)} closing:"
+                        )
 
                 restored_count += 1
                 logger.debug(
-                    f"✅ SCHEDULER RESTORE - Completed processing poll {int(poll.id)}")
+                    f"✅ SCHEDULER RESTORE - Completed processing poll {int(poll.id)}"
+                )
 
             except Exception as e:
                 logger.error(
-                    f"❌ SCHEDULER RESTORE - Error processing poll {int(poll.id) if poll and hasattr(poll, 'id') else 'unknown'}: {e}")
+                    f"❌ SCHEDULER RESTORE - Error processing poll {int(poll.id) if poll and hasattr(poll, 'id') else 'unknown'}: {e}"
+                )
                 logger.exception(
-                    f"Full traceback for poll {int(poll.id) if poll and hasattr(poll, 'id') else 'unknown'} restoration error:")
+                    f"Full traceback for poll {int(poll.id) if poll and hasattr(poll, 'id') else 'unknown'} restoration error:"
+                )
 
         # Log final restoration summary
         logger.info("🎉 SCHEDULER RESTORE - Restoration complete!")
         logger.info(
-            f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} polls processed")
+            f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} polls processed"
+        )
         logger.info(
-            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} closed")
+            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} closed"
+        )
 
         # Debug current scheduler jobs
         current_jobs = scheduler.get_jobs()
         logger.info(
-            f"📊 SCHEDULER RESTORE - Total active jobs after restoration: {len(current_jobs)}")
+            f"📊 SCHEDULER RESTORE - Total active jobs after restoration: {len(current_jobs)}"
+        )
         for job in current_jobs:
-            logger.debug(
-                f"Active job: {job.id} - next run: {job.next_run_time}")
+            logger.debug(f"Active job: {job.id} - next run: {job.next_run_time}")
 
     except Exception as e:
-        logger.error(
-            f"❌ SCHEDULER RESTORE - Critical error during restoration: {e}")
+        logger.error(f"❌ SCHEDULER RESTORE - Critical error during restoration: {e}")
         logger.exception("Full traceback for scheduler restoration error:")
     finally:
         db.close()
@@ -855,8 +998,7 @@ async def reaction_safeguard_task():
             # Get all active polls
             db = get_db_session()
             try:
-                active_polls = db.query(Poll).filter(
-                    Poll.status == "active").all()
+                active_polls = db.query(Poll).filter(Poll.status == "active").all()
 
                 for poll in active_polls:
                     try:
@@ -870,26 +1012,39 @@ async def reaction_safeguard_task():
                                 continue
                         except Exception as channel_error:
                             logger.error(
-                                f"❌ Safeguard: Error getting channel {str(poll.channel_id)} for poll {int(poll.id)}: {channel_error}")
+                                f"❌ Safeguard: Error getting channel {str(poll.channel_id)} for poll {int(poll.id)}: {channel_error}"
+                            )
                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                             from .error_handler import notify_error_async
-                            await notify_error_async(channel_error, "Safeguard Channel Access",
-                                                     poll_id=int(poll.id), channel_id=str(poll.channel_id))
+
+                            await notify_error_async(
+                                channel_error,
+                                "Safeguard Channel Access",
+                                poll_id=int(poll.id),
+                                channel_id=str(poll.channel_id),
+                            )
                             continue
 
                         try:
                             message = await channel.fetch_message(int(poll.message_id))
                         except (discord.NotFound, discord.Forbidden):
                             logger.debug(
-                                f"🔍 Safeguard: Message {str(poll.message_id)} not found or forbidden for poll {int(poll.id)}")
+                                f"🔍 Safeguard: Message {str(poll.message_id)} not found or forbidden for poll {int(poll.id)}"
+                            )
                             continue
                         except Exception as fetch_error:
                             logger.error(
-                                f"❌ Safeguard: Error fetching message {str(poll.message_id)} for poll {int(poll.id)}: {fetch_error}")
+                                f"❌ Safeguard: Error fetching message {str(poll.message_id)} for poll {int(poll.id)}: {fetch_error}"
+                            )
                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                             from .error_handler import notify_error_async
-                            await notify_error_async(fetch_error, "Safeguard Message Fetch",
-                                                     poll_id=int(poll.id), message_id=str(poll.message_id))
+
+                            await notify_error_async(
+                                fetch_error,
+                                "Safeguard Message Fetch",
+                                poll_id=int(poll.id),
+                                message_id=str(poll.message_id),
+                            )
                             continue
 
                         # Check each reaction on the message
@@ -898,8 +1053,7 @@ async def reaction_safeguard_task():
                                 if str(reaction.emoji) not in POLL_EMOJIS:
                                     continue
 
-                                option_index = POLL_EMOJIS.index(
-                                    str(reaction.emoji))
+                                option_index = POLL_EMOJIS.index(str(reaction.emoji))
                                 if option_index >= len(poll.options):
                                     continue
 
@@ -911,32 +1065,41 @@ async def reaction_safeguard_task():
 
                                         try:
                                             # Check if this user's vote is already recorded
-                                            existing_vote = db.query(Vote).filter(
-                                                Vote.poll_id == int(poll.id),
-                                                Vote.user_id == str(user.id)
-                                            ).first()
+                                            existing_vote = (
+                                                db.query(Vote)
+                                                .filter(
+                                                    Vote.poll_id == int(poll.id),
+                                                    Vote.user_id == str(user.id),
+                                                )
+                                                .first()
+                                            )
 
                                             if existing_vote:
                                                 # Vote exists, remove the reaction (cleanup)
                                                 try:
                                                     await reaction.remove(user)
                                                     logger.debug(
-                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {int(poll.id)} (vote already recorded)")
+                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {int(poll.id)} (vote already recorded)"
+                                                    )
                                                 except Exception as remove_error:
                                                     logger.debug(
-                                                        f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}")
+                                                        f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}"
+                                                    )
                                             else:
                                                 # No vote recorded, process the vote
                                                 logger.info(
-                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {int(poll.id)}")
+                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {int(poll.id)}"
+                                                )
 
                                                 try:
                                                     # Use bulletproof vote collection
-                                                    bulletproof_ops = BulletproofPollOperations(
-                                                        bot)
+                                                    bulletproof_ops = (
+                                                        BulletproofPollOperations(bot)
+                                                    )
                                                     result = await bulletproof_ops.bulletproof_vote_collection(
-                                                        int(poll.id), str(
-                                                            user.id), option_index
+                                                        int(poll.id),
+                                                        str(user.id),
+                                                        option_index,
                                                     )
 
                                                     if result["success"]:
@@ -944,95 +1107,161 @@ async def reaction_safeguard_task():
                                                         try:
                                                             await reaction.remove(user)
                                                             logger.info(
-                                                                f"✅ Safeguard: Vote recorded and reaction removed for user {user.id} on poll {poll.id}")
-                                                        except Exception as remove_error:
+                                                                f"✅ Safeguard: Vote recorded and reaction removed for user {user.id} on poll {poll.id}"
+                                                            )
+                                                        except (
+                                                            Exception
+                                                        ) as remove_error:
                                                             logger.warning(
-                                                                f"⚠️ Safeguard: Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
+                                                                f"⚠️ Safeguard: Vote recorded but failed to remove reaction from user {user.id}: {remove_error}"
+                                                            )
 
                                                         # Update poll embed for live updates
                                                         try:
-                                                            await update_poll_message(bot, poll)
+                                                            await update_poll_message(
+                                                                bot, poll
+                                                            )
                                                             logger.debug(
-                                                                f"✅ Safeguard: Poll message updated for poll {int(poll.id)}")
-                                                        except Exception as update_error:
+                                                                f"✅ Safeguard: Poll message updated for poll {int(poll.id)}"
+                                                            )
+                                                        except (
+                                                            Exception
+                                                        ) as update_error:
                                                             logger.error(
-                                                                f"❌ Safeguard: Failed to update poll message for poll {int(poll.id)}: {update_error}")
+                                                                f"❌ Safeguard: Failed to update poll message for poll {int(poll.id)}: {update_error}"
+                                                            )
                                                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                                                            from .error_handler import notify_error_async
-                                                            await notify_error_async(update_error, "Safeguard Poll Message Update",
-                                                                                     poll_id=int(poll.id), user_id=str(user.id))
+                                                            from .error_handler import (
+                                                                notify_error_async,
+                                                            )
+
+                                                            await notify_error_async(
+                                                                update_error,
+                                                                "Safeguard Poll Message Update",
+                                                                poll_id=int(poll.id),
+                                                                user_id=str(user.id),
+                                                            )
                                                     else:
                                                         # Vote failed - leave reaction for user to try again
                                                         logger.error(
-                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {int(poll.id)}: {result['error']}")
+                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {int(poll.id)}: {result['error']}"
+                                                        )
                                                         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                                                        from .error_handler import notify_error_async
-                                                        await notify_error_async(Exception(result['error']), "Safeguard Vote Processing Failed",
-                                                                                 poll_id=int(poll.id), user_id=str(user.id), option_index=option_index)
+                                                        from .error_handler import (
+                                                            notify_error_async,
+                                                        )
+
+                                                        await notify_error_async(
+                                                            Exception(result["error"]),
+                                                            "Safeguard Vote Processing Failed",
+                                                            poll_id=int(poll.id),
+                                                            user_id=str(user.id),
+                                                            option_index=option_index,
+                                                        )
 
                                                 except Exception as vote_error:
                                                     logger.error(
-                                                        f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {int(poll.id)}: {vote_error}")
+                                                        f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {int(poll.id)}: {vote_error}"
+                                                    )
                                                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                                                    from .error_handler import notify_error_async
-                                                    await notify_error_async(vote_error, "Safeguard Vote Processing Critical Error",
-                                                                             poll_id=int(poll.id), user_id=str(user.id), option_index=option_index)
+                                                    from .error_handler import (
+                                                        notify_error_async,
+                                                    )
+
+                                                    await notify_error_async(
+                                                        vote_error,
+                                                        "Safeguard Vote Processing Critical Error",
+                                                        poll_id=int(poll.id),
+                                                        user_id=str(user.id),
+                                                        option_index=option_index,
+                                                    )
 
                                         except Exception as user_error:
                                             logger.error(
-                                                f"❌ Safeguard: Error processing user {user.id} reaction on poll {int(poll.id)}: {user_error}")
+                                                f"❌ Safeguard: Error processing user {user.id} reaction on poll {int(poll.id)}: {user_error}"
+                                            )
                                             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
-                                            from .error_handler import notify_error_async
-                                            await notify_error_async(user_error, "Safeguard User Processing Error",
-                                                                     poll_id=int(poll.id), user_id=str(user.id))
+                                            from .error_handler import (
+                                                notify_error_async,
+                                            )
+
+                                            await notify_error_async(
+                                                user_error,
+                                                "Safeguard User Processing Error",
+                                                poll_id=int(poll.id),
+                                                user_id=str(user.id),
+                                            )
                                             continue
 
                                 except Exception as users_error:
                                     logger.error(
-                                        f"❌ Safeguard: Error iterating reaction users for poll {int(poll.id)}: {users_error}")
+                                        f"❌ Safeguard: Error iterating reaction users for poll {int(poll.id)}: {users_error}"
+                                    )
                                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                     from .error_handler import notify_error_async
-                                    await notify_error_async(users_error, "Safeguard Reaction Users Iteration",
-                                                             poll_id=int(poll.id), emoji=str(reaction.emoji))
+
+                                    await notify_error_async(
+                                        users_error,
+                                        "Safeguard Reaction Users Iteration",
+                                        poll_id=int(poll.id),
+                                        emoji=str(reaction.emoji),
+                                    )
                                     continue
 
                             except Exception as reaction_error:
                                 logger.error(
-                                    f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {int(poll.id)}: {reaction_error}")
+                                    f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {int(poll.id)}: {reaction_error}"
+                                )
                                 # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                                 from .error_handler import notify_error_async
-                                await notify_error_async(reaction_error, "Safeguard Reaction Processing",
-                                                         poll_id=int(poll.id), emoji=str(reaction.emoji))
+
+                                await notify_error_async(
+                                    reaction_error,
+                                    "Safeguard Reaction Processing",
+                                    poll_id=int(poll.id),
+                                    emoji=str(reaction.emoji),
+                                )
                                 continue
 
                     except Exception as poll_error:
                         logger.error(
-                            f"❌ Safeguard: Error processing poll {int(poll.id)}: {poll_error}")
+                            f"❌ Safeguard: Error processing poll {int(poll.id)}: {poll_error}"
+                        )
                         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                         from .error_handler import notify_error_async
-                        await notify_error_async(poll_error, "Safeguard Poll Processing", poll_id=int(poll.id))
+
+                        await notify_error_async(
+                            poll_error,
+                            "Safeguard Poll Processing",
+                            poll_id=int(poll.id),
+                        )
                         continue
 
             except Exception as db_error:
                 logger.error(f"❌ Safeguard: Database error: {db_error}")
                 # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                 from .error_handler import notify_error_async
+
                 await notify_error_async(db_error, "Safeguard Database Error")
             finally:
                 try:
                     db.close()
                 except Exception as close_error:
-                    logger.error(
-                        f"❌ Safeguard: Error closing database: {close_error}")
+                    logger.error(f"❌ Safeguard: Error closing database: {close_error}")
                     # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                     from .error_handler import notify_error_async
-                    await notify_error_async(close_error, "Safeguard Database Close Error")
+
+                    await notify_error_async(
+                        close_error, "Safeguard Database Close Error"
+                    )
 
         except Exception as e:
             logger.error(
-                f"❌ Safeguard: Critical error in reaction safeguard task: {e}")
+                f"❌ Safeguard: Critical error in reaction safeguard task: {e}"
+            )
             # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
             from .error_handler import notify_error_async
+
             await notify_error_async(e, "Safeguard Task Critical Error")
             # Continue running even if there's an error
             continue
@@ -1048,6 +1277,7 @@ async def start_reaction_safeguard():
         logger.error(f"❌ Failed to start reaction safeguard task: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "Safeguard Task Startup Error")
         raise e  # Re-raise to ensure the application knows the safeguard failed to start
 
@@ -1066,11 +1296,7 @@ async def lifespan(app: FastAPI):
 
 
 # FastAPI setup with lifespan
-app = FastAPI(
-    title="Polly - Discord Poll Bot",
-    version="0.2.0",
-    lifespan=lifespan
-)
+app = FastAPI(title="Polly - Discord Poll Bot", version="0.2.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -1108,20 +1334,28 @@ async def auth_callback(code: str):
 
         # Redirect to dashboard with token
         response = RedirectResponse(url="/dashboard")
-        response.set_cookie(key="access_token", value=jwt_token,
-                            httponly=True, secure=True, samesite="lax")
+        response.set_cookie(
+            key="access_token",
+            value=jwt_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+        )
         return response
 
     except Exception as e:
         logger.error(f"Auth callback error: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "Discord OAuth Callback", code=code)
         return HTMLResponse("Authentication failed", status_code=400)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def dashboard(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """User dashboard with HTMX"""
     # Check if user has timezone preference set
     user_prefs = get_user_preferences(current_user.id)
@@ -1135,53 +1369,65 @@ async def dashboard(request: Request, current_user: DiscordUser = Depends(requir
     except Exception as e:
         logger.error(f"Error getting user guilds for {current_user.id}: {e}")
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Dashboard Guild Retrieval", user_id=current_user.id)
+
+        await notify_error_async(
+            e, "Dashboard Guild Retrieval", user_id=current_user.id
+        )
         user_guilds = []
 
-    return templates.TemplateResponse("dashboard_htmx.html", {
-        "request": request,
-        "user": current_user,
-        "guilds": user_guilds,
-        "show_timezone_prompt": user_prefs.get("last_server_id") is None
-    })
+    return templates.TemplateResponse(
+        "dashboard_htmx.html",
+        {
+            "request": request,
+            "user": current_user,
+            "guilds": user_guilds,
+            "show_timezone_prompt": user_prefs.get("last_server_id") is None,
+        },
+    )
 
 
 # HTMX endpoints for dynamic content without JavaScript
 @app.get("/htmx/polls", response_class=HTMLResponse)
-async def get_polls_htmx(request: Request, filter: str = None, current_user: DiscordUser = Depends(require_auth)):
+async def get_polls_htmx(
+    request: Request,
+    filter: str = None,
+    current_user: DiscordUser = Depends(require_auth),
+):
     """Get user's polls as HTML for HTMX with bulletproof error handling"""
     db = get_db_session()
     try:
-        logger.debug(
-            f"Getting polls for user {current_user.id} with filter: {filter}")
+        logger.debug(f"Getting polls for user {current_user.id} with filter: {filter}")
 
         # Query polls with error handling
         try:
             query = db.query(Poll).filter(Poll.creator_id == current_user.id)
 
             # Apply filter if specified with validation
-            if filter and filter in ['active', 'scheduled', 'closed']:
+            if filter and filter in ["active", "scheduled", "closed"]:
                 query = query.filter(Poll.status == filter)
                 logger.debug(f"Applied filter: {filter}")
 
             polls = query.order_by(Poll.created_at.desc()).all()
-            logger.debug(
-                f"Found {len(polls)} polls for user {current_user.id}")
+            logger.debug(f"Found {len(polls)} polls for user {current_user.id}")
 
         except Exception as e:
             logger.error(
-                f"Database error querying polls for user {current_user.id}: {e}")
+                f"Database error querying polls for user {current_user.id}: {e}"
+            )
             logger.exception("Full traceback for polls query error:")
 
             # Return error template with empty polls list
-            return templates.TemplateResponse("htmx/polls.html", {
-                "request": request,
-                "polls": [],
-                "current_filter": filter,
-                "user_timezone": "US/Eastern",
-                "format_datetime_for_user": format_datetime_for_user,
-                "error": "Database error loading polls"
-            })
+            return templates.TemplateResponse(
+                "htmx/polls.html",
+                {
+                    "request": request,
+                    "polls": [],
+                    "current_filter": filter,
+                    "user_timezone": "US/Eastern",
+                    "format_datetime_for_user": format_datetime_for_user,
+                    "error": "Database error loading polls",
+                },
+            )
 
         # Process polls with individual error handling
         processed_polls = []
@@ -1189,14 +1435,13 @@ async def get_polls_htmx(request: Request, filter: str = None, current_user: Dis
             try:
                 # Add status_class to each poll for template
                 poll.status_class = {
-                    'active': 'bg-success',
-                    'scheduled': 'bg-warning',
-                    'closed': 'bg-danger'
-                }.get(poll.status, 'bg-secondary')
+                    "active": "bg-success",
+                    "scheduled": "bg-warning",
+                    "closed": "bg-danger",
+                }.get(poll.status, "bg-secondary")
 
                 processed_polls.append(poll)
-                logger.debug(
-                    f"Processed poll {poll.id} with status {poll.status}")
+                logger.debug(f"Processed poll {poll.id} with status {poll.status}")
 
             except Exception as e:
                 logger.error(f"Error processing poll {poll.id}: {e}")
@@ -1208,34 +1453,40 @@ async def get_polls_htmx(request: Request, filter: str = None, current_user: Dis
             user_timezone = user_prefs.get("default_timezone", "US/Eastern")
             logger.debug(f"User timezone: {user_timezone}")
         except Exception as e:
-            logger.error(
-                f"Error getting user preferences for {current_user.id}: {e}")
+            logger.error(f"Error getting user preferences for {current_user.id}: {e}")
             user_timezone = "US/Eastern"
 
         logger.debug(f"Returning {len(processed_polls)} processed polls")
 
-        return templates.TemplateResponse("htmx/polls.html", {
-            "request": request,
-            "polls": processed_polls,
-            "current_filter": filter,
-            "user_timezone": user_timezone,
-            "format_datetime_for_user": format_datetime_for_user
-        })
+        return templates.TemplateResponse(
+            "htmx/polls.html",
+            {
+                "request": request,
+                "polls": processed_polls,
+                "current_filter": filter,
+                "user_timezone": user_timezone,
+                "format_datetime_for_user": format_datetime_for_user,
+            },
+        )
 
     except Exception as e:
         logger.error(
-            f"Critical error in get_polls_htmx for user {current_user.id}: {e}")
+            f"Critical error in get_polls_htmx for user {current_user.id}: {e}"
+        )
         logger.exception("Full traceback for polls endpoint error:")
 
         # Return error-safe template
-        return templates.TemplateResponse("htmx/polls.html", {
-            "request": request,
-            "polls": [],
-            "current_filter": filter,
-            "user_timezone": "US/Eastern",
-            "format_datetime_for_user": format_datetime_for_user,
-            "error": f"Error loading polls: {str(e)}"
-        })
+        return templates.TemplateResponse(
+            "htmx/polls.html",
+            {
+                "request": request,
+                "polls": [],
+                "current_filter": filter,
+                "user_timezone": "US/Eastern",
+                "format_datetime_for_user": format_datetime_for_user,
+                "error": f"Error loading polls: {str(e)}",
+            },
+        )
     finally:
         try:
             db.close()
@@ -1244,7 +1495,9 @@ async def get_polls_htmx(request: Request, filter: str = None, current_user: Dis
 
 
 @app.get("/htmx/stats", response_class=HTMLResponse)
-async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def get_stats_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Get dashboard stats as HTML for HTMX with bulletproof error handling"""
     db = get_db_session()
     try:
@@ -1252,27 +1505,29 @@ async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(r
 
         # Query polls with error handling
         try:
-            polls = db.query(Poll).filter(
-                Poll.creator_id == current_user.id).all()
-            logger.debug(
-                f"Found {len(polls)} polls for user {current_user.id}")
+            polls = db.query(Poll).filter(Poll.creator_id == current_user.id).all()
+            logger.debug(f"Found {len(polls)} polls for user {current_user.id}")
         except Exception as e:
             logger.error(
-                f"Database error querying polls for user {current_user.id}: {e}")
-            return templates.TemplateResponse("htmx/stats.html", {
-                "request": request,
-                "total_polls": 0,
-                "active_polls": 0,
-                "total_votes": 0,
-                "error": "Database error loading polls"
-            })
+                f"Database error querying polls for user {current_user.id}: {e}"
+            )
+            return templates.TemplateResponse(
+                "htmx/stats.html",
+                {
+                    "request": request,
+                    "total_polls": 0,
+                    "active_polls": 0,
+                    "total_votes": 0,
+                    "error": "Database error loading polls",
+                },
+            )
 
         # Calculate stats with individual error handling
         total_polls = len(polls)
 
         # Count active polls safely
         try:
-            active_polls = len([p for p in polls if p.status == 'active'])
+            active_polls = len([p for p in polls if p.status == "active"])
             logger.debug(f"Found {active_polls} active polls")
         except Exception as e:
             logger.error(f"Error counting active polls: {e}")
@@ -1289,45 +1544,55 @@ async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(r
                     logger.debug(f"Poll {poll.id} has {poll_votes} votes")
                 else:
                     logger.warning(
-                        f"Poll {poll.id} get_total_votes returned non-int: {type(poll_votes)}")
+                        f"Poll {poll.id} get_total_votes returned non-int: {type(poll_votes)}"
+                    )
             except Exception as e:
                 logger.error(f"Error getting votes for poll {poll.id}: {e}")
                 # Try alternative method - direct vote count
                 try:
-                    vote_count = db.query(Vote).filter(
-                        Vote.poll_id == poll.id).count()
+                    vote_count = db.query(Vote).filter(Vote.poll_id == poll.id).count()
                     if isinstance(vote_count, int):
                         total_votes += vote_count
                         logger.debug(
-                            f"Poll {poll.id} fallback vote count: {vote_count}")
+                            f"Poll {poll.id} fallback vote count: {vote_count}"
+                        )
                 except Exception as fallback_e:
                     logger.error(
-                        f"Fallback vote count failed for poll {poll.id}: {fallback_e}")
+                        f"Fallback vote count failed for poll {poll.id}: {fallback_e}"
+                    )
                     # Continue without adding votes for this poll
 
         logger.debug(
-            f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}")
+            f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}"
+        )
 
-        return templates.TemplateResponse("htmx/stats.html", {
-            "request": request,
-            "total_polls": total_polls,
-            "active_polls": active_polls,
-            "total_votes": total_votes
-        })
+        return templates.TemplateResponse(
+            "htmx/stats.html",
+            {
+                "request": request,
+                "total_polls": total_polls,
+                "active_polls": active_polls,
+                "total_votes": total_votes,
+            },
+        )
 
     except Exception as e:
         logger.error(
-            f"Critical error in get_stats_htmx for user {current_user.id}: {e}")
+            f"Critical error in get_stats_htmx for user {current_user.id}: {e}"
+        )
         logger.exception("Full traceback for stats error:")
 
         # Return error-safe template
-        return templates.TemplateResponse("htmx/stats.html", {
-            "request": request,
-            "total_polls": 0,
-            "active_polls": 0,
-            "total_votes": 0,
-            "error": f"Error loading stats: {str(e)}"
-        })
+        return templates.TemplateResponse(
+            "htmx/stats.html",
+            {
+                "request": request,
+                "total_polls": 0,
+                "active_polls": 0,
+                "total_votes": 0,
+                "error": f"Error loading stats: {str(e)}",
+            },
+        )
     finally:
         try:
             db.close()
@@ -1336,7 +1601,9 @@ async def get_stats_htmx(request: Request, current_user: DiscordUser = Depends(r
 
 
 @app.get("/htmx/create-form", response_class=HTMLResponse)
-async def get_create_form_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def get_create_form_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Get create poll form as HTML for HTMX"""
     # Get user's guilds with channels with error handling
     try:
@@ -1346,9 +1613,13 @@ async def get_create_form_htmx(request: Request, current_user: DiscordUser = Dep
             user_guilds = []
     except Exception as e:
         logger.error(
-            f"Error getting user guilds for create form for {current_user.id}: {e}")
+            f"Error getting user guilds for create form for {current_user.id}: {e}"
+        )
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Create Form Guild Retrieval", user_id=current_user.id)
+
+        await notify_error_async(
+            e, "Create Form Guild Retrieval", user_id=current_user.id
+        )
         user_guilds = []
 
     # Get user preferences
@@ -1356,49 +1627,59 @@ async def get_create_form_htmx(request: Request, current_user: DiscordUser = Dep
 
     # Get timezones - user's default first
     common_timezones = [
-        user_prefs["default_timezone"], "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
-        "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+        user_prefs["default_timezone"],
+        "US/Eastern",
+        "UTC",
+        "US/Central",
+        "US/Mountain",
+        "US/Pacific",
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Australia/Sydney",
     ]
     # Remove duplicates while preserving order
     seen = set()
-    common_timezones = [tz for tz in common_timezones if not (
-        tz in seen or seen.add(tz))]
+    common_timezones = [
+        tz for tz in common_timezones if not (tz in seen or seen.add(tz))
+    ]
 
     # Set default times in user's timezone
     user_tz = pytz.timezone(user_prefs["default_timezone"])
     now = datetime.now(user_tz)
-    open_time = (now + timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M')
-    close_time = (now + timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M')
+    open_time = (now + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M")
+    close_time = (now + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M")
 
     # Prepare timezone data for template
     timezones = []
     for tz in common_timezones:
         try:
             tz_obj = pytz.timezone(tz)
-            offset = datetime.now(tz_obj).strftime('%z')
-            timezones.append({
-                "name": tz,
-                "display": f"{tz} (UTC{offset})"
-            })
+            offset = datetime.now(tz_obj).strftime("%z")
+            timezones.append({"name": tz, "display": f"{tz} (UTC{offset})"})
         except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
             logger.warning(f"Error formatting timezone {tz}: {e}")
-            timezones.append({
-                "name": tz,
-                "display": tz
-            })
+            timezones.append({"name": tz, "display": tz})
 
-    return templates.TemplateResponse("htmx/create_form_filepond.html", {
-        "request": request,
-        "guilds": user_guilds,
-        "timezones": timezones,
-        "open_time": open_time,
-        "close_time": close_time,
-        "user_preferences": user_prefs
-    })
+    return templates.TemplateResponse(
+        "htmx/create_form_filepond.html",
+        {
+            "request": request,
+            "guilds": user_guilds,
+            "timezones": timezones,
+            "open_time": open_time,
+            "close_time": close_time,
+            "user_preferences": user_prefs,
+        },
+    )
 
 
 @app.get("/htmx/channels", response_class=HTMLResponse)
-async def get_channels_htmx(server_id: str, current_user: DiscordUser = Depends(require_auth)):
+async def get_channels_htmx(
+    server_id: str, current_user: DiscordUser = Depends(require_auth)
+):
     """Get channels for a server as HTML options for HTMX"""
     if not server_id:
         return '<option value="">Select a server first...</option>'
@@ -1413,6 +1694,7 @@ async def get_channels_htmx(server_id: str, current_user: DiscordUser = Depends(
     for channel in guild["channels"]:
         # HTML escape the channel name to prevent JavaScript syntax errors
         from html import escape
+
         escaped_channel_name = escape(channel["name"])
         options += f'<option value="{channel["id"]}">#{escaped_channel_name}</option>'
 
@@ -1423,8 +1705,9 @@ async def get_channels_htmx(server_id: str, current_user: DiscordUser = Depends(
 async def add_option_htmx():
     """Add a new poll option input for HTMX"""
     import random
+
     option_num = random.randint(3, 10)  # Simple way to get next option number
-    emojis = ['🇦', '🇧', '🇨', '🇩', '🇪', '🇫', '🇬', '🇭', '🇮', '🇯']
+    emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
     emoji = emojis[min(option_num - 1, len(emojis) - 1)]
 
     return f"""
@@ -1446,13 +1729,19 @@ async def remove_option_htmx():
 
 
 @app.post("/htmx/upload-image")
-async def upload_image_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def upload_image_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Handle FilePond image upload via HTMX"""
     try:
         form_data = await request.form()
         image_file = form_data.get("image")
 
-        if not image_file or not hasattr(image_file, 'filename') or not image_file.filename:
+        if (
+            not image_file
+            or not hasattr(image_file, "filename")
+            or not image_file.filename
+        ):
             return {"error": "No image file provided"}, 400
 
         # Validate image file
@@ -1475,12 +1764,15 @@ async def upload_image_htmx(request: Request, current_user: DiscordUser = Depend
         logger.error(f"Error in FilePond image upload: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "FilePond Image Upload", user_id=current_user.id)
         return {"error": "Server error processing image"}, 500
 
 
 @app.delete("/htmx/remove-image")
-async def remove_image_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def remove_image_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Handle FilePond image removal via HTMX"""
     try:
         form_data = await request.form()
@@ -1495,23 +1787,27 @@ async def remove_image_htmx(request: Request, current_user: DiscordUser = Depend
         logger.error(f"Error removing image: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "FilePond Image Removal", user_id=current_user.id)
         return {"error": "Server error removing image"}, 500
 
 
 @app.get("/htmx/servers", response_class=HTMLResponse)
-async def get_servers_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def get_servers_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Get user's servers as HTML for HTMX"""
     user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
 
-    return templates.TemplateResponse("htmx/servers.html", {
-        "request": request,
-        "guilds": user_guilds
-    })
+    return templates.TemplateResponse(
+        "htmx/servers.html", {"request": request, "guilds": user_guilds}
+    )
 
 
 @app.get("/htmx/settings", response_class=HTMLResponse)
-async def get_settings_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def get_settings_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Get user settings form as HTML for HTMX"""
     # Get user preferences
     user_prefs = get_user_preferences(current_user.id)
@@ -1519,15 +1815,16 @@ async def get_settings_htmx(request: Request, current_user: DiscordUser = Depend
     # Get common timezones
     timezones = get_common_timezones()
 
-    return templates.TemplateResponse("htmx/settings.html", {
-        "request": request,
-        "user_prefs": user_prefs,
-        "timezones": timezones
-    })
+    return templates.TemplateResponse(
+        "htmx/settings.html",
+        {"request": request, "user_prefs": user_prefs, "timezones": timezones},
+    )
 
 
 @app.post("/htmx/settings", response_class=HTMLResponse)
-async def save_settings_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def save_settings_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Save user settings via HTMX"""
     try:
         form_data = await request.form()
@@ -1540,7 +1837,8 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
         save_user_preferences(current_user.id, timezone=normalized_timezone)
 
         logger.info(
-            f"Updated timezone preference for user {current_user.id} to {normalized_timezone}")
+            f"Updated timezone preference for user {current_user.id} to {normalized_timezone}"
+        )
 
         return """
         <div class="alert alert-success">
@@ -1553,6 +1851,7 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
         logger.error(f"Error saving settings for user {current_user.id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
+
         await notify_error_async(e, "User Settings Save", user_id=current_user.id)
         return f"""
         <div class="alert alert-danger">
@@ -1562,7 +1861,9 @@ async def save_settings_htmx(request: Request, current_user: DiscordUser = Depen
 
 
 @app.post("/htmx/create-poll", response_class=HTMLResponse)
-async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def create_poll_htmx(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Create a new poll via HTMX using bulletproof operations"""
     logger.info(f"User {current_user.id} creating new poll")
 
@@ -1579,8 +1880,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
         anonymous = form_data.get("anonymous") == "true"
         multiple_choice = form_data.get("multiple_choice") == "true"
-        image_message_text = safe_get_form_data(
-            form_data, "image_message_text", "")
+        image_message_text = safe_get_form_data(form_data, "image_message_text", "")
 
         # DEBUG: Log all extracted form data
         logger.debug(f"=== POLL CREATION DEBUG - User {current_user.id} ===")
@@ -1605,20 +1905,23 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
                 # Extract emoji from form data, fallback to default if not provided
                 emoji = safe_get_form_data(form_data, f"emoji{i}")
                 logger.debug(
-                    f"DEBUG: Option {i}: '{str(option).strip()}' - Raw emoji: '{emoji}'")
+                    f"DEBUG: Option {i}: '{str(option).strip()}' - Raw emoji: '{emoji}'"
+                )
                 if emoji and emoji.strip():  # Check for non-empty emoji
                     emojis.append(emoji.strip())
                     logger.debug(
-                        f"DEBUG: Using custom emoji for option {i}: '{emoji.strip()}'")
+                        f"DEBUG: Using custom emoji for option {i}: '{emoji.strip()}'"
+                    )
                 else:
                     # Fallback to default emojis if not provided
-                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
-                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                    fallback_emoji = default_emojis[len(
-                        emojis)] if len(emojis) < 10 else "⭐"
+                    default_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                    fallback_emoji = (
+                        default_emojis[len(emojis)] if len(emojis) < 10 else "⭐"
+                    )
                     emojis.append(fallback_emoji)
                     logger.debug(
-                        f"DEBUG: Using fallback emoji for option {i}: '{fallback_emoji}'")
+                        f"DEBUG: Using fallback emoji for option {i}: '{fallback_emoji}'"
+                    )
 
         logger.debug(f"DEBUG: Final Options: {options}")
         logger.debug(f"DEBUG: Final Emojis: {emojis}")
@@ -1638,13 +1941,12 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
         # Validate times
         now = datetime.now(pytz.UTC)
-        next_minute = now.replace(
-            second=0, microsecond=0) + timedelta(minutes=1)
+        next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
         if open_dt < next_minute:
             user_tz = pytz.timezone(timezone_str)
             next_minute_local = next_minute.astimezone(user_tz)
-            suggested_time = next_minute_local.strftime('%I:%M %p')
+            suggested_time = next_minute_local.strftime("%I:%M %p")
             return f"""
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later.
@@ -1671,17 +1973,22 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             "timezone": timezone_str,
             "anonymous": anonymous,
             "multiple_choice": multiple_choice,
-            "creator_id": current_user.id
+            "creator_id": current_user.id,
         }
 
         # Handle image file
         image_file_data = None
         image_filename = None
         image_file = form_data.get("image")
-        if image_file and hasattr(image_file, 'filename') and hasattr(image_file, 'read') and getattr(image_file, 'filename', None):
+        if (
+            image_file
+            and hasattr(image_file, "filename")
+            and hasattr(image_file, "read")
+            and getattr(image_file, "filename", None)
+        ):
             try:
                 image_file_data = await image_file.read()
-                image_filename = str(getattr(image_file, 'filename', ''))
+                image_filename = str(getattr(image_file, "filename", ""))
             except Exception as e:
                 logger.error(f"Error reading image file: {e}")
                 return """
@@ -1698,12 +2005,11 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
             user_id=current_user.id,
             image_file=image_file_data,
             image_filename=image_filename,
-            image_message_text=image_message_text if image_file_data else None
+            image_message_text=image_message_text if image_file_data else None,
         )
 
         if not result["success"]:
-            logger.warning(
-                f"Bulletproof poll creation failed: {result['error']}")
+            logger.warning(f"Bulletproof poll creation failed: {result['error']}")
             # Use error handler for user-friendly messages
             error_msg = await PollErrorHandler.handle_poll_creation_error(
                 Exception(result["error"]), poll_data, bot
@@ -1726,12 +2032,11 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
                     DateTrigger(run_date=open_dt),
                     args=[bot, poll_id],  # Pass poll_id instead of poll object
                     id=f"open_poll_{poll_id}",
-                    replace_existing=True
+                    replace_existing=True,
                 )
                 logger.info(f"Scheduled poll {poll_id} to open at {open_dt}")
             except Exception as schedule_error:
-                logger.error(
-                    f"Failed to schedule poll opening: {schedule_error}")
+                logger.error(f"Failed to schedule poll opening: {schedule_error}")
                 await PollErrorHandler.handle_scheduler_error(
                     schedule_error, poll_id, "poll_opening", bot
                 )
@@ -1743,26 +2048,25 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
                     DateTrigger(run_date=close_dt),
                     args=[poll_id],
                     id=f"close_poll_{poll_id}",
-                    replace_existing=True
+                    replace_existing=True,
                 )
                 logger.info(f"Scheduled poll {poll_id} to close at {close_dt}")
             except Exception as schedule_error:
-                logger.error(
-                    f"Failed to schedule poll closure: {schedule_error}")
+                logger.error(f"Failed to schedule poll closure: {schedule_error}")
                 await PollErrorHandler.handle_scheduler_error(
                     schedule_error, poll_id, "poll_closure", bot
                 )
 
         except Exception as scheduling_error:
             logger.error(
-                f"Critical scheduling error for poll {poll_id}: {scheduling_error}")
+                f"Critical scheduling error for poll {poll_id}: {scheduling_error}"
+            )
             await PollErrorHandler.handle_scheduler_error(
                 scheduling_error, poll_id, "poll_scheduling", bot
             )
 
         # Save user preferences for next time
-        save_user_preferences(current_user.id, server_id,
-                              channel_id, timezone_str)
+        save_user_preferences(current_user.id, server_id, channel_id, timezone_str)
 
         # Return success message and redirect to polls view
         return """
@@ -1777,7 +2081,7 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
         logger.exception("Full traceback for poll creation error:")
 
         # Use error handler for comprehensive error handling
-        poll_name = locals().get('name', 'Unknown')
+        poll_name = locals().get("name", "Unknown")
         error_msg = await PollErrorHandler.handle_poll_creation_error(
             e, {"name": poll_name, "user_id": current_user.id}, bot
         )
@@ -1790,26 +2094,32 @@ async def create_poll_htmx(request: Request, current_user: DiscordUser = Depends
 
 # Poll management endpoints
 @app.get("/htmx/poll/{poll_id}/edit", response_class=HTMLResponse)
-async def get_poll_edit_form(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def get_poll_edit_form(
+    poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Get edit form for a scheduled poll"""
-    logger.info(
-        f"User {current_user.id} requesting edit form for poll {poll_id}")
+    logger.info(f"User {current_user.id} requesting edit form for poll {poll_id}")
     db = get_db_session()
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id,
-                                     Poll.creator_id == current_user.id).first()
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
         if not poll:
             logger.warning(
-                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+                f"Poll {poll_id} not found or not owned by user {current_user.id}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll not found or access denied
             </div>
             """
 
-        if str(getattr(poll, 'status', '')) != "scheduled":
+        if str(getattr(poll, "status", "")) != "scheduled":
             logger.warning(
-                f"Attempt to edit non-scheduled poll {poll_id} (status: {getattr(poll, 'status', '')})")
+                f"Attempt to edit non-scheduled poll {poll_id} (status: {getattr(poll, 'status', '')})"
+            )
             return """
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>Only scheduled polls can be edited
@@ -1821,17 +2131,26 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
 
         # Get timezones - US/Eastern first as default
         common_timezones = [
-            "US/Eastern", "UTC", "US/Central", "US/Mountain", "US/Pacific",
-            "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"
+            "US/Eastern",
+            "UTC",
+            "US/Central",
+            "US/Mountain",
+            "US/Pacific",
+            "Europe/London",
+            "Europe/Paris",
+            "Europe/Berlin",
+            "Asia/Tokyo",
+            "Asia/Shanghai",
+            "Australia/Sydney",
         ]
 
         # Convert times to local timezone for editing
-        poll_timezone = str(getattr(poll, 'timezone', 'UTC'))
+        poll_timezone = str(getattr(poll, "timezone", "UTC"))
         tz = pytz.timezone(poll_timezone)
 
         # Ensure the stored times have timezone info (they should be UTC)
-        open_time_value = getattr(poll, 'open_time')
-        close_time_value = getattr(poll, 'close_time')
+        open_time_value = getattr(poll, "open_time")
+        close_time_value = getattr(poll, "close_time")
 
         if open_time_value.tzinfo is None:
             open_time_utc = pytz.UTC.localize(open_time_value)
@@ -1855,8 +2174,8 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         logger.debug(f"  Open time local ({tz}): {open_time_local}")
         logger.debug(f"  Close time local ({tz}): {close_time_local}")
 
-        open_time = open_time_local.strftime('%Y-%m-%dT%H:%M')
-        close_time = close_time_local.strftime('%Y-%m-%dT%H:%M')
+        open_time = open_time_local.strftime("%Y-%m-%dT%H:%M")
+        close_time = close_time_local.strftime("%Y-%m-%dT%H:%M")
 
         logger.debug(f"  Form open time: {open_time}")
         logger.debug(f"  Form close time: {close_time}")
@@ -1866,53 +2185,60 @@ async def get_poll_edit_form(poll_id: int, request: Request, current_user: Disco
         for tz_name in common_timezones:
             try:
                 tz_obj = pytz.timezone(tz_name)
-                offset = datetime.now(tz_obj).strftime('%z')
-                timezones.append({
-                    "name": tz_name,
-                    "display": f"{tz_name} (UTC{offset})"
-                })
+                offset = datetime.now(tz_obj).strftime("%z")
+                timezones.append(
+                    {"name": tz_name, "display": f"{tz_name} (UTC{offset})"}
+                )
             except (pytz.UnknownTimeZoneError, ValueError, AttributeError) as e:
                 logger.warning(f"Error formatting timezone {tz_name}: {e}")
                 # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
                 from .error_handler import notify_error
-                notify_error(e, "Timezone Formatting", tz_name=tz_name)
-                timezones.append({
-                    "name": tz_name,
-                    "display": tz_name
-                })
 
-        return templates.TemplateResponse("htmx/edit_form_filepond.html", {
-            "request": request,
-            "poll": poll,
-            "guilds": user_guilds,
-            "timezones": timezones,
-            "open_time": open_time,
-            "close_time": close_time
-        })
+                notify_error(e, "Timezone Formatting", tz_name=tz_name)
+                timezones.append({"name": tz_name, "display": tz_name})
+
+        return templates.TemplateResponse(
+            "htmx/edit_form_filepond.html",
+            {
+                "request": request,
+                "poll": poll,
+                "guilds": user_guilds,
+                "timezones": timezones,
+                "open_time": open_time,
+                "close_time": close_time,
+            },
+        )
     finally:
         db.close()
 
 
 @app.post("/htmx/poll/{poll_id}/edit", response_class=HTMLResponse)
-async def update_poll(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def update_poll(
+    poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Update a scheduled poll"""
     logger.info(f"User {current_user.id} updating poll {poll_id}")
     db = get_db_session()
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id,
-                                     Poll.creator_id == current_user.id).first()
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
         if not poll:
             logger.warning(
-                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+                f"Poll {poll_id} not found or not owned by user {current_user.id}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll not found or access denied
             </div>
             """
 
-        if str(getattr(poll, 'status', '')) != "scheduled":
+        if str(getattr(poll, "status", "")) != "scheduled":
             logger.warning(
-                f"Attempt to edit non-scheduled poll {poll_id} (status: {getattr(poll, 'status', '')})")
+                f"Attempt to edit non-scheduled poll {poll_id} (status: {getattr(poll, 'status', '')})"
+            )
             return """
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>Only scheduled polls can be edited
@@ -1930,12 +2256,12 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         close_time = safe_get_form_data(form_data, "close_time")
         timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
         anonymous = form_data.get("anonymous") == "true"
-        image_message_text = safe_get_form_data(
-            form_data, "image_message_text", "")
+        image_message_text = safe_get_form_data(form_data, "image_message_text", "")
 
         # DEBUG: Log all extracted form data for update
         logger.debug(
-            f"=== POLL UPDATE DEBUG - User {current_user.id}, Poll {poll_id} ===")
+            f"=== POLL UPDATE DEBUG - User {current_user.id}, Poll {poll_id} ==="
+        )
         logger.debug(f"DEBUG: Poll Name: '{name}'")
         logger.debug(f"DEBUG: Question: '{question}'")
         logger.debug(f"DEBUG: Server ID: '{server_id}'")
@@ -1948,8 +2274,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
         # Validate required fields
         if not all([name, question, server_id, channel_id, open_time, close_time]):
-            logger.warning(
-                f"Missing required fields for poll {poll_id} update")
+            logger.warning(f"Missing required fields for poll {poll_id} update")
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>All required fields must be filled
@@ -1961,8 +2286,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         is_valid, error_msg, content = await validate_image_file(image_file)
 
         if not is_valid:
-            logger.warning(
-                f"Image validation failed for poll {poll_id}: {error_msg}")
+            logger.warning(f"Image validation failed for poll {poll_id}: {error_msg}")
             return f"""
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>{error_msg}
@@ -1970,9 +2294,15 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             """
 
         # Save new image if provided
-        new_image_path = getattr(poll, 'image_path', None)
-        if content and hasattr(image_file, 'filename') and getattr(image_file, 'filename', None):
-            new_image_path = await save_image_file(content, str(getattr(image_file, 'filename', '')))
+        new_image_path = getattr(poll, "image_path", None)
+        if (
+            content
+            and hasattr(image_file, "filename")
+            and getattr(image_file, "filename", None)
+        ):
+            new_image_path = await save_image_file(
+                content, str(getattr(image_file, "filename", ""))
+            )
             if not new_image_path:
                 logger.error(f"Failed to save new image for poll {poll_id}")
                 return """
@@ -1981,7 +2311,7 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 </div>
                 """
             # Clean up old image
-            old_image_path = getattr(poll, 'image_path', None)
+            old_image_path = getattr(poll, "image_path", None)
             if old_image_path:
                 await cleanup_image(str(old_image_path))
 
@@ -1995,27 +2325,29 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
                 # Extract emoji from form data, fallback to default if not provided
                 emoji = safe_get_form_data(form_data, f"emoji{i}")
                 logger.debug(
-                    f"DEBUG: Option {i}: '{str(option).strip()}' - Raw emoji: '{emoji}'")
+                    f"DEBUG: Option {i}: '{str(option).strip()}' - Raw emoji: '{emoji}'"
+                )
                 if emoji and emoji.strip():  # Check for non-empty emoji
                     emojis.append(emoji.strip())
                     logger.debug(
-                        f"DEBUG: Using custom emoji for option {i}: '{emoji.strip()}'")
+                        f"DEBUG: Using custom emoji for option {i}: '{emoji.strip()}'"
+                    )
                 else:
                     # Fallback to default emojis if not provided
-                    default_emojis = ["🇦", "🇧", "🇨", "🇩",
-                                      "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
-                    fallback_emoji = default_emojis[len(emojis)] if len(
-                        emojis) < 10 else "⭐"
+                    default_emojis = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
+                    fallback_emoji = (
+                        default_emojis[len(emojis)] if len(emojis) < 10 else "⭐"
+                    )
                     emojis.append(fallback_emoji)
                     logger.debug(
-                        f"DEBUG: Using fallback emoji for option {i}: '{fallback_emoji}'")
+                        f"DEBUG: Using fallback emoji for option {i}: '{fallback_emoji}'"
+                    )
 
         logger.debug(f"DEBUG: Final Options: {options}")
         logger.debug(f"DEBUG: Final Emojis: {emojis}")
 
         if len(options) < 2:
-            logger.warning(
-                f"Insufficient options for poll {poll_id}: {len(options)}")
+            logger.warning(f"Insufficient options for poll {poll_id}: {len(options)}")
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>At least 2 options required
@@ -2034,27 +2366,27 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
         # Debug: Show system time vs Python time
         import time
+
         system_timestamp = time.time()
         system_utc = datetime.fromtimestamp(system_timestamp, tz=pytz.UTC)
         logger.debug("System time comparison (edit):")
         logger.debug(f"  Python datetime.now(UTC): {now}")
         logger.debug(f"  System time.time() UTC: {system_utc}")
-        logger.debug(
-            f"  Difference: {(now - system_utc).total_seconds()} seconds")
+        logger.debug(f"  Difference: {(now - system_utc).total_seconds()} seconds")
 
         # Don't allow scheduling polls in the past - require next minute boundary
         # Since polls are scheduled at 00:00:00, we need the next full minute
-        next_minute = now.replace(
-            second=0, microsecond=0) + timedelta(minutes=1)
+        next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
         if open_dt < next_minute:
             # Convert next_minute to user's timezone for display
             user_tz = pytz.timezone(timezone_str)
             next_minute_local = next_minute.astimezone(user_tz)
-            suggested_time = next_minute_local.strftime('%I:%M %p')
+            suggested_time = next_minute_local.strftime("%I:%M %p")
 
             logger.warning(
-                f"Attempt to schedule poll in the past: {open_dt} < {next_minute}")
+                f"Attempt to schedule poll in the past: {open_dt} < {next_minute}"
+            )
             return f"""
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll open time must be scheduled for the next minute or later. Try {suggested_time} or later.
@@ -2063,7 +2395,8 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
         if close_dt <= open_dt:
             logger.warning(
-                f"Invalid time range for poll {poll_id}: open={open_dt}, close={close_dt}")
+                f"Invalid time range for poll {poll_id}: open={open_dt}, close={close_dt}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Close time must be after open time
@@ -2076,7 +2409,8 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
         if not guild or not channel:
             logger.error(
-                f"Invalid guild or channel for poll {poll_id}: guild={guild}, channel={channel}")
+                f"Invalid guild or channel for poll {poll_id}: guild={guild}, channel={channel}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Invalid server or channel
@@ -2084,21 +2418,22 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             """
 
         # Update poll using setattr to avoid SQLAlchemy Column type issues
-        setattr(poll, 'name', name)
-        setattr(poll, 'question', question)
+        setattr(poll, "name", name)
+        setattr(poll, "question", question)
         poll.options = options
         poll.emojis = emojis  # Set emojis properly
-        setattr(poll, 'image_path', new_image_path)
-        setattr(poll, 'image_message_text',
-                image_message_text if new_image_path else None)
-        setattr(poll, 'server_id', server_id)
-        setattr(poll, 'server_name', guild.name)
-        setattr(poll, 'channel_id', channel_id)
-        setattr(poll, 'channel_name', getattr(channel, 'name', 'Unknown'))
-        setattr(poll, 'open_time', open_dt)
-        setattr(poll, 'close_time', close_dt)
-        setattr(poll, 'timezone', timezone_str)
-        setattr(poll, 'anonymous', anonymous)
+        setattr(poll, "image_path", new_image_path)
+        setattr(
+            poll, "image_message_text", image_message_text if new_image_path else None
+        )
+        setattr(poll, "server_id", server_id)
+        setattr(poll, "server_name", guild.name)
+        setattr(poll, "channel_id", channel_id)
+        setattr(poll, "channel_name", getattr(channel, "name", "Unknown"))
+        setattr(poll, "open_time", open_dt)
+        setattr(poll, "close_time", close_dt)
+        setattr(poll, "timezone", timezone_str)
+        setattr(poll, "anonymous", anonymous)
 
         db.commit()
 
@@ -2107,28 +2442,30 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
             scheduler.remove_job(f"open_poll_{int(poll.id)}")
         except Exception as e:
             logger.debug(
-                f"Job open_poll_{int(poll.id)} not found or already removed: {e}")
+                f"Job open_poll_{int(poll.id)} not found or already removed: {e}"
+            )
         try:
             scheduler.remove_job(f"close_poll_{int(poll.id)}")
         except Exception as e:
             logger.debug(
-                f"Job close_poll_{int(poll.id)} not found or already removed: {e}")
+                f"Job close_poll_{int(poll.id)} not found or already removed: {e}"
+            )
 
         # Reschedule jobs
-        poll_id_int = int(getattr(poll, 'id'))
+        poll_id_int = int(getattr(poll, "id"))
         if open_dt > datetime.now(pytz.UTC):
             scheduler.add_job(
                 post_poll_to_channel,
                 DateTrigger(run_date=open_dt),
                 args=[bot, poll_id_int],  # Pass poll_id instead of poll object
-                id=f"open_poll_{poll_id_int}"
+                id=f"open_poll_{poll_id_int}",
             )
 
         scheduler.add_job(
             close_poll,
             DateTrigger(run_date=close_dt),
             args=[poll_id_int],
-            id=f"close_poll_{poll_id_int}"
+            id=f"close_poll_{poll_id_int}",
         )
 
         logger.info(f"Successfully updated poll {poll_id}")
@@ -2144,7 +2481,10 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
         logger.error(f"Error updating poll {poll_id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Update", poll_id=poll_id, user_id=current_user.id)
+
+        await notify_error_async(
+            e, "Poll Update", poll_id=poll_id, user_id=current_user.id
+        )
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error updating poll: {str(e)}
@@ -2155,50 +2495,62 @@ async def update_poll(poll_id: int, request: Request, current_user: DiscordUser 
 
 
 @app.get("/htmx/poll/{poll_id}/details", response_class=HTMLResponse)
-async def get_poll_details(poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)):
+async def get_poll_details(
+    poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
+):
     """Get detailed view of a poll"""
     logger.info(f"User {current_user.id} viewing details for poll {poll_id}")
     db = get_db_session()
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id,
-                                     Poll.creator_id == current_user.id).first()
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
         if not poll:
             logger.warning(
-                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+                f"Poll {poll_id} not found or not owned by user {current_user.id}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll not found or access denied
             </div>
             """
 
-        return templates.TemplateResponse("htmx/poll_details.html", {
-            "request": request,
-            "poll": poll
-        })
+        return templates.TemplateResponse(
+            "htmx/poll_details.html", {"request": request, "poll": poll}
+        )
     finally:
         db.close()
 
 
 @app.post("/htmx/poll/{poll_id}/close", response_class=HTMLResponse)
-async def close_poll_manually(poll_id: int, current_user: DiscordUser = Depends(require_auth)):
+async def close_poll_manually(
+    poll_id: int, current_user: DiscordUser = Depends(require_auth)
+):
     """Manually close an active poll"""
     logger.info(f"User {current_user.id} manually closing poll {poll_id}")
     db = get_db_session()
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id,
-                                     Poll.creator_id == current_user.id).first()
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
         if not poll:
             logger.warning(
-                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+                f"Poll {poll_id} not found or not owned by user {current_user.id}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll not found or access denied
             </div>
             """
 
-        if str(getattr(poll, 'status', '')) != "active":
+        if str(getattr(poll, "status", "")) != "active":
             logger.warning(
-                f"Attempt to close non-active poll {poll_id} (status: {getattr(poll, 'status', '')})")
+                f"Attempt to close non-active poll {poll_id} (status: {getattr(poll, 'status', '')})"
+            )
             return """
             <div class="alert alert-warning">
                 <i class="fas fa-info-circle me-2"></i>Only active polls can be closed
@@ -2220,7 +2572,10 @@ async def close_poll_manually(poll_id: int, current_user: DiscordUser = Depends(
         logger.error(f"Error closing poll {poll_id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Manual Poll Closure", poll_id=poll_id, user_id=current_user.id)
+
+        await notify_error_async(
+            e, "Manual Poll Closure", poll_id=poll_id, user_id=current_user.id
+        )
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error closing poll: {str(e)}
@@ -2236,18 +2591,22 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
     logger.info(f"User {current_user.id} deleting poll {poll_id}")
     db = get_db_session()
     try:
-        poll = db.query(Poll).filter(Poll.id == poll_id,
-                                     Poll.creator_id == current_user.id).first()
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
         if not poll:
             logger.warning(
-                f"Poll {poll_id} not found or not owned by user {current_user.id}")
+                f"Poll {poll_id} not found or not owned by user {current_user.id}"
+            )
             return """
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle me-2"></i>Poll not found or access denied
             </div>
             """
 
-        if str(getattr(poll, 'status', '')) == "active":
+        if str(getattr(poll, "status", "")) == "active":
             logger.warning(f"Attempt to delete active poll {poll_id}")
             return """
             <div class="alert alert-warning">
@@ -2256,13 +2615,13 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             """
 
         # Clean up image
-        image_path = getattr(poll, 'image_path', None)
+        image_path = getattr(poll, "image_path", None)
         if image_path:
             await cleanup_image(str(image_path))
 
         # Remove scheduled jobs with improved error handling
         jobs_removed = 0
-        poll_id_int = int(getattr(poll, 'id'))
+        poll_id_int = int(getattr(poll, "id"))
         for job_type in ["open", "close"]:
             job_id = f"{job_type}_poll_{poll_id_int}"
             try:
@@ -2273,12 +2632,10 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             except Exception as e:
                 # Only log if it's an unexpected error (not "job not found")
                 if "No job by the id" not in str(e):
-                    logger.warning(
-                        f"Unexpected error removing job {job_id}: {e}")
+                    logger.warning(f"Unexpected error removing job {job_id}: {e}")
 
         if jobs_removed > 0:
-            logger.info(
-                f"Removed {jobs_removed} scheduled jobs for poll {poll_id_int}")
+            logger.info(f"Removed {jobs_removed} scheduled jobs for poll {poll_id_int}")
 
         # Delete poll and associated votes with detailed logging
         logger.info(f"Starting database deletion for poll {poll_id}")
@@ -2286,11 +2643,9 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         try:
             # Delete associated votes first - use poll_id parameter instead of poll.id
             vote_count = db.query(Vote).filter(Vote.poll_id == poll_id).count()
-            logger.info(
-                f"Found {vote_count} votes to delete for poll {poll_id}")
+            logger.info(f"Found {vote_count} votes to delete for poll {poll_id}")
 
-            deleted_votes = db.query(Vote).filter(
-                Vote.poll_id == poll_id).delete()
+            deleted_votes = db.query(Vote).filter(Vote.poll_id == poll_id).delete()
             logger.info(f"Deleted {deleted_votes} votes for poll {poll_id}")
 
             # Delete the poll
@@ -2304,8 +2659,7 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
             logger.info(f"Successfully deleted poll {poll_id}")
 
         except Exception as db_error:
-            logger.error(
-                f"Database error during poll {poll_id} deletion: {db_error}")
+            logger.error(f"Database error during poll {poll_id} deletion: {db_error}")
             logger.exception("Full traceback for database deletion error:")
             db.rollback()
             raise db_error
@@ -2321,7 +2675,10 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         logger.error(f"Error deleting poll {poll_id}: {e}")
         # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error_async
-        await notify_error_async(e, "Poll Deletion", poll_id=poll_id, user_id=current_user.id)
+
+        await notify_error_async(
+            e, "Poll Deletion", poll_id=poll_id, user_id=current_user.id
+        )
         return f"""
         <div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>Error deleting poll: {str(e)}

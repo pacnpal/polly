@@ -24,8 +24,9 @@ class TimezoneAwareScheduler:
     def __init__(self, scheduler):
         self.scheduler = scheduler
 
-    def schedule_poll_opening(self, poll_id: int, open_time: datetime,
-                              poll_timezone: str, post_function, bot) -> bool:
+    def schedule_poll_opening(
+        self, poll_id: int, open_time: datetime, poll_timezone: str, post_function, bot
+    ) -> bool:
         """
         Schedule a poll to open at the correct time considering timezone.
 
@@ -54,19 +55,21 @@ class TimezoneAwareScheduler:
                 DateTrigger(run_date=open_time),
                 args=[bot, poll_id],
                 id=f"open_poll_{poll_id}",
-                replace_existing=True
+                replace_existing=True,
             )
 
             logger.info(
-                f"✅ Scheduled poll {poll_id} to open at {open_time} UTC (original timezone: {poll_timezone})")
+                f"✅ Scheduled poll {poll_id} to open at {open_time} UTC (original timezone: {poll_timezone})"
+            )
             return True
 
         except Exception as e:
             logger.error(f"❌ Failed to schedule poll {poll_id} opening: {e}")
             return False
 
-    def schedule_poll_closing(self, poll_id: int, close_time: datetime,
-                              poll_timezone: str, close_function) -> bool:
+    def schedule_poll_closing(
+        self, poll_id: int, close_time: datetime, poll_timezone: str, close_function
+    ) -> bool:
         """
         Schedule a poll to close at the correct time considering timezone.
 
@@ -100,11 +103,12 @@ class TimezoneAwareScheduler:
                 DateTrigger(run_date=close_time),  # Use UTC time directly
                 args=[poll_id],
                 id=f"close_poll_{poll_id}",
-                replace_existing=True
+                replace_existing=True,
             )
 
             logger.info(
-                f"✅ Scheduled poll {poll_id} to close at {close_time} UTC (original timezone: {poll_timezone})")
+                f"✅ Scheduled poll {poll_id} to close at {close_time} UTC (original timezone: {poll_timezone})"
+            )
             return True
 
         except Exception as e:
@@ -132,8 +136,7 @@ class TimezoneAwareScheduler:
                 logger.debug(f"Removed opening job for poll {poll_id}")
         except Exception as e:
             if "No job by the id" not in str(e):
-                logger.warning(
-                    f"Error removing opening job for poll {poll_id}: {e}")
+                logger.warning(f"Error removing opening job for poll {poll_id}: {e}")
 
         # Remove closing job
         try:
@@ -143,8 +146,7 @@ class TimezoneAwareScheduler:
                 logger.debug(f"Removed closing job for poll {poll_id}")
         except Exception as e:
             if "No job by the id" not in str(e):
-                logger.warning(
-                    f"Error removing closing job for poll {poll_id}: {e}")
+                logger.warning(f"Error removing closing job for poll {poll_id}: {e}")
 
         return open_removed, close_removed
 
@@ -170,30 +172,35 @@ def validate_timezone_aware_datetime(dt: datetime, context: str = "") -> datetim
         if dt.tzinfo is None:
             # Assume UTC if no timezone info
             logger.warning(
-                f"Timezone-naive datetime detected {context}, assuming UTC: {dt}")
+                f"Timezone-naive datetime detected {context}, assuming UTC: {dt}"
+            )
             return pytz.UTC.localize(dt)
 
         # Convert to UTC if not already
         if dt.tzinfo != pytz.UTC:
             logger.debug(
-                f"Converting datetime to UTC {context}: {dt} -> {dt.astimezone(pytz.UTC)}")
+                f"Converting datetime to UTC {context}: {dt} -> {dt.astimezone(pytz.UTC)}"
+            )
             return dt.astimezone(pytz.UTC)
 
         return dt
 
     except Exception as e:
-        raise ValueError(
-            f"Failed to validate timezone-aware datetime {context}: {e}")
+        raise ValueError(f"Failed to validate timezone-aware datetime {context}: {e}")
 
 
-def safe_parse_poll_times(open_time: datetime, close_time: datetime,
-                          poll_timezone: str, poll_id: Optional[int] = None) -> tuple[datetime, datetime]:
+def safe_parse_poll_times(
+    open_time: datetime,
+    close_time: datetime,
+    poll_timezone: str,
+    poll_id: Optional[int] = None,
+) -> tuple[datetime, datetime]:
     """
     Safely parse and validate poll opening and closing times.
 
     Args:
         open_time: Poll opening time (should be UTC from database)
-        close_time: Poll closing time (should be UTC from database)  
+        close_time: Poll closing time (should be UTC from database)
         poll_timezone: Original timezone the poll was created in
         poll_id: Poll ID for logging context
 
@@ -208,16 +215,19 @@ def safe_parse_poll_times(open_time: datetime, close_time: datetime,
     try:
         # Validate both times are timezone-aware and in UTC
         validated_open = validate_timezone_aware_datetime(
-            open_time, f"open_time {context}")
+            open_time, f"open_time {context}"
+        )
         validated_close = validate_timezone_aware_datetime(
-            close_time, f"close_time {context}")
+            close_time, f"close_time {context}"
+        )
 
         # Validate time order
         if validated_close <= validated_open:
             raise ValueError(f"Close time must be after open time {context}")
 
         logger.debug(
-            f"✅ Validated poll times {context}: open={validated_open}, close={validated_close}, timezone={poll_timezone}")
+            f"✅ Validated poll times {context}: open={validated_open}, close={validated_close}, timezone={poll_timezone}"
+        )
 
         return validated_open, validated_close
 

@@ -7,7 +7,7 @@ import asyncio
 import tempfile
 import os
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, MagicMock
+from unittest.mock import Mock, AsyncMock
 import pytz
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,10 +15,19 @@ import discord
 from fastapi.testclient import TestClient
 
 # Import Polly modules
-from polly.database import Base, Poll, Vote, User, UserPreference, Guild, Channel, get_db_session
+from polly.database import (
+    Base,
+    Poll,
+    Vote,
+    User,
+)
 from polly.web_app import create_app
 from polly.auth import DiscordUser
-from tests.emoji_utils import get_random_emoji, get_random_emojis, get_random_poll_emojis
+from tests.emoji_utils import (
+    get_random_emoji,
+    get_random_emojis,
+    get_random_poll_emojis,
+)
 
 
 @pytest.fixture(scope="session")
@@ -32,18 +41,20 @@ def event_loop():
 @pytest.fixture
 def temp_db():
     """Create a temporary SQLite database for testing."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
-    
+
     # Create engine and tables
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{db_path}", connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(bind=engine)
-    
+
     # Create session factory
     TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    
+
     yield TestSessionLocal, db_path
-    
+
     # Cleanup
     os.unlink(db_path)
 
@@ -164,7 +175,7 @@ def sample_poll_data():
         "image_message_text": "",
         "ping_role_enabled": False,
         "ping_role_id": None,
-        "ping_role_name": None
+        "ping_role_name": None,
     }
 
 
@@ -186,7 +197,7 @@ def sample_poll(db_session, sample_poll_data):
         timezone=sample_poll_data["timezone"],
         anonymous=sample_poll_data["anonymous"],
         multiple_choice=sample_poll_data["multiple_choice"],
-        status="scheduled"
+        status="scheduled",
     )
     db_session.add(poll)
     db_session.commit()
@@ -197,11 +208,7 @@ def sample_poll(db_session, sample_poll_data):
 @pytest.fixture
 def sample_user(db_session):
     """Create a sample user in the database."""
-    user = User(
-        id="222222222",
-        username="TestUser",
-        avatar="test_avatar_hash"
-    )
+    user = User(id="222222222", username="TestUser", avatar="test_avatar_hash")
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
@@ -214,13 +221,13 @@ def sample_discord_user():
     user_data = {
         "id": "222222222",
         "username": "TestUser",
-        "avatar": "test_avatar_hash"
+        "avatar": "test_avatar_hash",
     }
     guilds_data = [
         {
             "id": "987654321",
             "name": "Test Server",
-            "permissions": "32"  # Manage Server permission
+            "permissions": "32",  # Manage Server permission
         }
     ]
     return DiscordUser(user_data, guilds_data)
@@ -229,11 +236,7 @@ def sample_discord_user():
 @pytest.fixture
 def sample_vote(db_session, sample_poll, sample_user):
     """Create a sample vote in the database."""
-    vote = Vote(
-        poll_id=sample_poll.id,
-        user_id=sample_user.id,
-        option_index=0
-    )
+    vote = Vote(poll_id=sample_poll.id, user_id=sample_user.id, option_index=0)
     db_session.add(vote)
     db_session.commit()
     db_session.refresh(vote)
@@ -309,7 +312,7 @@ def edge_case_strings():
         "bidi_text": "English العربية English",
         "mathematical": "∑∫∂∆∇∞±≤≥≠≈∝∈∉∪∩⊂⊃",
         "currency": "$€£¥₹₽₿¢",
-        "special_spaces": "normal\u00A0non-breaking\u2000en-quad\u2003em-space"
+        "special_spaces": "normal\u00a0non-breaking\u2000en-quad\u2003em-space",
     }
 
 
@@ -341,7 +344,7 @@ def timezone_test_cases():
     return [
         "UTC",
         "US/Eastern",
-        "US/Central", 
+        "US/Central",
         "US/Mountain",
         "US/Pacific",
         "Europe/London",
@@ -358,7 +361,7 @@ def timezone_test_cases():
         "",
         None,
         "UTC+5",
-        "GMT-8"
+        "GMT-8",
     ]
 
 
@@ -375,12 +378,14 @@ def datetime_edge_cases():
         "leap_year": datetime(2024, 2, 29, tzinfo=pytz.UTC),
         "year_2038": datetime(2038, 1, 19, 3, 14, 7, tzinfo=pytz.UTC),
         "year_1970": datetime(1970, 1, 1, tzinfo=pytz.UTC),
-        "dst_transition": datetime(2024, 3, 10, 2, 30, tzinfo=pytz.timezone('US/Eastern')),
+        "dst_transition": datetime(
+            2024, 3, 10, 2, 30, tzinfo=pytz.timezone("US/Eastern")
+        ),
         "new_year": datetime(2024, 1, 1, tzinfo=pytz.UTC),
         "christmas": datetime(2024, 12, 25, tzinfo=pytz.UTC),
         "midnight": now.replace(hour=0, minute=0, second=0, microsecond=0),
         "noon": now.replace(hour=12, minute=0, second=0, microsecond=0),
-        "end_of_day": now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        "end_of_day": now.replace(hour=23, minute=59, second=59, microsecond=999999),
     }
 
 
@@ -402,7 +407,7 @@ def emoji_test_cases():
         "non_emoji": ["a", "1", "@", "#"],
         "too_many": ["😀"] * 20,
         "duplicate": ["😀", "😀", "😃", "😃"],
-        "malformed": ["😀😃", "🎉🔥", "mixed😀text"]
+        "malformed": ["😀😃", "🎉🔥", "mixed😀text"],
     }
 
 
@@ -445,7 +450,7 @@ def sample_poll_data_with_random_emojis():
         "image_message_text": "",
         "ping_role_enabled": False,
         "ping_role_id": None,
-        "ping_role_name": None
+        "ping_role_name": None,
     }
 
 
@@ -467,7 +472,7 @@ def sample_poll_with_random_emojis(db_session, sample_poll_data_with_random_emoj
         timezone=sample_poll_data_with_random_emojis["timezone"],
         anonymous=sample_poll_data_with_random_emojis["anonymous"],
         multiple_choice=sample_poll_data_with_random_emojis["multiple_choice"],
-        status="scheduled"
+        status="scheduled",
     )
     db_session.add(poll)
     db_session.commit()
@@ -480,17 +485,17 @@ def sample_poll_with_random_emojis(db_session, sample_poll_data_with_random_emoj
 def patch_db_session(monkeypatch, temp_db):
     """Automatically patch database sessions for all tests."""
     TestSessionLocal, _ = temp_db
-    
+
     def mock_get_db():
         db = TestSessionLocal()
         try:
             yield db
         finally:
             db.close()
-    
+
     def mock_get_db_session():
         return TestSessionLocal()
-    
+
     monkeypatch.setattr("polly.database.get_db", mock_get_db)
     monkeypatch.setattr("polly.database.get_db_session", mock_get_db_session)
     monkeypatch.setattr("polly.database.SessionLocal", TestSessionLocal)

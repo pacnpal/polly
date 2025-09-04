@@ -34,24 +34,24 @@ def migrate_database():
         # Add missing columns to polls table
         migrations = []
 
-        if 'emojis_json' not in columns:
+        if "emojis_json" not in columns:
             migrations.append("ALTER TABLE polls ADD COLUMN emojis_json TEXT")
 
-        if 'server_name' not in columns:
-            migrations.append(
-                "ALTER TABLE polls ADD COLUMN server_name VARCHAR(255)")
+        if "server_name" not in columns:
+            migrations.append("ALTER TABLE polls ADD COLUMN server_name VARCHAR(255)")
 
-        if 'channel_name' not in columns:
-            migrations.append(
-                "ALTER TABLE polls ADD COLUMN channel_name VARCHAR(255)")
+        if "channel_name" not in columns:
+            migrations.append("ALTER TABLE polls ADD COLUMN channel_name VARCHAR(255)")
 
-        if 'timezone' not in columns:
+        if "timezone" not in columns:
             migrations.append(
-                "ALTER TABLE polls ADD COLUMN timezone VARCHAR(50) DEFAULT 'UTC'")
+                "ALTER TABLE polls ADD COLUMN timezone VARCHAR(50) DEFAULT 'UTC'"
+            )
 
-        if 'anonymous' not in columns:
+        if "anonymous" not in columns:
             migrations.append(
-                "ALTER TABLE polls ADD COLUMN anonymous BOOLEAN DEFAULT 0")
+                "ALTER TABLE polls ADD COLUMN anonymous BOOLEAN DEFAULT 0"
+            )
 
         # Execute migrations
         for migration in migrations:
@@ -62,7 +62,8 @@ def migrate_database():
 
         # Check if user_preferences table exists
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='user_preferences'")
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='user_preferences'"
+        )
         if not cursor.fetchone():
             print("Creating user_preferences table...")
             cursor.execute("""
@@ -77,11 +78,13 @@ def migrate_database():
                 )
             """)
             cursor.execute(
-                "CREATE INDEX ix_user_preferences_id ON user_preferences (id)")
+                "CREATE INDEX ix_user_preferences_id ON user_preferences (id)"
+            )
 
         # Check if guilds table exists
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='guilds'")
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='guilds'"
+        )
         if not cursor.fetchone():
             print("Creating guilds table...")
             cursor.execute("""
@@ -96,7 +99,8 @@ def migrate_database():
 
         # Check if channels table exists
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='channels'")
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='channels'"
+        )
         if not cursor.fetchone():
             print("Creating channels table...")
             cursor.execute("""

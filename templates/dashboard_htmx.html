@@ -333,5 +333,44 @@
 
     <!-- Bootstrap JavaScript Bundle (required for dropdowns) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Handle authentication redirects -->
+    <script>
+        // Handle HTMX redirects for expired sessions
+        document.body.addEventListener('htmx:beforeRequest', function(event) {
+            // Clear any previous error states
+            const errorElements = document.querySelectorAll('.auth-error');
+            errorElements.forEach(el => el.remove());
+        });
+        
+        document.body.addEventListener('htmx:responseError', function(event) {
+            // Handle 401 responses with HX-Redirect header
+            if (event.detail.xhr.status === 401) {
+                const redirectUrl = event.detail.xhr.getResponseHeader('HX-Redirect');
+                if (redirectUrl) {
+                    window.location.href = redirectUrl;
+                    return;
+                }
+                
+                // Fallback: show error and redirect after delay
+                showAuthError('Your session has expired. Redirecting to login...');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 2000);
+            }
+        });
+        
+        function showAuthError(message) {
+            const toast = document.getElementById('alert-toast');
+            const toastBody = toast.querySelector('.toast-body');
+            const toastHeader = toast.querySelector('.toast-header strong');
+            
+            toastHeader.textContent = 'Session Expired';
+            toastBody.innerHTML = `<div class="text-warning auth-error"><i class="fas fa-exclamation-triangle me-2"></i>${message}</div>`;
+            
+            const bootstrapToast = new bootstrap.Toast(toast);
+            bootstrapToast.show();
+        }
+    </script>
 </body>
 </html>

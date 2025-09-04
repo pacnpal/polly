@@ -45,37 +45,50 @@ async def close_poll(poll_id: int):
                 Exception(result["error"]), poll_id, bot
             )
             logger.error(
-                f"Bulletproof poll closure failed for poll {poll_id}: {error_msg}")
+                f"Bulletproof poll closure failed for poll {poll_id}: {error_msg}"
+            )
         else:
             logger.info(
-                f"Successfully closed poll {poll_id} using bulletproof operations")
-            
+                f"Successfully closed poll {poll_id} using bulletproof operations"
+            )
+
             # Post final results to Discord
             try:
                 db = get_db_session()
                 try:
                     from sqlalchemy.orm import joinedload
-                    poll = db.query(Poll).options(joinedload(Poll.votes)).filter(Poll.id == poll_id).first()
+
+                    poll = (
+                        db.query(Poll)
+                        .options(joinedload(Poll.votes))
+                        .filter(Poll.id == poll_id)
+                        .first()
+                    )
                     if poll:
                         results_posted = await post_poll_results(bot, poll)
                         if results_posted:
-                            logger.info(f"Successfully posted final results for poll {poll_id}")
+                            logger.info(
+                                f"Successfully posted final results for poll {poll_id}"
+                            )
                         else:
-                            logger.warning(f"Failed to post final results for poll {poll_id}")
+                            logger.warning(
+                                f"Failed to post final results for poll {poll_id}"
+                            )
                     else:
                         logger.error(f"Poll {poll_id} not found for results posting")
                 finally:
                     db.close()
             except Exception as results_error:
-                logger.error(f"Error posting results for poll {poll_id}: {results_error}")
+                logger.error(
+                    f"Error posting results for poll {poll_id}: {results_error}"
+                )
 
     except Exception as e:
         # Handle unexpected closure errors with bot owner notification
         from .discord_bot import get_bot_instance
+
         bot = get_bot_instance()
-        error_msg = await PollErrorHandler.handle_poll_closure_error(
-            e, poll_id, bot
-        )
+        error_msg = await PollErrorHandler.handle_poll_closure_error(e, poll_id, bot)
         logger.error(f"Error in close_poll function: {error_msg}")
 
 
@@ -86,51 +99,57 @@ async def cleanup_polls_with_deleted_messages():
     This function checks all active and scheduled polls to see if their Discord messages still exist.
     If a message has been deleted, the poll is removed from the database to maintain consistency.
     """
-    logger.info(
-        "🧹 MESSAGE CLEANUP - Starting cleanup of polls with deleted messages")
+    logger.info("🧹 MESSAGE CLEANUP - Starting cleanup of polls with deleted messages")
 
     from .discord_bot import get_bot_instance
+
     bot = get_bot_instance()
 
     if not bot or not bot.is_ready():
-        logger.warning(
-            "⚠️ MESSAGE CLEANUP - Bot not ready, skipping message cleanup")
+        logger.warning("⚠️ MESSAGE CLEANUP - Bot not ready, skipping message cleanup")
         return
 
     db = get_db_session()
     try:
         # Get all polls that have message IDs (active and scheduled polls that were posted)
-        polls_with_messages = db.query(Poll).filter(
-            Poll.message_id.isnot(None),
-            Poll.status.in_(["active", "scheduled"])
-        ).all()
+        polls_with_messages = (
+            db.query(Poll)
+            .filter(
+                Poll.message_id.isnot(None), Poll.status.in_(["active", "scheduled"])
+            )
+            .all()
+        )
 
         logger.info(
-            f"📊 MESSAGE CLEANUP - Found {len(polls_with_messages)} polls with message IDs to check")
+            f"📊 MESSAGE CLEANUP - Found {len(polls_with_messages)} polls with message IDs to check"
+        )
 
         deleted_polls = []
 
         for poll in polls_with_messages:
             try:
-                poll_id = TypeSafeColumn.get_int(poll, 'id')
-                poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown')
-                message_id = TypeSafeColumn.get_string(poll, 'message_id')
-                channel_id = TypeSafeColumn.get_string(poll, 'channel_id')
+                poll_id = TypeSafeColumn.get_int(poll, "id")
+                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+                message_id = TypeSafeColumn.get_string(poll, "message_id")
+                channel_id = TypeSafeColumn.get_string(poll, "channel_id")
 
                 logger.debug(
-                    f"🔍 MESSAGE CLEANUP - Checking poll {poll_id}: '{poll_name}' (message: {message_id})")
+                    f"🔍 MESSAGE CLEANUP - Checking poll {poll_id}: '{poll_name}' (message: {message_id})"
+                )
 
                 # Get the channel
                 try:
                     channel = bot.get_channel(int(channel_id))
                     if not channel:
                         logger.warning(
-                            f"⚠️ MESSAGE CLEANUP - Channel {channel_id} not found for poll {poll_id}, marking for deletion")
+                            f"⚠️ MESSAGE CLEANUP - Channel {channel_id} not found for poll {poll_id}, marking for deletion"
+                        )
                         deleted_polls.append(poll)
                         continue
                 except (ValueError, TypeError) as e:
                     logger.error(
-                        f"❌ MESSAGE CLEANUP - Invalid channel ID {channel_id} for poll {poll_id}: {e}")
+                        f"❌ MESSAGE CLEANUP - Invalid channel ID {channel_id} for poll {poll_id}: {e}"
+                    )
                     deleted_polls.append(poll)
                     continue
 
@@ -139,48 +158,56 @@ async def cleanup_polls_with_deleted_messages():
                     if isinstance(channel, discord.TextChannel):
                         await channel.fetch_message(int(message_id))
                         logger.debug(
-                            f"✅ MESSAGE CLEANUP - Message {message_id} exists for poll {poll_id}")
+                            f"✅ MESSAGE CLEANUP - Message {message_id} exists for poll {poll_id}"
+                        )
                     else:
                         logger.warning(
-                            f"⚠️ MESSAGE CLEANUP - Channel {channel_id} is not a text channel for poll {poll_id}, marking for deletion")
+                            f"⚠️ MESSAGE CLEANUP - Channel {channel_id} is not a text channel for poll {poll_id}, marking for deletion"
+                        )
                         deleted_polls.append(poll)
                         continue
                 except discord.NotFound:
                     logger.warning(
-                        f"🗑️ MESSAGE CLEANUP - Message {message_id} not found for poll {poll_id}, marking for deletion")
+                        f"🗑️ MESSAGE CLEANUP - Message {message_id} not found for poll {poll_id}, marking for deletion"
+                    )
                     deleted_polls.append(poll)
                 except discord.Forbidden:
                     logger.warning(
-                        f"🔒 MESSAGE CLEANUP - No permission to access message {message_id} for poll {poll_id}, keeping poll")
+                        f"🔒 MESSAGE CLEANUP - No permission to access message {message_id} for poll {poll_id}, keeping poll"
+                    )
                 except discord.HTTPException as e:
                     logger.error(
-                        f"❌ MESSAGE CLEANUP - HTTP error checking message {message_id} for poll {poll_id}: {e}")
+                        f"❌ MESSAGE CLEANUP - HTTP error checking message {message_id} for poll {poll_id}: {e}"
+                    )
                     # Don't delete on HTTP errors, might be temporary
                 except (ValueError, TypeError) as e:
                     logger.error(
-                        f"❌ MESSAGE CLEANUP - Invalid message ID {message_id} for poll {poll_id}: {e}")
+                        f"❌ MESSAGE CLEANUP - Invalid message ID {message_id} for poll {poll_id}: {e}"
+                    )
                     deleted_polls.append(poll)
                 except Exception as e:
                     logger.error(
-                        f"❌ MESSAGE CLEANUP - Unexpected error checking message {message_id} for poll {poll_id}: {e}")
+                        f"❌ MESSAGE CLEANUP - Unexpected error checking message {message_id} for poll {poll_id}: {e}"
+                    )
                     # Don't delete on unexpected errors
 
             except Exception as e:
-                poll_id = TypeSafeColumn.get_int(poll, 'id', 0) if poll else 0
+                poll_id = TypeSafeColumn.get_int(poll, "id", 0) if poll else 0
                 logger.error(
-                    f"❌ MESSAGE CLEANUP - Error processing poll {poll_id}: {e}")
+                    f"❌ MESSAGE CLEANUP - Error processing poll {poll_id}: {e}"
+                )
                 continue
 
         # Delete polls whose messages were not found
         if deleted_polls:
             logger.info(
-                f"🗑️ MESSAGE CLEANUP - Deleting {len(deleted_polls)} polls with missing messages")
+                f"🗑️ MESSAGE CLEANUP - Deleting {len(deleted_polls)} polls with missing messages"
+            )
 
             for poll in deleted_polls:
                 try:
-                    poll_id = TypeSafeColumn.get_int(poll, 'id')
-                    poll_name = TypeSafeColumn.get_string(
-                        poll, 'name', 'Unknown')
+                    poll_id = TypeSafeColumn.get_int(poll, "id")
+                    poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
 
                     # Delete associated votes first (cascade should handle this, but be explicit)
                     db.query(Vote).filter(Vote.poll_id == poll_id).delete()
@@ -189,26 +216,26 @@ async def cleanup_polls_with_deleted_messages():
                     db.delete(poll)
 
                     logger.info(
-                        f"✅ MESSAGE CLEANUP - Deleted poll {poll_id}: '{poll_name}'")
+                        f"✅ MESSAGE CLEANUP - Deleted poll {poll_id}: '{poll_name}'"
+                    )
 
                 except Exception as e:
-                    poll_id = TypeSafeColumn.get_int(
-                        poll, 'id', 0) if poll else 0
+                    poll_id = TypeSafeColumn.get_int(poll, "id", 0) if poll else 0
                     logger.error(
-                        f"❌ MESSAGE CLEANUP - Error deleting poll {poll_id}: {e}")
+                        f"❌ MESSAGE CLEANUP - Error deleting poll {poll_id}: {e}"
+                    )
                     continue
 
             # Commit all deletions
             db.commit()
             logger.info(
-                f"✅ MESSAGE CLEANUP - Successfully deleted {len(deleted_polls)} polls with missing messages")
+                f"✅ MESSAGE CLEANUP - Successfully deleted {len(deleted_polls)} polls with missing messages"
+            )
         else:
-            logger.info(
-                "✅ MESSAGE CLEANUP - No polls with missing messages found")
+            logger.info("✅ MESSAGE CLEANUP - No polls with missing messages found")
 
     except Exception as e:
-        logger.error(
-            f"❌ MESSAGE CLEANUP - Critical error during message cleanup: {e}")
+        logger.error(f"❌ MESSAGE CLEANUP - Critical error during message cleanup: {e}")
         logger.exception("Full traceback for message cleanup error:")
         db.rollback()
     finally:
@@ -245,34 +272,35 @@ async def restore_scheduled_jobs():
         return
 
     logger.debug(
-        f"✅ SCHEDULER RESTORE - Scheduler is running, state: {scheduler.state}")
+        f"✅ SCHEDULER RESTORE - Scheduler is running, state: {scheduler.state}"
+    )
 
     # Debug bot status
     from .discord_bot import get_bot_instance
+
     bot = get_bot_instance()
     if not bot:
         logger.error("❌ SCHEDULER RESTORE - Bot instance is None")
         return
 
     if not bot.is_ready():
-        logger.warning(
-            "⚠️ SCHEDULER RESTORE - Bot is not ready yet, jobs may fail")
+        logger.warning("⚠️ SCHEDULER RESTORE - Bot is not ready yet, jobs may fail")
     else:
         logger.debug(f"✅ SCHEDULER RESTORE - Bot is ready: {bot.user}")
 
     db = get_db_session()
     try:
         # Get all scheduled polls with debugging
-        logger.debug(
-            "🔍 SCHEDULER RESTORE - Querying database for scheduled polls")
-        scheduled_polls = db.query(Poll).filter(
-            Poll.status == "scheduled").all()
+        logger.debug("🔍 SCHEDULER RESTORE - Querying database for scheduled polls")
+        scheduled_polls = db.query(Poll).filter(Poll.status == "scheduled").all()
         logger.info(
-            f"📊 SCHEDULER RESTORE - Found {len(scheduled_polls)} scheduled polls to restore")
+            f"📊 SCHEDULER RESTORE - Found {len(scheduled_polls)} scheduled polls to restore"
+        )
 
         if not scheduled_polls:
             logger.info(
-                "✅ SCHEDULER RESTORE - No scheduled polls found, restoration complete")
+                "✅ SCHEDULER RESTORE - No scheduled polls found, restoration complete"
+            )
             return
 
         # Get current time for comparison
@@ -285,31 +313,41 @@ async def restore_scheduled_jobs():
 
         for poll in scheduled_polls:
             try:
-                poll_id = TypeSafeColumn.get_int(poll, 'id')
-                poll_name = TypeSafeColumn.get_string(poll, 'name', 'Unknown')
+                poll_id = TypeSafeColumn.get_int(poll, "id")
+                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
 
                 logger.info(
-                    f"🔄 SCHEDULER RESTORE - Processing poll {poll_id}: '{poll_name}'")
+                    f"🔄 SCHEDULER RESTORE - Processing poll {poll_id}: '{poll_name}'"
+                )
                 logger.debug(
-                    f"Poll {poll_id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}")
+                    f"Poll {poll_id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}"
+                )
 
                 # Get poll times as actual datetime objects using TypeSafeColumn
                 poll_open_time = poll.open_time
                 poll_close_time = poll.close_time
-                
+
                 # Ensure we have valid datetime objects
-                if not isinstance(poll_open_time, datetime) or not isinstance(poll_close_time, datetime):
-                    logger.error(f"❌ SCHEDULER RESTORE - Invalid datetime objects for poll {poll_id}")
+                if not isinstance(poll_open_time, datetime) or not isinstance(
+                    poll_close_time, datetime
+                ):
+                    logger.error(
+                        f"❌ SCHEDULER RESTORE - Invalid datetime objects for poll {poll_id}"
+                    )
                     continue
-                
+
                 # Ensure poll times are timezone-aware for comparison
                 if poll_open_time.tzinfo is None:
                     poll_open_time = pytz.UTC.localize(poll_open_time)
-                    logger.debug(f"🕐 SCHEDULER RESTORE - Localized naive open_time to UTC for poll {poll_id}")
-                
+                    logger.debug(
+                        f"🕐 SCHEDULER RESTORE - Localized naive open_time to UTC for poll {poll_id}"
+                    )
+
                 if poll_close_time.tzinfo is None:
                     poll_close_time = pytz.UTC.localize(poll_close_time)
-                    logger.debug(f"🕐 SCHEDULER RESTORE - Localized naive close_time to UTC for poll {poll_id}")
+                    logger.debug(
+                        f"🕐 SCHEDULER RESTORE - Localized naive close_time to UTC for poll {poll_id}"
+                    )
 
                 # All polls should be scheduled only - no immediate posting during restore
                 # Schedule poll to open at its designated time
@@ -317,15 +355,16 @@ async def restore_scheduled_jobs():
 
                 if poll_open_time <= now:
                     logger.info(
-                        f"📅 SCHEDULER RESTORE - Poll {poll_id} is overdue by {abs(time_until_open):.0f} seconds, scheduling for immediate posting")
+                        f"📅 SCHEDULER RESTORE - Poll {poll_id} is overdue by {abs(time_until_open):.0f} seconds, scheduling for immediate posting"
+                    )
                 else:
                     logger.info(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to open in {time_until_open:.0f} seconds at {poll_open_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to open in {time_until_open:.0f} seconds at {poll_open_time}"
+                    )
 
                 # Use timezone-aware scheduler for restoration
                 tz_scheduler = TimezoneAwareScheduler(scheduler)
-                poll_timezone = TypeSafeColumn.get_string(
-                    poll, 'timezone', 'UTC')
+                poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
 
                 # Schedule poll opening (use the timezone-aware datetime)
                 success_open = tz_scheduler.schedule_poll_opening(
@@ -333,72 +372,83 @@ async def restore_scheduled_jobs():
                 )
                 if success_open:
                     logger.debug(
-                        f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {poll_id}")
+                        f"✅ SCHEDULER RESTORE - Scheduled opening job for poll {poll_id}"
+                    )
                 else:
                     logger.error(
-                        f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {poll_id}")
+                        f"❌ SCHEDULER RESTORE - Failed to schedule opening for poll {poll_id}"
+                    )
 
                 # Always schedule poll to close (whether it's active or scheduled)
                 if poll_close_time > now:
                     time_until_close = (poll_close_time - now).total_seconds()
                     logger.debug(
-                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to close in {time_until_close:.0f} seconds at {poll_close_time}")
+                        f"📅 SCHEDULER RESTORE - Scheduling poll {poll_id} to close in {time_until_close:.0f} seconds at {poll_close_time}"
+                    )
 
                     success_close = tz_scheduler.schedule_poll_closing(
                         poll_id, poll_close_time, poll_timezone, close_poll
                     )
                     if success_close:
                         logger.debug(
-                            f"✅ SCHEDULER RESTORE - Scheduled closing job for poll {poll_id}")
+                            f"✅ SCHEDULER RESTORE - Scheduled closing job for poll {poll_id}"
+                        )
                     else:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {poll_id}")
+                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for poll {poll_id}"
+                        )
                 else:
                     # Poll should have already closed
                     time_overdue = (now - poll_close_time).total_seconds()
                     logger.warning(
-                        f"⏰ SCHEDULER RESTORE - Poll {poll_id} close time is {time_overdue:.0f} seconds overdue, closing now")
+                        f"⏰ SCHEDULER RESTORE - Poll {poll_id} close time is {time_overdue:.0f} seconds overdue, closing now"
+                    )
 
                     try:
                         await close_poll(poll_id)
                         immediate_closes += 1
                         logger.info(
-                            f"✅ SCHEDULER RESTORE - Successfully closed overdue poll {poll_id}")
+                            f"✅ SCHEDULER RESTORE - Successfully closed overdue poll {poll_id}"
+                        )
                     except Exception as close_exc:
                         logger.error(
-                            f"❌ SCHEDULER RESTORE - Exception closing poll {poll_id}: {close_exc}")
-                        logger.exception(
-                            f"Full traceback for poll {poll_id} closing:")
+                            f"❌ SCHEDULER RESTORE - Exception closing poll {poll_id}: {close_exc}"
+                        )
+                        logger.exception(f"Full traceback for poll {poll_id} closing:")
 
                 restored_count += 1
                 logger.debug(
-                    f"✅ SCHEDULER RESTORE - Completed processing poll {poll_id}")
+                    f"✅ SCHEDULER RESTORE - Completed processing poll {poll_id}"
+                )
 
             except Exception as e:
-                poll_id = TypeSafeColumn.get_int(poll, 'id', 0) if poll else 0
+                poll_id = TypeSafeColumn.get_int(poll, "id", 0) if poll else 0
                 logger.error(
-                    f"❌ SCHEDULER RESTORE - Error processing poll {poll_id}: {e}")
+                    f"❌ SCHEDULER RESTORE - Error processing poll {poll_id}: {e}"
+                )
                 logger.exception(
-                    f"Full traceback for poll {poll_id} restoration error:")
+                    f"Full traceback for poll {poll_id} restoration error:"
+                )
 
         # Log final restoration summary
         logger.info("🎉 SCHEDULER RESTORE - Restoration complete!")
         logger.info(
-            f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} polls processed")
+            f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} polls processed"
+        )
         logger.info(
-            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} closed")
+            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} closed"
+        )
 
         # Debug current scheduler jobs
         current_jobs = scheduler.get_jobs()
         logger.info(
-            f"📊 SCHEDULER RESTORE - Total active jobs after restoration: {len(current_jobs)}")
+            f"📊 SCHEDULER RESTORE - Total active jobs after restoration: {len(current_jobs)}"
+        )
         for job in current_jobs:
-            logger.debug(
-                f"Active job: {job.id} - next run: {job.next_run_time}")
+            logger.debug(f"Active job: {job.id} - next run: {job.next_run_time}")
 
     except Exception as e:
-        logger.error(
-            f"❌ SCHEDULER RESTORE - Critical error during restoration: {e}")
+        logger.error(f"❌ SCHEDULER RESTORE - Critical error during restoration: {e}")
         logger.exception("Full traceback for scheduler restoration error:")
     finally:
         db.close()
@@ -441,46 +491,50 @@ async def reaction_safeguard_task():
             # Get all active polls
             db = get_db_session()
             try:
-                active_polls = db.query(Poll).filter(
-                    Poll.status == "active").all()
+                active_polls = db.query(Poll).filter(Poll.status == "active").all()
 
                 for poll in active_polls:
                     try:
-                        poll_message_id = TypeSafeColumn.get_string(
-                            poll, 'message_id')
+                        poll_message_id = TypeSafeColumn.get_string(poll, "message_id")
                         if not poll_message_id:
                             continue
 
                         # Get the Discord message
                         try:
                             poll_channel_id = TypeSafeColumn.get_string(
-                                poll, 'channel_id')
+                                poll, "channel_id"
+                            )
                             channel = bot.get_channel(int(poll_channel_id))
                             if not channel:
                                 continue
                         except Exception as channel_error:
-                            poll_id = TypeSafeColumn.get_int(poll, 'id')
+                            poll_id = TypeSafeColumn.get_int(poll, "id")
                             logger.error(
-                                f"❌ Safeguard: Error getting channel {poll_channel_id} for poll {poll_id}: {channel_error}")
+                                f"❌ Safeguard: Error getting channel {poll_channel_id} for poll {poll_id}: {channel_error}"
+                            )
                             continue
 
                         try:
                             if isinstance(channel, discord.TextChannel):
-                                message = await channel.fetch_message(int(poll_message_id))
+                                message = await channel.fetch_message(
+                                    int(poll_message_id)
+                                )
                                 # Message found successfully - clear any failure tracking
-                                poll_id = TypeSafeColumn.get_int(poll, 'id')
+                                poll_id = TypeSafeColumn.get_int(poll, "id")
                                 if poll_id in message_fetch_failures:
                                     del message_fetch_failures[poll_id]
                                     logger.debug(
-                                        f"✅ Safeguard: Message {poll_message_id} found for poll {poll_id}, cleared failure tracking")
+                                        f"✅ Safeguard: Message {poll_message_id} found for poll {poll_id}, cleared failure tracking"
+                                    )
                             else:
                                 # Skip non-text channels
                                 continue
                         except discord.NotFound:
                             # Message not found - implement retry logic with multiple methods
-                            poll_id = TypeSafeColumn.get_int(poll, 'id')
+                            poll_id = TypeSafeColumn.get_int(poll, "id")
                             poll_name = TypeSafeColumn.get_string(
-                                poll, 'name', 'Unknown')
+                                poll, "name", "Unknown"
+                            )
                             current_time = datetime.now(pytz.UTC)
 
                             # Initialize or update failure tracking
@@ -489,10 +543,11 @@ async def reaction_safeguard_task():
                                     "count": 1,
                                     "first_failure": current_time,
                                     "last_attempt": current_time,
-                                    "methods_tried": ["fetch_message"]
+                                    "methods_tried": ["fetch_message"],
                                 }
                                 logger.warning(
-                                    f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES})")
+                                    f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES})"
+                                )
                             else:
                                 failure_info = message_fetch_failures[poll_id]
                                 failure_info["count"] += 1
@@ -500,7 +555,8 @@ async def reaction_safeguard_task():
 
                                 # Check if we're within the retry window
                                 time_since_first_failure = (
-                                    current_time - failure_info["first_failure"]).total_seconds() / 60
+                                    current_time - failure_info["first_failure"]
+                                ).total_seconds() / 60
 
                                 if time_since_first_failure > RETRY_WINDOW_MINUTES:
                                     # Reset the failure tracking if too much time has passed
@@ -508,13 +564,15 @@ async def reaction_safeguard_task():
                                         "count": 1,
                                         "first_failure": current_time,
                                         "last_attempt": current_time,
-                                        "methods_tried": ["fetch_message"]
+                                        "methods_tried": ["fetch_message"],
                                     }
                                     logger.warning(
-                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES}, reset after {time_since_first_failure:.1f} minutes)")
+                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES}, reset after {time_since_first_failure:.1f} minutes)"
+                                    )
                                 else:
                                     logger.warning(
-                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt {failure_info['count']}/{MAX_FETCH_RETRIES})")
+                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt {failure_info['count']}/{MAX_FETCH_RETRIES})"
+                                    )
 
                                 # Try alternative methods before giving up
                                 if failure_info["count"] <= MAX_FETCH_RETRIES:
@@ -522,60 +580,89 @@ async def reaction_safeguard_task():
                                     message_found = False
 
                                     # Method 2: Try to get message from channel history
-                                    if "history_search" not in failure_info["methods_tried"] and failure_info["count"] >= 2:
+                                    if (
+                                        "history_search"
+                                        not in failure_info["methods_tried"]
+                                        and failure_info["count"] >= 2
+                                    ):
                                         try:
                                             logger.debug(
-                                                f"🔍 Safeguard: Trying history search for message {poll_message_id} in poll {poll_id}")
-                                            async for hist_message in channel.history(limit=100):
-                                                if str(hist_message.id) == poll_message_id:
+                                                f"🔍 Safeguard: Trying history search for message {poll_message_id} in poll {poll_id}"
+                                            )
+                                            async for hist_message in channel.history(
+                                                limit=100
+                                            ):
+                                                if (
+                                                    str(hist_message.id)
+                                                    == poll_message_id
+                                                ):
                                                     message = hist_message
                                                     message_found = True
                                                     logger.info(
-                                                        f"✅ Safeguard: Found message {poll_message_id} via history search for poll {poll_id}")
+                                                        f"✅ Safeguard: Found message {poll_message_id} via history search for poll {poll_id}"
+                                                    )
                                                     break
                                             failure_info["methods_tried"].append(
-                                                "history_search")
+                                                "history_search"
+                                            )
                                         except Exception as history_error:
                                             logger.debug(
-                                                f"❌ Safeguard: History search failed for poll {poll_id}: {history_error}")
+                                                f"❌ Safeguard: History search failed for poll {poll_id}: {history_error}"
+                                            )
 
                                     # Method 3: Try with a small delay and retry fetch
-                                    if not message_found and "delayed_fetch" not in failure_info["methods_tried"] and failure_info["count"] >= 3:
+                                    if (
+                                        not message_found
+                                        and "delayed_fetch"
+                                        not in failure_info["methods_tried"]
+                                        and failure_info["count"] >= 3
+                                    ):
                                         try:
                                             logger.debug(
-                                                f"🔍 Safeguard: Trying delayed fetch for message {poll_message_id} in poll {poll_id}")
+                                                f"🔍 Safeguard: Trying delayed fetch for message {poll_message_id} in poll {poll_id}"
+                                            )
                                             # Small delay
                                             await asyncio.sleep(2)
-                                            message = await channel.fetch_message(int(poll_message_id))
+                                            message = await channel.fetch_message(
+                                                int(poll_message_id)
+                                            )
                                             message_found = True
                                             logger.info(
-                                                f"✅ Safeguard: Found message {poll_message_id} via delayed fetch for poll {poll_id}")
+                                                f"✅ Safeguard: Found message {poll_message_id} via delayed fetch for poll {poll_id}"
+                                            )
                                             failure_info["methods_tried"].append(
-                                                "delayed_fetch")
+                                                "delayed_fetch"
+                                            )
                                         except discord.NotFound:
                                             logger.debug(
-                                                f"❌ Safeguard: Delayed fetch still failed for poll {poll_id}")
+                                                f"❌ Safeguard: Delayed fetch still failed for poll {poll_id}"
+                                            )
                                             failure_info["methods_tried"].append(
-                                                "delayed_fetch")
+                                                "delayed_fetch"
+                                            )
                                         except Exception as delayed_error:
                                             logger.debug(
-                                                f"❌ Safeguard: Delayed fetch error for poll {poll_id}: {delayed_error}")
+                                                f"❌ Safeguard: Delayed fetch error for poll {poll_id}: {delayed_error}"
+                                            )
 
                                     if message_found:
                                         # Clear failure tracking since we found the message
                                         del message_fetch_failures[poll_id]
                                         logger.info(
-                                            f"✅ Safeguard: Message {poll_message_id} recovered for poll {poll_id}, cleared failure tracking")
+                                            f"✅ Safeguard: Message {poll_message_id} recovered for poll {poll_id}, cleared failure tracking"
+                                        )
                                         # Continue processing the message normally
                                     elif failure_info["count"] >= MAX_FETCH_RETRIES:
                                         # All retry attempts exhausted - delete the poll
                                         logger.error(
-                                            f"🗑️ Safeguard: Message {poll_message_id} not found after {MAX_FETCH_RETRIES} attempts over {time_since_first_failure:.1f} minutes for poll {poll_id}, deleting poll")
+                                            f"🗑️ Safeguard: Message {poll_message_id} not found after {MAX_FETCH_RETRIES} attempts over {time_since_first_failure:.1f} minutes for poll {poll_id}, deleting poll"
+                                        )
 
                                         try:
                                             # Delete associated votes first
                                             db.query(Vote).filter(
-                                                Vote.poll_id == poll_id).delete()
+                                                Vote.poll_id == poll_id
+                                            ).delete()
                                             # Delete the poll
                                             db.delete(poll)
                                             db.commit()
@@ -584,10 +671,12 @@ async def reaction_safeguard_task():
                                             del message_fetch_failures[poll_id]
 
                                             logger.info(
-                                                f"✅ Safeguard: Deleted poll {poll_id}: '{poll_name}' after {MAX_FETCH_RETRIES} failed message fetch attempts")
+                                                f"✅ Safeguard: Deleted poll {poll_id}: '{poll_name}' after {MAX_FETCH_RETRIES} failed message fetch attempts"
+                                            )
                                         except Exception as delete_error:
                                             logger.error(
-                                                f"❌ Safeguard: Error deleting poll {poll_id}: {delete_error}")
+                                                f"❌ Safeguard: Error deleting poll {poll_id}: {delete_error}"
+                                            )
                                             db.rollback()
                                         continue
                                     else:
@@ -596,9 +685,10 @@ async def reaction_safeguard_task():
 
                             continue
                         except Exception as fetch_error:
-                            poll_id = TypeSafeColumn.get_int(poll, 'id')
+                            poll_id = TypeSafeColumn.get_int(poll, "id")
                             logger.error(
-                                f"❌ Safeguard: Error fetching message {poll_message_id} for poll {poll_id}: {fetch_error}")
+                                f"❌ Safeguard: Error fetching message {poll_message_id} for poll {poll_id}: {fetch_error}"
+                            )
                             continue
 
                         # Check each reaction on the message
@@ -607,8 +697,7 @@ async def reaction_safeguard_task():
                                 if str(reaction.emoji) not in POLL_EMOJIS:
                                     continue
 
-                                option_index = POLL_EMOJIS.index(
-                                    str(reaction.emoji))
+                                option_index = POLL_EMOJIS.index(str(reaction.emoji))
                                 if option_index >= len(poll.options):
                                     continue
 
@@ -619,35 +708,43 @@ async def reaction_safeguard_task():
                                             continue
 
                                         try:
-                                            poll_id = TypeSafeColumn.get_int(
-                                                poll, 'id')
+                                            poll_id = TypeSafeColumn.get_int(poll, "id")
                                             # Check if this user's vote is already recorded
-                                            existing_vote = db.query(Vote).filter(
-                                                Vote.poll_id == poll_id,
-                                                Vote.user_id == str(user.id)
-                                            ).first()
+                                            existing_vote = (
+                                                db.query(Vote)
+                                                .filter(
+                                                    Vote.poll_id == poll_id,
+                                                    Vote.user_id == str(user.id),
+                                                )
+                                                .first()
+                                            )
 
                                             if existing_vote:
                                                 # Vote exists, remove the reaction (cleanup)
                                                 try:
                                                     await reaction.remove(user)
                                                     logger.debug(
-                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {poll_id} (vote already recorded)")
+                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {poll_id} (vote already recorded)"
+                                                    )
                                                 except Exception as remove_error:
                                                     logger.debug(
-                                                        f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}")
+                                                        f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}"
+                                                    )
                                             else:
                                                 # No vote recorded, process the vote
                                                 logger.info(
-                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {poll_id}")
+                                                    f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {poll_id}"
+                                                )
 
                                                 try:
                                                     # Use bulletproof vote collection
-                                                    bulletproof_ops = BulletproofPollOperations(
-                                                        bot)
+                                                    bulletproof_ops = (
+                                                        BulletproofPollOperations(bot)
+                                                    )
                                                     result = await bulletproof_ops.bulletproof_vote_collection(
-                                                        poll_id, str(
-                                                            user.id), option_index
+                                                        poll_id,
+                                                        str(user.id),
+                                                        option_index,
                                                     )
 
                                                     if result["success"]:
@@ -655,52 +752,66 @@ async def reaction_safeguard_task():
                                                         try:
                                                             await reaction.remove(user)
                                                             logger.info(
-                                                                f"✅ Safeguard: Vote recorded and reaction removed for user {user.id} on poll {poll_id}")
-                                                        except Exception as remove_error:
+                                                                f"✅ Safeguard: Vote recorded and reaction removed for user {user.id} on poll {poll_id}"
+                                                            )
+                                                        except (
+                                                            Exception
+                                                        ) as remove_error:
                                                             logger.warning(
-                                                                f"⚠️ Safeguard: Vote recorded but failed to remove reaction from user {user.id}: {remove_error}")
+                                                                f"⚠️ Safeguard: Vote recorded but failed to remove reaction from user {user.id}: {remove_error}"
+                                                            )
 
                                                         # Update poll embed for live updates
                                                         try:
-                                                            await update_poll_message(bot, poll)
+                                                            await update_poll_message(
+                                                                bot, poll
+                                                            )
                                                             logger.debug(
-                                                                f"✅ Safeguard: Poll message updated for poll {poll_id}")
-                                                        except Exception as update_error:
+                                                                f"✅ Safeguard: Poll message updated for poll {poll_id}"
+                                                            )
+                                                        except (
+                                                            Exception
+                                                        ) as update_error:
                                                             logger.error(
-                                                                f"❌ Safeguard: Failed to update poll message for poll {poll_id}: {update_error}")
+                                                                f"❌ Safeguard: Failed to update poll message for poll {poll_id}: {update_error}"
+                                                            )
                                                     else:
                                                         # Vote failed - leave reaction for user to try again
                                                         logger.error(
-                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {poll_id}: {result['error']}")
+                                                            f"❌ Safeguard: Vote FAILED for user {user.id} on poll {poll_id}: {result['error']}"
+                                                        )
 
                                                 except Exception as vote_error:
                                                     logger.error(
-                                                        f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {poll_id}: {vote_error}")
+                                                        f"❌ Safeguard: Critical error processing vote for user {user.id} on poll {poll_id}: {vote_error}"
+                                                    )
 
                                         except Exception as user_error:
-                                            poll_id = TypeSafeColumn.get_int(
-                                                poll, 'id')
+                                            poll_id = TypeSafeColumn.get_int(poll, "id")
                                             logger.error(
-                                                f"❌ Safeguard: Error processing user {user.id} reaction on poll {poll_id}: {user_error}")
+                                                f"❌ Safeguard: Error processing user {user.id} reaction on poll {poll_id}: {user_error}"
+                                            )
                                             continue
 
                                 except Exception as users_error:
-                                    poll_id = TypeSafeColumn.get_int(
-                                        poll, 'id')
+                                    poll_id = TypeSafeColumn.get_int(poll, "id")
                                     logger.error(
-                                        f"❌ Safeguard: Error iterating reaction users for poll {poll_id}: {users_error}")
+                                        f"❌ Safeguard: Error iterating reaction users for poll {poll_id}: {users_error}"
+                                    )
                                     continue
 
                             except Exception as reaction_error:
-                                poll_id = TypeSafeColumn.get_int(poll, 'id')
+                                poll_id = TypeSafeColumn.get_int(poll, "id")
                                 logger.error(
-                                    f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {poll_id}: {reaction_error}")
+                                    f"❌ Safeguard: Error processing reaction {reaction.emoji} on poll {poll_id}: {reaction_error}"
+                                )
                                 continue
 
                     except Exception as poll_error:
-                        poll_id = TypeSafeColumn.get_int(poll, 'id')
+                        poll_id = TypeSafeColumn.get_int(poll, "id")
                         logger.error(
-                            f"❌ Safeguard: Error processing poll {poll_id}: {poll_error}")
+                            f"❌ Safeguard: Error processing poll {poll_id}: {poll_error}"
+                        )
                         continue
 
             except Exception as db_error:
@@ -709,12 +820,12 @@ async def reaction_safeguard_task():
                 try:
                     db.close()
                 except Exception as close_error:
-                    logger.error(
-                        f"❌ Safeguard: Error closing database: {close_error}")
+                    logger.error(f"❌ Safeguard: Error closing database: {close_error}")
 
         except Exception as e:
             logger.error(
-                f"❌ Safeguard: Critical error in reaction safeguard task: {e}")
+                f"❌ Safeguard: Critical error in reaction safeguard task: {e}"
+            )
             # Continue running even if there's an error
             continue
 
