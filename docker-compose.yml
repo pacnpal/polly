@@ -41,3 +41,10 @@ services:
       retries: 3
     networks:
       - polly-network
+volumes:
+  polly_db:
+  redis_data:
+
+networks:
+  polly-network:
+    driver: bridge
