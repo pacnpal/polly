@@ -343,6 +343,7 @@ def add_core_routes(app: FastAPI):
     async def dashboard(request: Request, current_user: DiscordUser = Depends(require_auth)):
         """User dashboard with HTMX"""
         from .discord_bot import get_bot_instance
+        from decouple import config
 
         # Check if user has timezone preference set
         user_prefs = await get_user_preferences(current_user.id)
@@ -359,11 +360,17 @@ def add_core_routes(app: FastAPI):
                 f"Error getting user guilds for {current_user.id}: {e}")
             user_guilds = []
 
+        # Get Turnstile configuration
+        turnstile_enabled = config('TURNSTILE_ENABLED', default=True, cast=bool)
+        turnstile_site_key = config('TURNSTILE_SITE_KEY', default='1x00000000000000000000AA')
+
         return templates.TemplateResponse("dashboard_htmx.html", {
             "request": request,
             "user": current_user,
             "guilds": user_guilds,
-            "show_timezone_prompt": user_prefs.get("last_server_id") is None and not user_prefs.get("timezone_explicitly_set", False)
+            "show_timezone_prompt": user_prefs.get("last_server_id") is None and not user_prefs.get("timezone_explicitly_set", False),
+            "turnstile_enabled": turnstile_enabled,
+            "turnstile_site_key": turnstile_site_key
         })
 
     # Add HTMX endpoints

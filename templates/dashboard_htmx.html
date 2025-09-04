@@ -311,13 +311,15 @@
     {% endif %}
 
     <!-- Non-interactive Turnstile for passive bot detection -->
+    {% if turnstile_enabled %}
     <div style="position: fixed; top: -1000px; left: -1000px; visibility: hidden;">
         <div class="cf-turnstile" 
-             data-sitekey="1x00000000000000000000AA" 
+             data-sitekey="{{ turnstile_site_key }}" 
              data-appearance="interaction-only"
              data-execution="render">
         </div>
     </div>
+    {% endif %}
 
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay htmx-indicator">
