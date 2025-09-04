@@ -2524,10 +2524,31 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
     cached_dashboard = await enhanced_cache.get_cached_poll_dashboard(poll_id)
     if cached_dashboard:
         logger.debug(f"🚀 DASHBOARD CACHE HIT - Retrieved cached dashboard for poll {poll_id}")
-        return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
-            "request": request,
-            **cached_dashboard
-        })
+        
+        # We still need to get the Poll object for the template since it's not cached
+        db = get_db_session()
+        try:
+            poll = db.query(Poll).filter(Poll.id == poll_id,
+                                         Poll.creator_id == current_user.id).first()
+            if not poll:
+                return templates.TemplateResponse("htmx/components/inline_error.html", {
+                    "request": request,
+                    "message": "Poll not found or access denied"
+                })
+            
+            # Add the non-cacheable objects to the cached data
+            template_data = {
+                "poll": poll,
+                "format_datetime_for_user": format_datetime_for_user,
+                **cached_dashboard
+            }
+            
+            return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
+                "request": request,
+                **template_data
+            })
+        finally:
+            db.close()
     
     # Cache miss - generate dashboard data
     logger.debug(f"🔍 DASHBOARD CACHE MISS - Generating dashboard for poll {poll_id}")
@@ -2619,8 +2640,24 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         unique_voters = len(unique_users)
         results = poll.get_results()
         
-        # Prepare dashboard data for caching
-        dashboard_data = {
+        # Prepare cacheable data (exclude non-serializable objects like Poll and functions)
+        cacheable_data = {
+            "vote_data": vote_data,
+            "total_votes": total_votes,
+            "unique_voters": unique_voters,
+            "results": results,
+            "options": options,
+            "emojis": emojis,
+            "is_anonymous": is_anonymous,
+            "show_usernames_to_creator": show_usernames_to_creator
+        }
+        
+        # Cache only the serializable data for 15 seconds
+        await enhanced_cache.cache_poll_dashboard(poll_id, cacheable_data)
+        logger.debug(f"💾 DASHBOARD CACHED - Stored dashboard for poll {poll_id} with 15s TTL")
+        
+        # Prepare full template data (including non-cacheable objects)
+        template_data = {
             "poll": poll,
             "vote_data": vote_data,
             "total_votes": total_votes,
@@ -2633,13 +2670,9 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
             "format_datetime_for_user": format_datetime_for_user
         }
         
-        # Cache dashboard data for 15 seconds
-        await enhanced_cache.cache_poll_dashboard(poll_id, dashboard_data)
-        logger.debug(f"💾 DASHBOARD CACHED - Stored dashboard for poll {poll_id} with 15s TTL")
-        
         return templates.TemplateResponse("htmx/components/poll_dashboard.html", {
             "request": request,
-            **dashboard_data
+            **template_data
         })
 
     except Exception as e:
