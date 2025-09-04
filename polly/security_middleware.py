@@ -110,14 +110,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         """Add security headers to response"""
         response = await call_next(request)
         
-        # Content Security Policy
+        # Content Security Policy - Fixed to allow Font Awesome fonts and Turnstile frames
         csp_policy = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://challenges.cloudflare.com https://static.cloudflareinsights.com; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
+            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
             "img-src 'self' data: https://cdn.discordapp.com https://discord.com; "
-            "connect-src 'self'; "
+            "connect-src 'self' https://challenges.cloudflare.com; "
+            "frame-src 'self' https://challenges.cloudflare.com; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self'"
@@ -129,7 +130,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "X-Content-Type-Options": "nosniff",
             "X-Frame-Options": "DENY",
             "X-XSS-Protection": "1; mode=block",
-            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Referrer-Policy": "no-referrer-when-downgrade",
             "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
             "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
         }
