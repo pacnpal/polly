@@ -111,6 +111,48 @@ class EnhancedSecurityMiddleware(BaseHTTPMiddleware):
         if request.url.path in self.BLOCKED_PATHS:
             return True, "HIGH", f"Known malicious path: {request.url.path}"
         
+        # Check for PHPUnit RCE attacks with any path prefix
+        if "vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php" in request.url.path:
+            return True, "HIGH", f"PHPUnit RCE attack detected: {request.url.path}"
+        
+        # Check for other PHPUnit variations with path prefixes
+        phpunit_patterns = [
+            "vendor/phpunit/phpunit/Util/PHP/eval-stdin.php",
+            "vendor/phpunit/src/Util/PHP/eval-stdin.php", 
+            "vendor/phpunit/Util/PHP/eval-stdin.php",
+            "phpunit/phpunit/src/Util/PHP/eval-stdin.php",
+            "phpunit/src/Util/PHP/eval-stdin.php",
+            "lib/phpunit/phpunit/src/Util/PHP/eval-stdin.php"
+        ]
+        
+        for pattern in phpunit_patterns:
+            if pattern in request.url.path:
+                return True, "HIGH", f"PHPUnit RCE attack detected: {request.url.path}"
+        
+        # Check for WordPress attacks with path prefixes
+        wordpress_patterns = [
+            "wp-admin/",
+            "wp-login.php",
+            "wp-config.php",
+            "xmlrpc.php"
+        ]
+        
+        for pattern in wordpress_patterns:
+            if pattern in request.url.path:
+                return True, "HIGH", f"WordPress attack detected: {request.url.path}"
+        
+        # Check for common admin/config file attacks with path prefixes
+        admin_patterns = [
+            "phpmyadmin/",
+            "admin/",
+            "panel/",
+            ".env"
+        ]
+        
+        for pattern in admin_patterns:
+            if pattern in request.url.path:
+                return True, "MEDIUM", f"Admin/config file attack detected: {request.url.path}"
+        
         # Check for PHP file extensions (we're a Python app)
         if request.url.path.endswith('.php'):
             return True, "HIGH", f"PHP file request blocked: {request.url.path}"
@@ -141,24 +183,51 @@ class EnhancedSecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Process request with enhanced security checks"""
         
-        # Skip checks for static files and health checks
-        if (request.url.path.startswith("/static/") or 
-            request.url.path == "/health"):
-            return await call_next(request)
-        
-        # Analyze request for threats
-        is_malicious, severity, reason = self.analyze_request(request)
-        
-        if is_malicious:
+        try:
+            # Skip checks for static files and health checks
+            if (request.url.path.startswith("/static/") or 
+                request.url.path == "/health"):
+                return await call_next(request)
+            
             client_ip = self.get_client_ip(request)
             
-            # Log with appropriate level - WARNING will trigger your notification system
-            logger.warning(f"SECURITY BLOCK [{severity}] from {client_ip}: {reason}")
+            # Check if IP is already blocked
+            from .ip_blocker import get_ip_blocker
+            ip_blocker = get_ip_blocker()
             
-            # Return 403 Forbidden for blocked requests
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied"
-            )
-        
-        return await call_next(request)
+            if ip_blocker.is_blocked(client_ip):
+                logger.warning(f"BLOCKED IP attempted access: {client_ip} -> {request.url.path}")
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Access denied"}
+                )
+            
+            # Analyze request for threats
+            is_malicious, severity, reason = self.analyze_request(request)
+            
+            if is_malicious:
+                # Log with appropriate level - WARNING will trigger your notification system
+                logger.warning(f"SECURITY BLOCK [{severity}] from {client_ip}: {reason}")
+                
+                # Record violation and potentially block IP
+                should_block = ip_blocker.record_violation(client_ip, severity)
+                if should_block:
+                    logger.critical(f"IP {client_ip} has been BLOCKED due to repeated violations")
+                
+                # Return 403 Forbidden for blocked requests
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Access denied"}
+                )
+            
+            return await call_next(request)
+            
+        except Exception as e:
+            # Catch any unexpected errors in security middleware to prevent crashes
+            client_ip = self.get_client_ip(request)
+            logger.error(f"Security middleware error from {client_ip}: {e}")
+            
+            # Continue processing the request rather than crashing
+            return await call_next(request)

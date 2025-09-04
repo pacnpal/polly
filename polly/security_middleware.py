@@ -76,21 +76,31 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next):
         """Process request with rate limiting"""
-        # Skip rate limiting for static files and health checks
-        if (request.url.path.startswith("/static/") or 
-            request.url.path == "/health"):
+        try:
+            # Skip rate limiting for static files and health checks
+            if (request.url.path.startswith("/static/") or 
+                request.url.path == "/health"):
+                return await call_next(request)
+            
+            client_ip = self.get_client_ip(request)
+            
+            if self.is_rate_limited(client_ip):
+                logger.warning(f"Rate limit exceeded for {client_ip} on {request.url.path}")
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded. Please try again later."}
+                )
+            
             return await call_next(request)
-        
-        client_ip = self.get_client_ip(request)
-        
-        if self.is_rate_limited(client_ip):
-            logger.warning(f"Rate limit exceeded for {client_ip} on {request.url.path}")
-            raise HTTPException(
-                status_code=429, 
-                detail="Rate limit exceeded. Please try again later."
-            )
-        
-        return await call_next(request)
+            
+        except Exception as e:
+            # Catch any unexpected errors in rate limiting to prevent crashes
+            client_ip = self.get_client_ip(request) if hasattr(request, 'client') else "unknown"
+            logger.error(f"Rate limiting middleware error from {client_ip}: {e}")
+            
+            # Continue processing the request rather than crashing
+            return await call_next(request)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

@@ -10,10 +10,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import pytz
 
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .auth import (
     get_discord_oauth_url, exchange_code_for_token, get_discord_user,
@@ -28,6 +30,7 @@ from .enhanced_security_middleware import (
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .error_handler import setup_automatic_bot_owner_notifications
+from .admin_endpoints import add_admin_routes
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +212,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
 
+    # Add global exception handlers to prevent crashes
+    add_exception_handlers(app)
+
     # Add security middleware (order matters - add in reverse order of execution)
     app.add_middleware(EnhancedSecurityMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
@@ -219,8 +225,56 @@ def create_app() -> FastAPI:
 
     # Add core routes
     add_core_routes(app)
+    
+    # Add admin routes
+    add_admin_routes(app)
 
     return app
+
+
+def add_exception_handlers(app: FastAPI):
+    """Add global exception handlers to prevent application crashes"""
+    
+    @app.exception_handler(StarletteHTTPException)
+    async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+        """Handle HTTP exceptions gracefully"""
+        # Log security-related exceptions
+        if exc.status_code in [403, 429]:
+            client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
+                       request.headers.get("X-Real-IP", "") or \
+                       (request.client.host if request.client else "unknown")
+            logger.warning(f"HTTP {exc.status_code} blocked request from {client_ip}: {request.url.path}")
+        
+        # Return JSON response for API endpoints, HTML for web pages
+        if request.url.path.startswith("/htmx/") or request.url.path.startswith("/api/"):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail}
+            )
+        else:
+            # For web pages, use the default handler
+            return await http_exception_handler(request, exc)
+    
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Handle all other exceptions to prevent crashes"""
+        client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
+                   request.headers.get("X-Real-IP", "") or \
+                   (request.client.host if request.client else "unknown")
+        
+        logger.error(f"Unhandled exception from {client_ip} on {request.url.path}: {exc}", exc_info=True)
+        
+        # Return appropriate error response
+        if request.url.path.startswith("/htmx/") or request.url.path.startswith("/api/"):
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"}
+            )
+        else:
+            return HTMLResponse(
+                content="<h1>Internal Server Error</h1><p>Something went wrong. Please try again later.</p>",
+                status_code=500
+            )
 
 
 def add_core_routes(app: FastAPI):
