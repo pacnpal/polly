@@ -1,32 +1,4 @@
 services:
-  polly:
-    build: .
-    user: "1000:1000"
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    environment:
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
-      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
-      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
-      - SECRET_KEY=${SECRET_KEY}
-    volumes:
-      - ./data:/app/data
-      - ./static/uploads:/app/static/uploads
-      - ./logs:/app/logs
-      - ./db:/app/db
-    depends_on:
-      - redis
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - polly-network
   redis:
     image: redis:7-alpine
     container_name: polly-redis
@@ -43,10 +15,45 @@ services:
       retries: 3
     networks:
       - polly-network
+
+  polly:
+    build: .
+    container_name: polly-app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
+      - SECRET_KEY=${SECRET_KEY}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-polly_redis_pass}@redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
+    volumes:
+      - ./data:/app/data
+      - ./static:/app/static
+      - ./logs:/app/logs
+      - ./db:/app/db
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - polly-network
+
 volumes:
   polly_db:
   redis_data:
 
 networks:
   polly-network:
-    driver: host
+    driver: bridge
