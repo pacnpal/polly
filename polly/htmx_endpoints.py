@@ -526,14 +526,31 @@ def get_common_timezones() -> list:
 
 async def import_json_htmx(request: Request, bot, current_user: DiscordUser = Depends(require_auth)):
     """Import poll data from JSON file via HTMX"""
-    logger.info(f"🔍 JSON IMPORT - User {current_user.id} starting JSON import process")
+    logger.info(f"🔍 JSON IMPORT BACKEND - STEP 1: User {current_user.id} starting JSON import process")
+    print(f"🔍 JSON IMPORT BACKEND - STEP 1: User {current_user.id} starting JSON import process")
     
     try:
+        # Log request details
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 1: Request method: {request.method}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 1: Request URL: {request.url}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 1: Request headers: {dict(request.headers)}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 1: Request method: {request.method}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 1: Request URL: {request.url}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 1: Content-Type: {request.headers.get('content-type', 'Not set')}")
+        
         # Try to get form data with better error handling
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 2: Attempting to parse form data")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 2: Attempting to parse form data")
+        
         try:
             form_data = await request.form()
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 2: Form data parsed successfully")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 2: Form data parsed successfully")
         except Exception as form_error:
-            logger.error(f"❌ JSON IMPORT - User {current_user.id} form parsing error: {form_error}")
+            logger.error(f"❌ JSON IMPORT BACKEND - STEP 2: User {current_user.id} form parsing error: {form_error}")
+            logger.error(f"❌ JSON IMPORT BACKEND - STEP 2: Form error type: {type(form_error)}")
+            logger.error(f"❌ JSON IMPORT BACKEND - STEP 2: Form error args: {form_error.args}")
+            print(f"❌ JSON IMPORT BACKEND - STEP 2: User {current_user.id} form parsing error: {form_error}")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Error parsing form data. Please try again."
@@ -541,99 +558,249 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
         
         # Debug: Log all form data keys to see what's actually being sent
         form_keys = list(form_data.keys())
-        logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} form data keys: {form_keys}")
-        print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} form data keys: {form_keys}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 3: User {current_user.id} form data keys: {form_keys}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 3: Form data keys count: {len(form_keys)}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 3: User {current_user.id} form data keys: {form_keys}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 3: Form data keys count: {len(form_keys)}")
         
         # Log form data values for debugging
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 3: Detailed form data analysis:")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 3: Detailed form data analysis:")
         for key, value in form_data.items():
-            logger.info(f"🔍 JSON IMPORT DEBUG - {key}: {type(value)} - {getattr(value, 'filename', 'no filename attr') if hasattr(value, 'filename') else str(value)[:100]}")
-            print(f"🔍 JSON IMPORT DEBUG - {key}: {type(value)} - {getattr(value, 'filename', 'no filename attr') if hasattr(value, 'filename') else str(value)[:100]}")
+            value_info = f"Type: {type(value)}"
+            if hasattr(value, 'filename'):
+                value_info += f", Filename: {getattr(value, 'filename', 'None')}"
+            if hasattr(value, 'content_type'):
+                value_info += f", Content-Type: {getattr(value, 'content_type', 'None')}"
+            if hasattr(value, 'size'):
+                value_info += f", Size: {getattr(value, 'size', 'Unknown')}"
+            elif isinstance(value, str):
+                value_info += f", Value: {value[:100]}{'...' if len(value) > 100 else ''}"
+            
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 3: {key}: {value_info}")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 3: {key}: {value_info}")
         
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: Extracting json_file from form data")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 4: Extracting json_file from form data")
         json_file = form_data.get("json_file")
         
         # Debug: Log the type and attributes of the json_file object
-        logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file type: {type(json_file)}")
-        print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file type: {type(json_file)}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file type: {type(json_file)}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file is None: {json_file is None}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file type: {type(json_file)}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file is None: {json_file is None}")
         
         if json_file:
-            logger.info(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {[attr for attr in dir(json_file) if not attr.startswith('_')]}")
-            print(f"🔍 JSON IMPORT DEBUG - User {current_user.id} json_file attributes: {[attr for attr in dir(json_file) if not attr.startswith('_')]}")
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file exists, analyzing attributes")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file exists, analyzing attributes")
+            
+            # Get all attributes (excluding private ones)
+            json_file_attrs = [attr for attr in dir(json_file) if not attr.startswith('_')]
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file attributes: {json_file_attrs}")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file attributes: {json_file_attrs}")
+            
+            # Log specific important attributes
+            for attr in ['filename', 'content_type', 'size', 'read', 'file']:
+                if hasattr(json_file, attr):
+                    attr_value = getattr(json_file, attr)
+                    logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file.{attr}: {attr_value} (type: {type(attr_value)})")
+                    print(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file.{attr}: {attr_value} (type: {type(attr_value)})")
+                else:
+                    logger.info(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file.{attr}: NOT FOUND")
+                    print(f"🔍 JSON IMPORT BACKEND - STEP 4: json_file.{attr}: NOT FOUND")
         
         # Enhanced file detection - check for file object and content
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 5: Validating json_file object")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 5: Validating json_file object")
+        
         if not json_file:
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} attempted import without selecting file")
+            logger.warning(f"⚠️ JSON IMPORT BACKEND - STEP 5: User {current_user.id} attempted import without selecting file")
+            print(f"⚠️ JSON IMPORT BACKEND - STEP 5: User {current_user.id} attempted import without selecting file")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please select a JSON file to import"
             })
         
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 5: json_file object exists, checking type")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 5: json_file object exists, checking type")
+        
         # Check if it's a proper file upload object (Starlette UploadFile)
         from starlette.datastructures import UploadFile
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 5: Checking if json_file is UploadFile instance")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 5: Checking if json_file is UploadFile instance")
+        
         if not isinstance(json_file, UploadFile):
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} json_file is not an UploadFile: {type(json_file)}")
+            logger.warning(f"⚠️ JSON IMPORT BACKEND - STEP 5: User {current_user.id} json_file is not an UploadFile: {type(json_file)}")
+            print(f"⚠️ JSON IMPORT BACKEND - STEP 5: User {current_user.id} json_file is not an UploadFile: {type(json_file)}")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Invalid file upload format. Please try selecting the file again."
             })
         
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 5: json_file is valid UploadFile, extracting filename")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 5: json_file is valid UploadFile, extracting filename")
+        
         # Get filename - handle cases where filename might be None or empty
         filename = getattr(json_file, 'filename', None)
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 5: Raw filename: {filename} (type: {type(filename)})")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 5: Raw filename: {filename} (type: {type(filename)})")
+        
         if not filename or not filename.strip():
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} uploaded file with no filename")
+            logger.warning(f"⚠️ JSON IMPORT BACKEND - STEP 5: User {current_user.id} uploaded file with no filename")
+            print(f"⚠️ JSON IMPORT BACKEND - STEP 5: User {current_user.id} uploaded file with no filename")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please select a valid JSON file with a filename"
             })
         
         filename = str(filename).strip()
-        logger.info(f"🔍 JSON IMPORT - User {current_user.id} uploading file: {filename}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 5: Processed filename: '{filename}'")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 5: Processed filename: '{filename}'")
         
         # Validate file type
-        if not filename.lower().endswith('.json'):
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} uploaded invalid file type: {filename}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 6: Validating file type")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 6: Validating file type")
+        
+        filename_lower = filename.lower()
+        is_json_extension = filename_lower.endswith('.json')
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 6: Filename (lowercase): '{filename_lower}'")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 6: Has .json extension: {is_json_extension}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 6: Filename (lowercase): '{filename_lower}'")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 6: Has .json extension: {is_json_extension}")
+        
+        if not is_json_extension:
+            logger.warning(f"⚠️ JSON IMPORT BACKEND - STEP 6: User {current_user.id} uploaded invalid file type: {filename}")
+            print(f"⚠️ JSON IMPORT BACKEND - STEP 6: User {current_user.id} uploaded invalid file type: {filename}")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Please upload a valid JSON file (.json extension required)"
             })
         
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 6: File type validation PASSED")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 6: File type validation PASSED")
+        
         # Check if file has content method
-        if not hasattr(json_file, 'read') or not callable(getattr(json_file, 'read')):
-            logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} json_file does not have read method")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 7: Checking file read capability")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 7: Checking file read capability")
+        
+        has_read_attr = hasattr(json_file, 'read')
+        read_attr = getattr(json_file, 'read', None)
+        is_read_callable = callable(read_attr)
+        
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 7: Has 'read' attribute: {has_read_attr}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 7: Read attribute type: {type(read_attr)}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 7: Read attribute is callable: {is_read_callable}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 7: Has 'read' attribute: {has_read_attr}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 7: Read attribute type: {type(read_attr)}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 7: Read attribute is callable: {is_read_callable}")
+        
+        if not has_read_attr or not is_read_callable:
+            logger.warning(f"⚠️ JSON IMPORT BACKEND - STEP 7: User {current_user.id} json_file does not have read method")
+            print(f"⚠️ JSON IMPORT BACKEND - STEP 7: User {current_user.id} json_file does not have read method")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Invalid file object. Please try selecting the file again."
             })
         
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 7: File read capability validation PASSED")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 7: File read capability validation PASSED")
+        
         # Read file content with better error handling
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: Reading file content")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 8: Reading file content")
+        
         try:
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: Calling json_file.read()")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 8: Calling json_file.read()")
+            
             file_content = await json_file.read()
             file_size = len(file_content)
-            logger.info(f"🔍 JSON IMPORT - User {current_user.id} file read successfully: {file_size} bytes")
+            
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: File read successfully: {file_size} bytes")
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: Content type: {type(file_content)}")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 8: File read successfully: {file_size} bytes")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 8: Content type: {type(file_content)}")
+            
+            # Log first 100 characters of content for debugging
+            if isinstance(file_content, bytes):
+                try:
+                    content_preview = file_content.decode('utf-8')[:100]
+                    logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: Content preview (first 100 chars): {content_preview}")
+                    print(f"🔍 JSON IMPORT BACKEND - STEP 8: Content preview (first 100 chars): {content_preview}")
+                except UnicodeDecodeError as decode_error:
+                    logger.warning(f"🔍 JSON IMPORT BACKEND - STEP 8: Could not decode content as UTF-8: {decode_error}")
+                    print(f"🔍 JSON IMPORT BACKEND - STEP 8: Could not decode content as UTF-8: {decode_error}")
+            else:
+                content_preview = str(file_content)[:100]
+                logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: Content preview (first 100 chars): {content_preview}")
+                print(f"🔍 JSON IMPORT BACKEND - STEP 8: Content preview (first 100 chars): {content_preview}")
             
             # Check if file is empty
             if file_size == 0:
-                logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} uploaded empty file")
+                logger.warning(f"⚠️ JSON IMPORT BACKEND - STEP 8: User {current_user.id} uploaded empty file")
+                print(f"⚠️ JSON IMPORT BACKEND - STEP 8: User {current_user.id} uploaded empty file")
                 return templates.TemplateResponse("htmx/components/inline_error.html", {
                     "request": request,
                     "message": "The uploaded file is empty. Please select a valid JSON file."
                 })
+            
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 8: File content validation PASSED")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 8: File content validation PASSED")
                 
         except Exception as e:
-            logger.error(f"❌ JSON IMPORT - User {current_user.id} file read error: {e}")
+            logger.error(f"❌ JSON IMPORT BACKEND - STEP 8: User {current_user.id} file read error: {e}")
+            logger.error(f"❌ JSON IMPORT BACKEND - STEP 8: Error type: {type(e)}")
+            logger.error(f"❌ JSON IMPORT BACKEND - STEP 8: Error args: {e.args}")
+            print(f"❌ JSON IMPORT BACKEND - STEP 8: User {current_user.id} file read error: {e}")
+            print(f"❌ JSON IMPORT BACKEND - STEP 8: Error type: {type(e)}")
             return templates.TemplateResponse("htmx/components/inline_error.html", {
                 "request": request,
                 "message": "Error reading the uploaded file. Please try again."
             })
         
         # Get user timezone for processing
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 9: Getting user preferences and timezone")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 9: Getting user preferences and timezone")
+        
         user_prefs = get_user_preferences(current_user.id)
         user_timezone = user_prefs.get("default_timezone", "US/Eastern")
-        logger.debug(f"🔍 JSON IMPORT - User {current_user.id} timezone: {user_timezone}")
+        
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 9: User preferences: {user_prefs}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 9: User timezone: {user_timezone}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 9: User preferences: {user_prefs}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 9: User timezone: {user_timezone}")
         
         # Import JSON data
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Starting JSON data import")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 10: Starting JSON data import")
+        
         success, poll_data, errors = await PollJSONImporter.import_from_json_file(
             file_content, user_timezone
         )
+        
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: JSON import completed")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Success: {success}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Errors count: {len(errors) if errors else 0}")
+        logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Poll data keys: {list(poll_data.keys()) if poll_data else 'None'}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 10: JSON import completed")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 10: Success: {success}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 10: Errors count: {len(errors) if errors else 0}")
+        print(f"🔍 JSON IMPORT BACKEND - STEP 10: Poll data keys: {list(poll_data.keys()) if poll_data else 'None'}")
+        
+        if errors:
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Errors details:")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 10: Errors details:")
+            for i, error in enumerate(errors):
+                logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Error {i+1}: {error}")
+                print(f"🔍 JSON IMPORT BACKEND - STEP 10: Error {i+1}: {error}")
+        
+        if poll_data:
+            logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: Poll data details:")
+            print(f"🔍 JSON IMPORT BACKEND - STEP 10: Poll data details:")
+            for key, value in poll_data.items():
+                value_preview = str(value)[:100] if value else 'None'
+                logger.info(f"🔍 JSON IMPORT BACKEND - STEP 10: {key}: {value_preview}")
+                print(f"🔍 JSON IMPORT BACKEND - STEP 10: {key}: {value_preview}")
         
         if not success:
             logger.warning(f"⚠️ JSON IMPORT - User {current_user.id} validation failed: {len(errors)} errors")

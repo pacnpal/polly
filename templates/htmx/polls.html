@@ -22,68 +22,217 @@
         
         <script>
         function importJsonFile(input) {
+            console.log('🔍 JSON IMPORT DEBUG - STEP 1: importJsonFile function called');
+            console.log('🔍 JSON IMPORT DEBUG - STEP 1: input element:', input);
+            console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files:', input.files);
+            console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files length:', input.files ? input.files.length : 'null');
+            
             if (input.files && input.files[0]) {
                 const file = input.files[0];
+                console.log('🔍 JSON IMPORT DEBUG - STEP 2: File object created');
+                console.log('🔍 JSON IMPORT DEBUG - STEP 2: File name:', file.name);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 2: File size:', file.size, 'bytes');
+                console.log('🔍 JSON IMPORT DEBUG - STEP 2: File type:', file.type);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 2: File lastModified:', new Date(file.lastModified));
+                
+                // Get DOM elements with null checks
+                console.log('🔍 JSON IMPORT DEBUG - STEP 3: Checking DOM elements');
+                const inlineMessages = document.getElementById('inline-messages');
+                const mainContent = document.getElementById('main-content');
+                console.log('🔍 JSON IMPORT DEBUG - STEP 3: inlineMessages element:', inlineMessages);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 3: mainContent element:', mainContent);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 3: Current URL:', window.location.href);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 3: Document title:', document.title);
+                
+                // Log all elements with these IDs for debugging
+                const allElements = document.querySelectorAll('[id]');
+                const elementIds = Array.from(allElements).map(el => el.id).filter(id => id);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 3: All element IDs on page:', elementIds);
                 
                 // Validate file type
-                if (!file.name.toLowerCase().endsWith('.json')) {
-                    document.getElementById('inline-messages').innerHTML = 
-                        '<div class="alert alert-danger">Please select a valid JSON file (.json extension required)</div>';
+                console.log('🔍 JSON IMPORT DEBUG - STEP 4: Validating file type');
+                const fileName = file.name.toLowerCase();
+                const isJsonFile = fileName.endsWith('.json');
+                console.log('🔍 JSON IMPORT DEBUG - STEP 4: File name (lowercase):', fileName);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 4: Is JSON file:', isJsonFile);
+                
+                if (!isJsonFile) {
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 4: File validation FAILED - not a JSON file');
+                    if (inlineMessages) {
+                        console.log('🔍 JSON IMPORT DEBUG - STEP 4: Showing error in inline-messages');
+                        inlineMessages.innerHTML = 
+                            '<div class="alert alert-danger">Please select a valid JSON file (.json extension required)</div>';
+                    } else {
+                        console.error('🔍 JSON IMPORT DEBUG - STEP 4: inline-messages element not found, using alert');
+                        alert('Please select a valid JSON file (.json extension required)');
+                    }
                     input.value = '';
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 4: Input value cleared, returning');
                     return;
                 }
                 
-                // Show loading message
-                document.getElementById('inline-messages').innerHTML = 
-                    '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Importing JSON file...</div>';
+                console.log('🔍 JSON IMPORT DEBUG - STEP 4: File validation PASSED');
                 
+                // Show loading message
+                console.log('🔍 JSON IMPORT DEBUG - STEP 5: Showing loading message');
+                if (inlineMessages) {
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 5: Updating inline-messages with loading message');
+                    inlineMessages.innerHTML = 
+                        '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Importing JSON file...</div>';
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 5: Loading message displayed successfully');
+                } else {
+                    console.error('🔍 JSON IMPORT DEBUG - STEP 5: inline-messages element not found for loading message');
+                }
+                
+                // Create FormData
+                console.log('🔍 JSON IMPORT DEBUG - STEP 6: Creating FormData');
                 const formData = new FormData();
                 formData.append('json_file', file);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 6: FormData created and file appended');
                 
-                // Debug logging
-                console.log('🔍 JSON IMPORT DEBUG - File selected:', file.name, 'Size:', file.size, 'Type:', file.type);
-                console.log('🔍 JSON IMPORT DEBUG - FormData created, sending to /htmx/import-json');
+                // Log FormData contents (for debugging)
+                console.log('🔍 JSON IMPORT DEBUG - STEP 6: FormData entries:');
+                for (let [key, value] of formData.entries()) {
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 6: FormData key:', key, 'value type:', typeof value, 'value:', value instanceof File ? `File(${value.name}, ${value.size} bytes)` : value);
+                }
                 
-                // Use fetch with proper error handling
-                fetch('/htmx/import-json', {
+                // Prepare fetch request
+                console.log('🔍 JSON IMPORT DEBUG - STEP 7: Preparing fetch request');
+                const fetchUrl = '/htmx/import-json';
+                const fetchOptions = {
                     method: 'POST',
                     body: formData,
                     // Don't set Content-Type header - let browser set it with boundary for multipart
-                })
+                };
+                console.log('🔍 JSON IMPORT DEBUG - STEP 7: Fetch URL:', fetchUrl);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 7: Fetch options:', fetchOptions);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 7: Starting fetch request...');
+                
+                // Use fetch with proper error handling
+                fetch(fetchUrl, fetchOptions)
                 .then(response => {
-                    console.log('🔍 JSON IMPORT DEBUG - Response status:', response.status);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 8: Fetch response received');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 8: Response status:', response.status);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 8: Response statusText:', response.statusText);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 8: Response ok:', response.ok);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 8: Response headers:');
+                    for (let [key, value] of response.headers.entries()) {
+                        console.log('🔍 JSON IMPORT DEBUG - STEP 8: Header:', key, '=', value);
+                    }
+                    
                     if (!response.ok) {
+                        console.error('🔍 JSON IMPORT DEBUG - STEP 8: Response not OK, throwing error');
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
+                    
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 8: Response OK, converting to text...');
                     return response.text();
                 })
                 .then(html => {
-                    console.log('🔍 JSON IMPORT DEBUG - Response received, updating UI');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response text received');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response length:', html.length, 'characters');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response preview (first 200 chars):', html.substring(0, 200));
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response preview (last 200 chars):', html.substring(Math.max(0, html.length - 200)));
+                    
+                    // Re-check DOM elements (they might have changed)
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Re-checking DOM elements');
+                    const currentInlineMessages = document.getElementById('inline-messages');
+                    const currentMainContent = document.getElementById('main-content');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Current inlineMessages:', !!currentInlineMessages);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Current mainContent:', !!currentMainContent);
+                    
                     // Check if the response contains the create form (successful import)
-                    if (html.includes('hx-post="/htmx/create-poll"')) {
+                    const isSuccessfulImport = html.includes('hx-post="/htmx/create-poll"');
+                    const containsCreateForm = html.includes('Create Poll from Template') || html.includes('Create New Poll');
+                    const containsErrorMessage = html.includes('alert-danger') || html.includes('error');
+                    
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response analysis:');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Contains hx-post="/htmx/create-poll":', isSuccessfulImport);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Contains create form indicators:', containsCreateForm);
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 9: Contains error indicators:', containsErrorMessage);
+                    
+                    if (isSuccessfulImport) {
+                        console.log('🔍 JSON IMPORT DEBUG - STEP 10: Successful import detected - updating main content');
                         // Successful import - replace main content with the pre-filled form
-                        document.getElementById('main-content').innerHTML = html;
+                        if (currentMainContent) {
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 10: main-content element found, updating innerHTML');
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 10: Previous main-content innerHTML length:', currentMainContent.innerHTML.length);
+                            currentMainContent.innerHTML = html;
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 10: New main-content innerHTML length:', currentMainContent.innerHTML.length);
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 10: Successfully updated main-content with form');
+                            
+                            // Verify the update worked
+                            const updatedContent = document.getElementById('main-content');
+                            const hasForm = updatedContent && updatedContent.querySelector('form[hx-post="/htmx/create-poll"]');
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 10: Form verification - form exists:', !!hasForm);
+                            
+                        } else {
+                            console.error('🔍 JSON IMPORT DEBUG - STEP 10: main-content element not found, cannot show form');
+                            alert('JSON imported successfully, but cannot display form. Please refresh the page.');
+                        }
+                        
                         // Clear any inline messages since we're showing the form
-                        document.getElementById('inline-messages').innerHTML = '';
+                        if (currentInlineMessages) {
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 10: Clearing inline messages');
+                            currentInlineMessages.innerHTML = '';
+                        }
                     } else {
+                        console.log('🔍 JSON IMPORT DEBUG - STEP 11: Error response detected - showing error message');
                         // Error response - show in inline messages
-                        document.getElementById('inline-messages').innerHTML = html;
+                        if (currentInlineMessages) {
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 11: Displaying error in inline-messages');
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 11: Error HTML length:', html.length);
+                            currentInlineMessages.innerHTML = html;
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 11: Error message displayed successfully');
+                        } else {
+                            console.error('🔍 JSON IMPORT DEBUG - STEP 11: inline-messages element not found, using fallback');
+                            // Fallback: try to extract error message from HTML and show in alert
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = html;
+                            const errorText = tempDiv.textContent || tempDiv.innerText || 'Unknown error occurred';
+                            console.log('🔍 JSON IMPORT DEBUG - STEP 11: Extracted error text:', errorText);
+                            alert('Error importing JSON: ' + errorText);
+                        }
                     }
+                    
+                    console.log('🔍 JSON IMPORT DEBUG - STEP 12: Response processing completed successfully');
                 })
                 .catch(error => {
-                    console.error('🔍 JSON IMPORT DEBUG - Error:', error);
-                    document.getElementById('inline-messages').innerHTML = 
-                        `<div class="alert alert-danger">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            Error uploading file: ${error.message}. Please try again.
-                        </div>`;
+                    console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Fetch error occurred');
+                    console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Error type:', typeof error);
+                    console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Error message:', error.message);
+                    console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Error stack:', error.stack);
+                    
+                    const errorMessage = `<div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Error uploading file: ${error.message}. Please try again.
+                    </div>`;
+                    
+                    // Re-check DOM elements for error display
+                    const currentInlineMessages = document.getElementById('inline-messages');
+                    console.log('🔍 JSON IMPORT DEBUG - STEP ERROR: Current inlineMessages for error:', !!currentInlineMessages);
+                    
+                    if (currentInlineMessages) {
+                        console.log('🔍 JSON IMPORT DEBUG - STEP ERROR: Displaying error in inline-messages');
+                        currentInlineMessages.innerHTML = errorMessage;
+                    } else {
+                        console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: inline-messages element not found, using alert');
+                        alert('Error uploading file: ' + error.message + '. Please try again.');
+                    }
                 });
                 
                 // Reset the input
+                console.log('🔍 JSON IMPORT DEBUG - STEP 13: Resetting file input');
                 input.value = '';
+                console.log('🔍 JSON IMPORT DEBUG - STEP 13: File input reset completed');
+                
             } else {
-                console.log('🔍 JSON IMPORT DEBUG - No file selected');
+                console.log('🔍 JSON IMPORT DEBUG - STEP 1: No file selected or input.files is null');
+                console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files:', input.files);
+                console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files[0]:', input.files ? input.files[0] : 'N/A');
             }
+            
+            console.log('🔍 JSON IMPORT DEBUG - STEP FINAL: importJsonFile function completed');
         }
         </script>
         
