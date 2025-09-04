@@ -2625,7 +2625,8 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
                     'option_index': option_index,
                     'option_text': option_text,
                     'emoji': emoji,
-                    'voted_at': voted_at,
+                    'voted_at': voted_at.isoformat() if voted_at and isinstance(voted_at, datetime) else None,  # Convert datetime to ISO string for JSON serialization
+                    'voted_at_datetime': voted_at,  # Keep original datetime for template use
                     'is_unique': user_id not in unique_users
                 })
                 
@@ -2641,8 +2642,17 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         results = poll.get_results()
         
         # Prepare cacheable data (exclude non-serializable objects like Poll and functions)
+        # Create a JSON-serializable version of vote_data without datetime objects
+        cacheable_vote_data = []
+        for vote in vote_data:
+            cacheable_vote = vote.copy()
+            # Remove the datetime object, keep only the ISO string
+            if 'voted_at_datetime' in cacheable_vote:
+                del cacheable_vote['voted_at_datetime']
+            cacheable_vote_data.append(cacheable_vote)
+        
         cacheable_data = {
-            "vote_data": vote_data,
+            "vote_data": cacheable_vote_data,  # Use JSON-serializable version
             "total_votes": total_votes,
             "unique_voters": unique_voters,
             "results": results,
@@ -2659,7 +2669,7 @@ async def get_poll_dashboard_htmx(poll_id: int, request: Request, bot, current_u
         # Prepare full template data (including non-cacheable objects)
         template_data = {
             "poll": poll,
-            "vote_data": vote_data,
+            "vote_data": vote_data,  # Use original vote_data with datetime objects for template
             "total_votes": total_votes,
             "unique_voters": unique_voters,
             "results": results,
