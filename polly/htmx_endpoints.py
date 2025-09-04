@@ -972,37 +972,109 @@ async def import_json_htmx(request: Request, bot, current_user: DiscordUser = De
                     "display": tz
                 })
 
-        # GRACEFUL SERVER/CHANNEL VALIDATION
-        # Check if the imported server_id is valid for this user
+        # ENHANCED SERVER/CHANNEL VALIDATION WITH BOT ACCESS CHECKS
+        # Check if the imported server_id and channel_id are valid and accessible
         imported_server_id = poll_data.get('server_id', '')
         imported_channel_id = poll_data.get('channel_id', '')
         validation_warnings = []
         
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Starting server/channel validation")
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Imported server_id: {imported_server_id}")
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Imported channel_id: {imported_channel_id}")
+        logger.info(f"🔍 JSON IMPORT VALIDATION - User has access to {len(user_guilds)} guilds")
+        print(f"🔍 JSON IMPORT VALIDATION - Starting server/channel validation")
+        print(f"🔍 JSON IMPORT VALIDATION - Imported server_id: {imported_server_id}")
+        print(f"🔍 JSON IMPORT VALIDATION - Imported channel_id: {imported_channel_id}")
+        print(f"🔍 JSON IMPORT VALIDATION - User has access to {len(user_guilds)} guilds")
+        
         # Validate server access
         valid_server = False
+        valid_channel = False
+        server_name = "Unknown Server"
+        channel_name = "Unknown Channel"
+        
         if imported_server_id:
+            logger.info(f"🔍 JSON IMPORT VALIDATION - Checking server access for server_id: {imported_server_id}")
+            print(f"🔍 JSON IMPORT VALIDATION - Checking server access for server_id: {imported_server_id}")
+            
+            # Check if user has access to this server
             for guild in user_guilds:
-                if guild["id"] == imported_server_id:
+                logger.info(f"🔍 JSON IMPORT VALIDATION - Comparing guild {guild['id']} ({guild['name']}) with imported {imported_server_id}")
+                print(f"🔍 JSON IMPORT VALIDATION - Comparing guild {guild['id']} ({guild['name']}) with imported {imported_server_id}")
+                
+                if str(guild["id"]) == str(imported_server_id):
                     valid_server = True
+                    server_name = guild["name"]
+                    logger.info(f"🔍 JSON IMPORT VALIDATION - ✅ Server access VALID: {server_name} (ID: {imported_server_id})")
+                    print(f"🔍 JSON IMPORT VALIDATION - ✅ Server access VALID: {server_name} (ID: {imported_server_id})")
+                    
                     # Check if channel is valid for this server
                     if imported_channel_id:
-                        valid_channel = any(ch["id"] == imported_channel_id for ch in guild["channels"])
+                        logger.info(f"🔍 JSON IMPORT VALIDATION - Checking channel access for channel_id: {imported_channel_id}")
+                        logger.info(f"🔍 JSON IMPORT VALIDATION - Server has {len(guild['channels'])} channels")
+                        print(f"🔍 JSON IMPORT VALIDATION - Checking channel access for channel_id: {imported_channel_id}")
+                        print(f"🔍 JSON IMPORT VALIDATION - Server has {len(guild['channels'])} channels")
+                        
+                        for channel in guild["channels"]:
+                            logger.info(f"🔍 JSON IMPORT VALIDATION - Comparing channel {channel['id']} (#{channel['name']}) with imported {imported_channel_id}")
+                            print(f"🔍 JSON IMPORT VALIDATION - Comparing channel {channel['id']} (#{channel['name']}) with imported {imported_channel_id}")
+                            
+                            if str(channel["id"]) == str(imported_channel_id):
+                                valid_channel = True
+                                channel_name = channel["name"]
+                                logger.info(f"🔍 JSON IMPORT VALIDATION - ✅ Channel access VALID: #{channel_name} (ID: {imported_channel_id})")
+                                print(f"🔍 JSON IMPORT VALIDATION - ✅ Channel access VALID: #{channel_name} (ID: {imported_channel_id})")
+                                break
+                        
                         if not valid_channel:
-                            validation_warnings.append(f"Channel from JSON not found in server '{guild['name']}' - please select a new channel")
-                            poll_data['channel_id'] = ''  # Clear invalid channel
+                            logger.warning(f"🔍 JSON IMPORT VALIDATION - ❌ Channel access INVALID: {imported_channel_id} not found in server {server_name}")
+                            print(f"🔍 JSON IMPORT VALIDATION - ❌ Channel access INVALID: {imported_channel_id} not found in server {server_name}")
+                            validation_warnings.append(f"Channel from JSON not found in server '{server_name}' - please select a new channel")
+                            poll_data['channel_id'] = ''  # Clear ONLY invalid channel, keep valid server
                     break
             
             if not valid_server:
+                logger.warning(f"🔍 JSON IMPORT VALIDATION - ❌ Server access INVALID: {imported_server_id} not accessible to user")
+                print(f"🔍 JSON IMPORT VALIDATION - ❌ Server access INVALID: {imported_server_id} not accessible to user")
                 validation_warnings.append(f"Server from JSON not accessible - please select a server you have access to")
                 poll_data['server_id'] = ''  # Clear invalid server
                 poll_data['channel_id'] = ''  # Clear channel too since server is invalid
+                
+                # Also clear role ping settings since server is invalid
+                if poll_data.get('ping_role_enabled'):
+                    validation_warnings.append("Role ping settings cleared - server from JSON not accessible")
+                    poll_data['ping_role_enabled'] = False
+                    poll_data['ping_role_id'] = ''
         
-        # Validate role access if role ping is enabled
-        if poll_data.get('ping_role_enabled') and poll_data.get('ping_role_id'):
-            if not imported_server_id or not valid_server:
-                validation_warnings.append("Role ping settings cleared - please select a server first, then choose a role")
-                poll_data['ping_role_enabled'] = False
-                poll_data['ping_role_id'] = ''
+        # Validate role access if role ping is enabled (only if server is valid)
+        if poll_data.get('ping_role_enabled') and poll_data.get('ping_role_id') and valid_server:
+            logger.info(f"🔍 JSON IMPORT VALIDATION - Checking role access for role_id: {poll_data.get('ping_role_id')}")
+            print(f"🔍 JSON IMPORT VALIDATION - Checking role access for role_id: {poll_data.get('ping_role_id')}")
+            
+            # Note: We could add role validation here using get_guild_roles, but for now
+            # we'll let the form handle role validation when the user selects the server
+            # This keeps the import process simpler and faster
+            
+        elif poll_data.get('ping_role_enabled') and poll_data.get('ping_role_id') and not valid_server:
+            logger.warning(f"🔍 JSON IMPORT VALIDATION - Role ping disabled due to invalid server")
+            print(f"🔍 JSON IMPORT VALIDATION - Role ping disabled due to invalid server")
+            validation_warnings.append("Role ping settings cleared - please select a valid server first, then choose a role")
+            poll_data['ping_role_enabled'] = False
+            poll_data['ping_role_id'] = ''
+        
+        # Log final validation results
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Final results:")
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Server valid: {valid_server} ('{server_name}' - {imported_server_id})")
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Channel valid: {valid_channel} ('{channel_name}' - {imported_channel_id})")
+        logger.info(f"🔍 JSON IMPORT VALIDATION - Warnings count: {len(validation_warnings)}")
+        print(f"🔍 JSON IMPORT VALIDATION - Final results:")
+        print(f"🔍 JSON IMPORT VALIDATION - Server valid: {valid_server} ('{server_name}' - {imported_server_id})")
+        print(f"🔍 JSON IMPORT VALIDATION - Channel valid: {valid_channel} ('{channel_name}' - {imported_channel_id})")
+        print(f"🔍 JSON IMPORT VALIDATION - Warnings count: {len(validation_warnings)}")
+        
+        for i, warning in enumerate(validation_warnings):
+            logger.info(f"🔍 JSON IMPORT VALIDATION - Warning {i+1}: {warning}")
+            print(f"🔍 JSON IMPORT VALIDATION - Warning {i+1}: {warning}")
 
         # GRACEFUL EMOJI VALIDATION
         # Check if imported emojis are valid/accessible
