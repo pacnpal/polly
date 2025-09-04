@@ -634,14 +634,24 @@
             
             // CRITICAL: Load channels immediately if server is already selected (JSON import scenario)
             function loadChannelsIfServerSelected() {
-                const currentServerId = serverSelectElement.value;
+                // First check if the elements exist to avoid null reference errors
+                const serverSelect = document.getElementById('server-select');
                 const channelSelect = document.getElementById('channel-select');
                 
                 console.log('🔍 CHANNEL LOAD DEBUG - Checking if channels need to be loaded');
-                console.log('🔍 CHANNEL LOAD DEBUG - Current server ID:', currentServerId);
-                console.log('🔍 CHANNEL LOAD DEBUG - Channel select children count:', channelSelect ? channelSelect.children.length : 'null');
+                console.log('🔍 CHANNEL LOAD DEBUG - Server select exists:', !!serverSelect);
+                console.log('🔍 CHANNEL LOAD DEBUG - Channel select exists:', !!channelSelect);
                 
-                if (currentServerId && channelSelect && channelSelect.children.length <= 1) {
+                if (!serverSelect || !channelSelect) {
+                    console.log('🔍 CHANNEL LOAD DEBUG - Form elements not found, skipping channel load');
+                    return;
+                }
+                
+                const currentServerId = serverSelect.value;
+                console.log('🔍 CHANNEL LOAD DEBUG - Current server ID:', currentServerId);
+                console.log('🔍 CHANNEL LOAD DEBUG - Channel select children count:', channelSelect.children.length);
+                
+                if (currentServerId && channelSelect.children.length <= 1) {
                     console.log('🔍 CHANNEL LOAD DEBUG - Server selected but no channels loaded, triggering load');
                     
                     // Use HTMX to load channels
@@ -657,25 +667,27 @@
                         fetch(`/htmx/channels?server_id=${currentServerId}&preselect_last_channel=true`)
                             .then(response => response.text())
                             .then(html => {
-                                channelSelect.innerHTML = html;
-                                console.log('🔍 CHANNEL LOAD DEBUG - Channels loaded via fetch');
+                                if (channelSelect) { // Double-check element still exists
+                                    channelSelect.innerHTML = html;
+                                    console.log('🔍 CHANNEL LOAD DEBUG - Channels loaded via fetch');
+                                }
                             })
                             .catch(error => {
                                 console.error('🔍 CHANNEL LOAD DEBUG - Error loading channels via fetch:', error);
                             });
                     }
-                } else if (currentServerId && channelSelect && channelSelect.children.length > 1) {
+                } else if (currentServerId && channelSelect.children.length > 1) {
                     console.log('🔍 CHANNEL LOAD DEBUG - Server selected and channels already loaded');
                 } else {
-                    console.log('🔍 CHANNEL LOAD DEBUG - No server selected or channel select not found');
+                    console.log('🔍 CHANNEL LOAD DEBUG - No server selected or elements not ready');
                 }
             }
             
             // Load channels on initial page load if server is pre-selected
-            setTimeout(loadChannelsIfServerSelected, 100);
-            
-            // Also try again after a longer delay in case the first attempt was too early
+            // Use longer delays to ensure DOM is fully loaded
+            setTimeout(loadChannelsIfServerSelected, 200);
             setTimeout(loadChannelsIfServerSelected, 500);
+            setTimeout(loadChannelsIfServerSelected, 1000);
         }
 
         // Time validation
@@ -902,33 +914,17 @@
                     console.log('🔍 TEMPLATE JS DEBUG - Setting server value to:', templateData.server_id);
                     serverSelect.value = templateData.server_id;
                     
-                    // Trigger change event to load channels - use multiple methods to ensure it works
-                    console.log('🔍 TEMPLATE JS DEBUG - Triggering server change event to load channels');
+                    // CRITICAL: Trigger HTMX change event to load channels
+                    // This is the same mechanism used when user manually selects a server
+                    console.log('🔍 TEMPLATE JS DEBUG - Triggering HTMX change event to load channels');
                     
-                    // Method 1: Dispatch change event
-                    serverSelect.dispatchEvent(new Event('change'));
-                    
-                    // Method 2: Manually trigger HTMX request as backup
-                    setTimeout(() => {
-                        if (typeof htmx !== 'undefined') {
-                            console.log('🔍 TEMPLATE JS DEBUG - Manually triggering HTMX request for channels');
-                            htmx.trigger(serverSelect, 'change');
-                        }
-                    }, 100);
-                    
-                    // Method 3: Direct HTMX request as final backup
-                    setTimeout(() => {
-                        const channelSelect = document.getElementById('channel-select');
-                        if (channelSelect && channelSelect.children.length <= 1) {
-                            console.log('🔍 TEMPLATE JS DEBUG - Channels still not loaded, making direct HTMX request');
-                            if (typeof htmx !== 'undefined') {
-                                htmx.ajax('GET', `/htmx/channels?server_id=${templateData.server_id}&preselect_last_channel=true`, {
-                                    target: '#channel-select',
-                                    swap: 'innerHTML'
-                                });
-                            }
-                        }
-                    }, 500);
+                    // Use HTMX trigger method which respects all HTMX attributes
+                    if (typeof htmx !== 'undefined') {
+                        htmx.trigger(serverSelect, 'change');
+                    } else {
+                        // Fallback: dispatch regular change event
+                        serverSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                 }
             }
 
@@ -990,18 +986,41 @@
                 }
             }
 
-            // Wait for channels to load, then pre-select channel
+            // Enhanced channel pre-selection logic
             if (templateData.channel_id) {
+                console.log('🔍 TEMPLATE JS DEBUG - Setting up channel pre-selection for channel_id:', templateData.channel_id);
+                
+                let channelCheckAttempts = 0;
+                const maxChannelCheckAttempts = 50; // 5 seconds with 100ms intervals
+                
                 const checkChannelLoad = setInterval(() => {
+                    channelCheckAttempts++;
                     const channelSelect = document.getElementById('channel-select');
+                    
+                    console.log(`🔍 TEMPLATE JS DEBUG - Channel check attempt ${channelCheckAttempts}: channelSelect exists=${!!channelSelect}, children count=${channelSelect ? channelSelect.children.length : 0}`);
+                    
                     if (channelSelect && channelSelect.children.length > 1) {
-                        channelSelect.value = templateData.channel_id;
+                        // Check if the target channel exists in the options
+                        const targetOption = channelSelect.querySelector(`option[value="${templateData.channel_id}"]`);
+                        
+                        if (targetOption) {
+                            channelSelect.value = templateData.channel_id;
+                            console.log('🔍 TEMPLATE JS DEBUG - Successfully pre-selected channel:', templateData.channel_id);
+                            clearInterval(checkChannelLoad);
+                        } else {
+                            console.log('🔍 TEMPLATE JS DEBUG - Target channel not found in options, continuing to wait...');
+                            
+                            // If we've waited long enough and channel still not found, give up
+                            if (channelCheckAttempts >= maxChannelCheckAttempts) {
+                                console.log('🔍 TEMPLATE JS DEBUG - Channel pre-selection timeout - target channel not available');
+                                clearInterval(checkChannelLoad);
+                            }
+                        }
+                    } else if (channelCheckAttempts >= maxChannelCheckAttempts) {
+                        console.log('🔍 TEMPLATE JS DEBUG - Channel pre-selection timeout - channels not loaded');
                         clearInterval(checkChannelLoad);
                     }
                 }, 100);
-                
-                // Clear interval after 5 seconds to prevent infinite loop
-                setTimeout(() => clearInterval(checkChannelLoad), 5000);
             }
 
             // Wait for roles to load, then pre-select role
