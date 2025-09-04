@@ -46,7 +46,7 @@
                         <label for="server-select" class="form-label">Server <span class="text-danger">*</span></label>
                         <select class="form-select" id="server-select" name="server_id" required
                                 hx-get="/htmx/channels" hx-target="#channel-select" hx-include="[name='server_id']"
-                                hx-trigger="change, load">
+                                hx-trigger="change, load, htmx:afterSwap">
                             <option value="">Select a server...</option>
                             {% for guild in guilds %}
                             <option value="{{ guild.id }}" {% if (template_data and guild.id|string == template_data.server_id|string) or (not template_data and user_preferences and guild.id|string == user_preferences.last_server_id|string) %}selected{% endif %}>{{ guild.name|e }}</option>
@@ -854,9 +854,36 @@
             if (templateData.server_id) {
                 const serverSelect = document.getElementById('server-select');
                 if (serverSelect) {
+                    console.log('🔍 TEMPLATE JS DEBUG - Setting server value to:', templateData.server_id);
                     serverSelect.value = templateData.server_id;
-                    // Trigger change event to load channels
+                    
+                    // Trigger change event to load channels - use multiple methods to ensure it works
+                    console.log('🔍 TEMPLATE JS DEBUG - Triggering server change event to load channels');
+                    
+                    // Method 1: Dispatch change event
                     serverSelect.dispatchEvent(new Event('change'));
+                    
+                    // Method 2: Manually trigger HTMX request as backup
+                    setTimeout(() => {
+                        if (typeof htmx !== 'undefined') {
+                            console.log('🔍 TEMPLATE JS DEBUG - Manually triggering HTMX request for channels');
+                            htmx.trigger(serverSelect, 'change');
+                        }
+                    }, 100);
+                    
+                    // Method 3: Direct HTMX request as final backup
+                    setTimeout(() => {
+                        const channelSelect = document.getElementById('channel-select');
+                        if (channelSelect && channelSelect.children.length <= 1) {
+                            console.log('🔍 TEMPLATE JS DEBUG - Channels still not loaded, making direct HTMX request');
+                            if (typeof htmx !== 'undefined') {
+                                htmx.ajax('GET', `/htmx/channels?server_id=${templateData.server_id}&preselect_last_channel=true`, {
+                                    target: '#channel-select',
+                                    swap: 'innerHTML'
+                                });
+                            }
+                        }
+                    }, 500);
                 }
             }
 
