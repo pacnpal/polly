@@ -2979,20 +2979,32 @@ async def create_poll_htmx(
 
         # Fetch role name if role ping is enabled
         ping_role_name = None
+        logger.info(f"🔔 ROLE PING DEBUG - Poll creation for user {current_user.id}")
+        logger.info(f"🔔 ROLE PING DEBUG - ping_role_enabled: {ping_role_enabled}")
+        logger.info(f"🔔 ROLE PING DEBUG - ping_role_id: {ping_role_id}")
+        logger.info(f"🔔 ROLE PING DEBUG - server_id: {server_id}")
+        
         if ping_role_enabled and ping_role_id:
+            logger.info(f"🔔 ROLE PING DEBUG - Role ping is enabled, fetching role name...")
             try:
                 guild = bot.get_guild(int(server_id))
+                logger.info(f"🔔 ROLE PING DEBUG - Guild lookup result: {guild.name if guild else 'None'}")
+                
                 if guild:
                     role = guild.get_role(int(ping_role_id))
+                    logger.info(f"🔔 ROLE PING DEBUG - Role lookup result: {role.name if role else 'None'}")
+                    
                     if role:
                         ping_role_name = role.name
-                        logger.info(f"Fetched role name '{ping_role_name}' for role ID {ping_role_id}")
+                        logger.info(f"🔔 ROLE PING DEBUG - ✅ Successfully fetched role name '{ping_role_name}' for role ID {ping_role_id}")
                     else:
-                        logger.warning(f"Role {ping_role_id} not found in guild {server_id}")
+                        logger.warning(f"🔔 ROLE PING DEBUG - ❌ Role {ping_role_id} not found in guild {server_id}")
                 else:
-                    logger.warning(f"Guild {server_id} not found")
+                    logger.warning(f"🔔 ROLE PING DEBUG - ❌ Guild {server_id} not found")
             except Exception as e:
-                logger.error(f"Error fetching role name for role {ping_role_id}: {e}")
+                logger.error(f"🔔 ROLE PING DEBUG - ❌ Error fetching role name for role {ping_role_id}: {e}")
+        else:
+            logger.info(f"🔔 ROLE PING DEBUG - Role ping is disabled or no role ID provided")
 
         # Prepare poll data for bulletproof operations
         poll_data = {

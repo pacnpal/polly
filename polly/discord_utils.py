@@ -682,6 +682,12 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         # Check if role ping is enabled and prepare content
         message_content = None
         role_ping_attempted = False
+        
+        logger.info(f"🔔 ROLE PING DEBUG - Discord posting for poll {poll.id}")
+        logger.info(f"🔔 ROLE PING DEBUG - ping_role_enabled: {getattr(poll, 'ping_role_enabled', 'NOT_SET')}")
+        logger.info(f"🔔 ROLE PING DEBUG - ping_role_id: {getattr(poll, 'ping_role_id', 'NOT_SET')}")
+        logger.info(f"🔔 ROLE PING DEBUG - ping_role_name: {getattr(poll, 'ping_role_name', 'NOT_SET')}")
+        
         if getattr(poll, "ping_role_enabled", False) and getattr(
             poll, "ping_role_id", None
         ):
@@ -692,7 +698,20 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             )
             role_ping_attempted = True
             logger.info(
-                f"🔔 POSTING POLL {poll.id} - Will ping role {role_name} ({role_id})"
+                f"🔔 ROLE PING DEBUG - ✅ Will ping role {role_name} ({role_id})"
+            )
+            logger.info(
+                f"🔔 ROLE PING DEBUG - ✅ Message content: {message_content}"
+            )
+        else:
+            logger.info(
+                f"🔔 ROLE PING DEBUG - ❌ Role ping disabled or missing data"
+            )
+            logger.info(
+                f"🔔 ROLE PING DEBUG - ❌ ping_role_enabled check: {getattr(poll, 'ping_role_enabled', False)}"
+            )
+            logger.info(
+                f"🔔 ROLE PING DEBUG - ❌ ping_role_id check: {getattr(poll, 'ping_role_id', None)}"
             )
 
         # Post message with debugging and graceful error handling for role pings
