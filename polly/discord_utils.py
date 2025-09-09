@@ -200,7 +200,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
     # Add poll options
     option_text = ""
-    if show_results and bool(poll.should_show_results()):
+    if show_results:
         # Show results with enhanced progress bars and percentages
         results = poll.get_results()
         total_votes = poll.get_total_votes()
@@ -892,13 +892,14 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
             logger.warning(f"Poll message {poll_message_id} not found")
             return False
 
-        # Update embed
-        embed = await create_poll_embed(
-            poll, show_results=bool(poll.should_show_results())
-        )
+        # Update embed - ALWAYS show results for closed polls
+        poll_status = str(getattr(poll, "status", "unknown"))
+        show_results = poll_status == "closed" or bool(poll.should_show_results())
+        
+        embed = await create_poll_embed(poll, show_results=show_results)
         await message.edit(embed=embed)
 
-        logger.debug(f"Updated poll message for poll {getattr(poll, 'id')}")
+        logger.debug(f"Updated poll message for poll {getattr(poll, 'id')} (status: {poll_status}, show_results: {show_results})")
         return True
 
     except Exception as e:

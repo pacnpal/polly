@@ -30,58 +30,131 @@ scheduler = AsyncIOScheduler()
 async def close_poll(poll_id: int):
     """Close a poll using bulletproof operations and post final results"""
     try:
-        from .poll_operations import BulletproofPollOperations
         from .discord_bot import get_bot_instance
-        from .discord_utils import post_poll_results
+        from .discord_utils import post_poll_results, update_poll_message
+        import discord
 
-        # Use bulletproof poll closure
         bot = get_bot_instance()
-        bulletproof_ops = BulletproofPollOperations(bot)
-        result = await bulletproof_ops.bulletproof_poll_closure(poll_id)
+        if not bot:
+            logger.error(f"❌ CLOSE POLL {poll_id} - Bot instance not available")
+            return
 
-        if not result["success"]:
-            # Handle closure error with bot owner notification
-            error_msg = await PollErrorHandler.handle_poll_closure_error(
-                Exception(result["error"]), poll_id, bot
-            )
-            logger.error(
-                f"Bulletproof poll closure failed for poll {poll_id}: {error_msg}"
-            )
-        else:
-            logger.info(
-                f"Successfully closed poll {poll_id} using bulletproof operations"
-            )
+        logger.info(f"🏁 CLOSE POLL {poll_id} - Starting poll closure process")
 
-            # Post final results to Discord
-            try:
-                db = get_db_session()
-                try:
-                    from sqlalchemy.orm import joinedload
+        # STEP 1: Get poll data BEFORE closing it
+        db = get_db_session()
+        poll = None
+        try:
+            from sqlalchemy.orm import joinedload
 
-                    poll = (
-                        db.query(Poll)
-                        .options(joinedload(Poll.votes))
-                        .filter(Poll.id == poll_id)
-                        .first()
-                    )
-                    if poll:
-                        results_posted = await post_poll_results(bot, poll)
-                        if results_posted:
-                            logger.info(
-                                f"Successfully posted final results for poll {poll_id}"
-                            )
-                        else:
-                            logger.warning(
-                                f"Failed to post final results for poll {poll_id}"
-                            )
-                    else:
-                        logger.error(f"Poll {poll_id} not found for results posting")
-                finally:
-                    db.close()
-            except Exception as results_error:
-                logger.error(
-                    f"Error posting results for poll {poll_id}: {results_error}"
+            poll = (
+                db.query(Poll)
+                .options(joinedload(Poll.votes))
+                .filter(Poll.id == poll_id)
+                .first()
+            )
+            if not poll:
+                logger.error(f"❌ CLOSE POLL {poll_id} - Poll not found in database")
+                return
+
+            # Check if already closed
+            current_status = TypeSafeColumn.get_string(poll, "status")
+            if current_status == "closed":
+                logger.info(f"ℹ️ CLOSE POLL {poll_id} - Poll already closed, skipping")
+                return
+
+            # Extract poll data while still attached to session
+            message_id = TypeSafeColumn.get_string(poll, "message_id")
+            channel_id = TypeSafeColumn.get_string(poll, "channel_id")
+            poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+            
+            logger.info(f"📊 CLOSE POLL {poll_id} - Poll '{poll_name}' found, status: {current_status}")
+
+        except Exception as e:
+            logger.error(f"❌ CLOSE POLL {poll_id} - Error fetching poll data: {e}")
+            return
+        finally:
+            db.close()
+
+        # STEP 2: Close poll in database using bulletproof operations
+        try:
+            from .poll_operations import BulletproofPollOperations
+            
+            bulletproof_ops = BulletproofPollOperations(bot)
+            result = await bulletproof_ops.bulletproof_poll_closure(poll_id)
+
+            if not result["success"]:
+                error_msg = await PollErrorHandler.handle_poll_closure_error(
+                    Exception(result["error"]), poll_id, bot
                 )
+                logger.error(f"❌ CLOSE POLL {poll_id} - Bulletproof closure failed: {error_msg}")
+                return
+            else:
+                logger.info(f"✅ CLOSE POLL {poll_id} - Poll status updated to closed in database")
+
+        except Exception as e:
+            error_msg = await PollErrorHandler.handle_poll_closure_error(e, poll_id, bot)
+            logger.error(f"❌ CLOSE POLL {poll_id} - Bulletproof closure exception: {error_msg}")
+            return
+
+        # STEP 3: Clear reactions from Discord message
+        if message_id and channel_id:
+            try:
+                channel = bot.get_channel(int(channel_id))
+                if channel and isinstance(channel, discord.TextChannel):
+                    try:
+                        message = await channel.fetch_message(int(message_id))
+                        if message:
+                            # Clear all reactions from the poll message
+                            await message.clear_reactions()
+                            logger.info(f"✅ CLOSE POLL {poll_id} - Cleared all reactions from Discord message")
+                        else:
+                            logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find message {message_id}")
+                    except discord.NotFound:
+                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - Message {message_id} not found (may have been deleted)")
+                    except discord.Forbidden:
+                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - No permission to clear reactions")
+                    except Exception as reaction_error:
+                        logger.error(f"❌ CLOSE POLL {poll_id} - Error clearing reactions: {reaction_error}")
+                else:
+                    logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find or access channel {channel_id}")
+            except Exception as channel_error:
+                logger.error(f"❌ CLOSE POLL {poll_id} - Error accessing channel: {channel_error}")
+
+        # STEP 4: Get fresh poll data for results posting and message update
+        db = get_db_session()
+        try:
+            from sqlalchemy.orm import joinedload
+
+            fresh_poll = (
+                db.query(Poll)
+                .options(joinedload(Poll.votes))
+                .filter(Poll.id == poll_id)
+                .first()
+            )
+            if fresh_poll:
+                # Update the poll embed to show it's closed
+                try:
+                    await update_poll_message(bot, fresh_poll)
+                    logger.info(f"✅ CLOSE POLL {poll_id} - Updated poll message to show closed status")
+                except Exception as update_error:
+                    logger.error(f"❌ CLOSE POLL {poll_id} - Error updating poll message: {update_error}")
+
+                # Post final results to Discord
+                try:
+                    results_posted = await post_poll_results(bot, fresh_poll)
+                    if results_posted:
+                        logger.info(f"✅ CLOSE POLL {poll_id} - Successfully posted final results")
+                    else:
+                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - Failed to post final results")
+                except Exception as results_error:
+                    logger.error(f"❌ CLOSE POLL {poll_id} - Error posting results: {results_error}")
+            else:
+                logger.error(f"❌ CLOSE POLL {poll_id} - Poll not found for results posting")
+        finally:
+            db.close()
+
+        logger.info(f"🎉 CLOSE POLL {poll_id} - Poll closure process completed")
 
     except Exception as e:
         # Handle unexpected closure errors with bot owner notification
@@ -89,7 +162,7 @@ async def close_poll(poll_id: int):
 
         bot = get_bot_instance()
         error_msg = await PollErrorHandler.handle_poll_closure_error(e, poll_id, bot)
-        logger.error(f"Error in close_poll function: {error_msg}")
+        logger.error(f"❌ CLOSE POLL {poll_id} - Unexpected error in close_poll function: {error_msg}")
 
 
 async def cleanup_polls_with_deleted_messages():
@@ -731,7 +804,29 @@ async def reaction_safeguard_task():
                                                         f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}"
                                                     )
                                             else:
-                                                # No vote recorded, process the vote
+                                                # No vote recorded, but first re-check poll status to avoid race conditions
+                                                # The poll might have closed between our initial query and now
+                                                fresh_db = get_db_session()
+                                                try:
+                                                    fresh_poll = fresh_db.query(Poll).filter(Poll.id == poll_id).first()
+                                                    if not fresh_poll or TypeSafeColumn.get_string(fresh_poll, "status") != "active":
+                                                        logger.info(
+                                                            f"🛡️ Safeguard: Poll {poll_id} is no longer active, removing reaction from user {user.id}"
+                                                        )
+                                                        try:
+                                                            await reaction.remove(user)
+                                                            logger.debug(
+                                                                f"🧹 Safeguard: Removed reaction from user {user.id} on closed poll {poll_id}"
+                                                            )
+                                                        except Exception as remove_error:
+                                                            logger.debug(
+                                                                f"⚠️ Safeguard: Failed to remove reaction from user {user.id} on closed poll: {remove_error}"
+                                                            )
+                                                        continue
+                                                finally:
+                                                    fresh_db.close()
+
+                                                # Poll is still active, process the vote
                                                 logger.info(
                                                     f"🛡️ Safeguard: Processing missed reaction from user {user.id} on poll {poll_id}"
                                                 )
