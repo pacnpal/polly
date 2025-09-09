@@ -290,11 +290,42 @@ class BulletproofPollOperations:
                         multiple_choice=validated_data.get("multiple_choice", False),
                         image_path=image_info["file_path"] if image_info else None,
                         image_message_text=image_message_text or "",
+                        # ROLE PING FIX: Include role ping data in poll creation
+                        ping_role_enabled=validated_data.get("ping_role_enabled", False),
+                        ping_role_id=validated_data.get("ping_role_id", None),
+                        ping_role_name=validated_data.get("ping_role_name", None),
                     )
 
                     db.add(poll)
+                    
+                    # ROLE PING FIX: Log role ping data before commit
+                    logger.info(f"🔔 BULLETPROOF CREATION - Role ping data being saved:")
+                    logger.info(f"🔔 BULLETPROOF CREATION - ping_role_enabled: {validated_data.get('ping_role_enabled', False)}")
+                    logger.info(f"🔔 BULLETPROOF CREATION - ping_role_id: {validated_data.get('ping_role_id', None)}")
+                    logger.info(f"🔔 BULLETPROOF CREATION - ping_role_name: {validated_data.get('ping_role_name', None)}")
+                    
                     db.commit()
                     poll_id = int(getattr(poll, "id"))
+                    
+                    # ROLE PING FIX: Verify role ping data was saved correctly
+                    fresh_poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                    if fresh_poll:
+                        saved_ping_enabled = getattr(fresh_poll, "ping_role_enabled", False)
+                        saved_ping_id = getattr(fresh_poll, "ping_role_id", None)
+                        saved_ping_name = getattr(fresh_poll, "ping_role_name", None)
+                        
+                        logger.info(f"🔔 BULLETPROOF CREATION - Role ping data verification after commit:")
+                        logger.info(f"🔔 BULLETPROOF CREATION - saved_ping_role_enabled: {saved_ping_enabled}")
+                        logger.info(f"🔔 BULLETPROOF CREATION - saved_ping_role_id: {saved_ping_id}")
+                        logger.info(f"🔔 BULLETPROOF CREATION - saved_ping_role_name: {saved_ping_name}")
+                        
+                        # Check if data was lost during save
+                        if validated_data.get('ping_role_enabled', False) and not saved_ping_enabled:
+                            logger.error(f"🔔 BULLETPROOF CREATION - Role ping data was lost during database save!")
+                        elif validated_data.get('ping_role_id') and not saved_ping_id:
+                            logger.error(f"🔔 BULLETPROOF CREATION - Role ping ID was lost during database save!")
+                        else:
+                            logger.info(f"🔔 BULLETPROOF CREATION - Role ping data saved successfully")
 
                     if not poll_id:
                         raise Exception("Failed to create poll record")

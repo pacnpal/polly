@@ -593,7 +593,8 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        return await close_poll_htmx(poll_id, request, current_user)
+        bot = get_bot_instance()
+        return await close_poll_htmx(poll_id, request, bot, current_user)
 
     @app.delete("/htmx/poll/{poll_id}", response_class=HTMLResponse)
     async def htmx_delete_poll(

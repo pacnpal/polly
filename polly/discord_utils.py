@@ -583,6 +583,18 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         logger.debug(
             f"🔄 POSTING POLL {getattr(poll, 'id', 'unknown')} - Refreshing poll from database to avoid DetachedInstanceError"
         )
+        
+        # Store original poll data before refresh to preserve role ping information
+        original_poll_id = getattr(poll, "id")
+        original_ping_role_enabled = getattr(poll, "ping_role_enabled", False)
+        original_ping_role_id = getattr(poll, "ping_role_id", None)
+        original_ping_role_name = getattr(poll, "ping_role_name", None)
+        
+        logger.info(f"🔔 ROLE PING FIX - Preserving original role ping data before refresh:")
+        logger.info(f"🔔 ROLE PING FIX - original_ping_role_enabled: {original_ping_role_enabled}")
+        logger.info(f"🔔 ROLE PING FIX - original_ping_role_id: {original_ping_role_id}")
+        logger.info(f"🔔 ROLE PING FIX - original_ping_role_name: {original_ping_role_name}")
+        
         db = get_db_session()
         try:
             # Eagerly load the votes relationship to avoid DetachedInstanceError
@@ -591,12 +603,12 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             fresh_poll = (
                 db.query(Poll)
                 .options(joinedload(Poll.votes))
-                .filter(Poll.id == getattr(poll, "id"))
+                .filter(Poll.id == original_poll_id)
                 .first()
             )
             if not fresh_poll:
                 logger.error(
-                    f"❌ POSTING POLL {getattr(poll, 'id', 'unknown')} - Poll not found in database during refresh"
+                    f"❌ POSTING POLL {original_poll_id} - Poll not found in database during refresh"
                 )
                 return {
                     "success": False,
@@ -605,6 +617,38 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
 
             # Use the fresh poll object for all operations
             poll = fresh_poll
+            
+            # ROLE PING FIX: Verify role ping data after refresh and restore if missing
+            refreshed_ping_role_enabled = getattr(poll, "ping_role_enabled", False)
+            refreshed_ping_role_id = getattr(poll, "ping_role_id", None)
+            refreshed_ping_role_name = getattr(poll, "ping_role_name", None)
+            
+            logger.info(f"🔔 ROLE PING FIX - Role ping data after refresh:")
+            logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_enabled: {refreshed_ping_role_enabled}")
+            logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_id: {refreshed_ping_role_id}")
+            logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_name: {refreshed_ping_role_name}")
+            
+            # If role ping data is missing from refreshed poll but was present in original, restore it
+            if (original_ping_role_enabled and not refreshed_ping_role_enabled) or \
+               (original_ping_role_id and not refreshed_ping_role_id):
+                logger.warning(f"🔔 ROLE PING FIX - Role ping data lost during refresh, restoring from original")
+                logger.warning(f"🔔 ROLE PING FIX - Restoring: enabled={original_ping_role_enabled}, id={original_ping_role_id}, name={original_ping_role_name}")
+                
+                # Restore the role ping data to the refreshed poll object
+                setattr(poll, "ping_role_enabled", original_ping_role_enabled)
+                setattr(poll, "ping_role_id", original_ping_role_id)
+                setattr(poll, "ping_role_name", original_ping_role_name)
+                
+                # Commit the restored data to database
+                try:
+                    db.commit()
+                    logger.info(f"🔔 ROLE PING FIX - Successfully restored and committed role ping data")
+                except Exception as commit_error:
+                    logger.error(f"🔔 ROLE PING FIX - Failed to commit restored role ping data: {commit_error}")
+                    db.rollback()
+            else:
+                logger.info(f"🔔 ROLE PING FIX - Role ping data preserved correctly after refresh")
+            
             logger.debug(
                 f"✅ POSTING POLL {getattr(poll, 'id', 'unknown')} - Successfully refreshed poll from database"
             )
@@ -907,7 +951,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
 
 
 async def update_poll_message(bot: commands.Bot, poll: Poll):
-    """Update poll message with current results"""
+    """Update poll message with current results and send role ping notification for status changes"""
     try:
         poll_message_id = getattr(poll, "message_id", None)
         if not poll_message_id:
@@ -939,6 +983,34 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
         
         embed = await create_poll_embed(poll, show_results=show_results)
         await message.edit(embed=embed)
+
+        # Send role ping notification for poll status changes (if enabled)
+        ping_role_enabled = getattr(poll, "ping_role_enabled", False)
+        ping_role_id = getattr(poll, "ping_role_id", None)
+        
+        if ping_role_enabled and ping_role_id and poll_status == "closed":
+            try:
+                poll_name = str(getattr(poll, "name", "Unknown Poll"))
+                role_name = str(getattr(poll, "ping_role_name", "Unknown Role"))
+                
+                logger.info(f"🔔 UPDATE MESSAGE - Sending role ping notification for poll {getattr(poll, 'id')} status change to {poll_status}")
+                
+                # Send role ping notification for poll closure
+                try:
+                    message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has been updated!**"
+                    await channel.send(content=message_content)
+                    logger.info(f"✅ UPDATE MESSAGE - Sent role ping notification for poll {getattr(poll, 'id')} update")
+                except discord.Forbidden:
+                    # Role ping failed due to permissions, send without role ping
+                    logger.warning(f"⚠️ UPDATE MESSAGE - Role ping failed due to permissions for poll {getattr(poll, 'id')}")
+                    try:
+                        fallback_content = f"📊 **Poll '{poll_name}' has been updated!**"
+                        await channel.send(content=fallback_content)
+                        logger.info(f"✅ UPDATE MESSAGE - Sent fallback notification without role ping for poll {getattr(poll, 'id')}")
+                    except Exception as fallback_error:
+                        logger.error(f"❌ UPDATE MESSAGE - Fallback notification also failed for poll {getattr(poll, 'id')}: {fallback_error}")
+            except Exception as ping_error:
+                logger.error(f"❌ UPDATE MESSAGE - Error sending role ping notification for poll {getattr(poll, 'id')}: {ping_error}")
 
         logger.debug(f"Updated poll message for poll {getattr(poll, 'id')} (status: {poll_status}, show_results: {show_results})")
         return True
