@@ -3735,6 +3735,75 @@ async def export_poll_csv(
         db.close()
 
 
+async def open_poll_now_htmx(
+    poll_id: int, request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)
+):
+    """Open a scheduled poll immediately via HTMX"""
+    logger.info(f"User {current_user.id} requesting to open poll {poll_id} immediately")
+    db = get_db_session()
+    try:
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
+        if not poll:
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Poll not found or access denied"},
+            )
+
+        if TypeSafeColumn.get_string(poll, "status") != "scheduled":
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Only scheduled polls can be opened immediately"},
+            )
+
+        poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
+        logger.info(f"Opening poll {poll_id} '{poll_name}' immediately")
+
+        try:
+            # Import the post_poll_to_channel function
+            from .discord_utils import post_poll_to_channel
+            
+            # Post the poll to Discord immediately
+            await post_poll_to_channel(bot, poll_id)
+            
+            # Remove the scheduled opening job since we're opening it now
+            try:
+                scheduler.remove_job(f"open_poll_{poll_id}")
+                logger.info(f"Removed scheduled opening job for poll {poll_id}")
+            except Exception as job_error:
+                logger.debug(f"Job open_poll_{poll_id} not found or already removed: {job_error}")
+
+            logger.info(f"Poll {poll_id} opened immediately by user {current_user.id}")
+
+            return templates.TemplateResponse(
+                "htmx/components/alert_success.html",
+                {
+                    "request": request,
+                    "message": f"Poll '{poll_name}' opened successfully! Redirecting to polls...",
+                    "redirect_url": "/htmx/polls",
+                },
+            )
+
+        except Exception as post_error:
+            logger.error(f"Error posting poll {poll_id} to Discord: {post_error}")
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": f"Error opening poll: {str(post_error)}"},
+            )
+
+    except Exception as e:
+        logger.error(f"Error opening poll {poll_id} immediately: {e}")
+        return templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": f"Error opening poll: {str(e)}"},
+        )
+    finally:
+        db.close()
+
+
 async def close_poll_htmx(
     poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)
 ):

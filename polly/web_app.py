@@ -439,6 +439,7 @@ def add_htmx_routes(app: FastAPI):
         delete_poll_htmx,
         get_guild_emojis_htmx,
         get_roles_htmx,
+        open_poll_now_htmx,
     )
     from .discord_bot import get_bot_instance
     from .background_tasks import get_scheduler
@@ -586,6 +587,16 @@ def add_htmx_routes(app: FastAPI):
         current_user: DiscordUser = Depends(require_auth),
     ):
         return await get_poll_results_realtime_htmx(poll_id, request, current_user)
+
+    @app.post("/htmx/poll/{poll_id}/open-now", response_class=HTMLResponse)
+    async def htmx_open_poll_now(
+        poll_id: int,
+        request: Request,
+        current_user: DiscordUser = Depends(require_auth),
+    ):
+        bot = get_bot_instance()
+        scheduler = get_scheduler()
+        return await open_poll_now_htmx(poll_id, request, bot, scheduler, current_user)
 
     @app.post("/htmx/poll/{poll_id}/close", response_class=HTMLResponse)
     async def htmx_close_poll(

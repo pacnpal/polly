@@ -8,6 +8,10 @@
                         <i class="fas fa-ellipsis-v"></i>
                     </button>
                     <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" hx-post="/htmx/poll/{{ poll_id }}/open-now" hx-target="#main-content" hx-confirm="Are you sure you want to open this poll now? This will start the poll immediately.">
+                            <i class="fas fa-play me-2"></i>Open Now
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="#" hx-get="/htmx/create-form-template/{{ poll_id }}" hx-target="#main-content">
                             <i class="fas fa-copy me-2"></i>Use as Template
                         </a></li>
