@@ -153,6 +153,31 @@ class DiscordEmojiHandler:
                 )
                 return True
 
+            # Special handling for regional indicator symbols (flag emojis like 🇦, 🇧, etc.)
+            # These are valid Unicode emojis but may not be recognized by the emoji library
+            if len(text) <= 4 and any(
+                ord(char) >= 0x1F1E6 and ord(char) <= 0x1F1FF for char in text
+            ):
+                print(
+                    f"✅ IS_UNICODE_EMOJI DEBUG - Regional indicator symbol validated: '{text}'"
+                )
+                logger.info(
+                    f"✅ IS_UNICODE_EMOJI DEBUG - Regional indicator symbol validated: '{text}'"
+                )
+                return True
+
+            # Check for other common emoji patterns that might not be recognized
+            if len(text) <= 6 and any(
+                ord(char) >= 0x1F300 for char in text
+            ):
+                print(
+                    f"✅ IS_UNICODE_EMOJI DEBUG - Unicode emoji pattern validated: '{text}'"
+                )
+                logger.info(
+                    f"✅ IS_UNICODE_EMOJI DEBUG - Unicode emoji pattern validated: '{text}'"
+                )
+                return True
+
             print(f"❌ IS_UNICODE_EMOJI DEBUG - Not a valid emoji: '{text}'")
             logger.info(f"❌ IS_UNICODE_EMOJI DEBUG - Not a valid emoji: '{text}'")
             return False
@@ -161,15 +186,29 @@ class DiscordEmojiHandler:
             print(f"💥 IS_UNICODE_EMOJI DEBUG - Error using emoji library: {e}")
             logger.error(f"💥 IS_UNICODE_EMOJI DEBUG - Error using emoji library: {e}")
 
-            # Fallback: if emoji library fails, be permissive
-            # This ensures we don't break existing functionality
-            print(
-                f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing '{text}' due to library error"
-            )
-            logger.warning(
-                f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing '{text}' due to library error"
-            )
-            return True
+            # Fallback: Check for regional indicator symbols manually
+            if len(text) <= 4 and any(
+                ord(char) >= 0x1F1E6 and ord(char) <= 0x1F1FF for char in text
+            ):
+                print(
+                    f"✅ IS_UNICODE_EMOJI DEBUG - Fallback: Regional indicator symbol accepted: '{text}'"
+                )
+                logger.info(
+                    f"✅ IS_UNICODE_EMOJI DEBUG - Fallback: Regional indicator symbol accepted: '{text}'"
+                )
+                return True
+
+            # Fallback: if emoji library fails, be permissive for short strings
+            if len(text) <= 6:
+                print(
+                    f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing short text '{text}' due to library error"
+                )
+                logger.warning(
+                    f"⚠️ IS_UNICODE_EMOJI DEBUG - Fallback: allowing short text '{text}' due to library error"
+                )
+                return True
+
+            return False
 
     def is_custom_emoji_format(self, emoji_input: str) -> bool:
         """

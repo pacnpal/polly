@@ -121,7 +121,7 @@ async def close_poll(poll_id: int):
             except Exception as channel_error:
                 logger.error(f"❌ CLOSE POLL {poll_id} - Error accessing channel: {channel_error}")
 
-        # STEP 4: Get fresh poll data for results posting and message update
+        # STEP 4: Get fresh poll data and update the existing message to show it's closed
         db = get_db_session()
         try:
             from sqlalchemy.orm import joinedload
@@ -133,24 +133,43 @@ async def close_poll(poll_id: int):
                 .first()
             )
             if fresh_poll:
-                # Update the poll embed to show it's closed
+                # Update the poll embed to show it's closed with final results
                 try:
                     await update_poll_message(bot, fresh_poll)
-                    logger.info(f"✅ CLOSE POLL {poll_id} - Updated poll message to show closed status")
+                    logger.info(f"✅ CLOSE POLL {poll_id} - Updated poll message to show closed status with final results")
                 except Exception as update_error:
                     logger.error(f"❌ CLOSE POLL {poll_id} - Error updating poll message: {update_error}")
 
-                # Post final results to Discord
-                try:
-                    results_posted = await post_poll_results(bot, fresh_poll)
-                    if results_posted:
-                        logger.info(f"✅ CLOSE POLL {poll_id} - Successfully posted final results")
-                    else:
-                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - Failed to post final results")
-                except Exception as results_error:
-                    logger.error(f"❌ CLOSE POLL {poll_id} - Error posting results: {results_error}")
+                # Send role ping notification if enabled (without posting full results)
+                ping_role_enabled = TypeSafeColumn.get_bool(fresh_poll, "ping_role_enabled", False)
+                ping_role_id = TypeSafeColumn.get_string(fresh_poll, "ping_role_id")
+                
+                if ping_role_enabled and ping_role_id:
+                    try:
+                        poll_channel_id = TypeSafeColumn.get_string(fresh_poll, "channel_id")
+                        if poll_channel_id:
+                            channel = bot.get_channel(int(poll_channel_id))
+                            if channel and isinstance(channel, discord.TextChannel):
+                                poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
+                                
+                                # Send simple role ping message
+                                try:
+                                    message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has ended!**"
+                                    await channel.send(content=message_content)
+                                    logger.info(f"✅ CLOSE POLL {poll_id} - Sent role ping notification")
+                                except discord.Forbidden:
+                                    # Role ping failed due to permissions, send without role ping
+                                    logger.warning(f"⚠️ CLOSE POLL {poll_id} - Role ping failed due to permissions")
+                                    try:
+                                        fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
+                                        await channel.send(content=fallback_content)
+                                        logger.info(f"✅ CLOSE POLL {poll_id} - Sent fallback notification without role ping")
+                                    except Exception as fallback_error:
+                                        logger.error(f"❌ CLOSE POLL {poll_id} - Fallback notification also failed: {fallback_error}")
+                    except Exception as ping_error:
+                        logger.error(f"❌ CLOSE POLL {poll_id} - Error sending role ping notification: {ping_error}")
             else:
-                logger.error(f"❌ CLOSE POLL {poll_id} - Poll not found for results posting")
+                logger.error(f"❌ CLOSE POLL {poll_id} - Poll not found for message update")
         finally:
             db.close()
 

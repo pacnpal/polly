@@ -2977,6 +2977,23 @@ async def create_poll_htmx(
         ping_role_id = validated_data["ping_role_id"]
         image_message_text = validated_data["image_message_text"]
 
+        # Fetch role name if role ping is enabled
+        ping_role_name = None
+        if ping_role_enabled and ping_role_id:
+            try:
+                guild = bot.get_guild(int(server_id))
+                if guild:
+                    role = guild.get_role(int(ping_role_id))
+                    if role:
+                        ping_role_name = role.name
+                        logger.info(f"Fetched role name '{ping_role_name}' for role ID {ping_role_id}")
+                    else:
+                        logger.warning(f"Role {ping_role_id} not found in guild {server_id}")
+                else:
+                    logger.warning(f"Guild {server_id} not found")
+            except Exception as e:
+                logger.error(f"Error fetching role name for role {ping_role_id}: {e}")
+
         # Prepare poll data for bulletproof operations
         poll_data = {
             "name": name,
@@ -2992,6 +3009,7 @@ async def create_poll_htmx(
             "multiple_choice": multiple_choice,
             "ping_role_enabled": ping_role_enabled,
             "ping_role_id": ping_role_id,
+            "ping_role_name": ping_role_name,
             "creator_id": current_user.id,
         }
 
@@ -4210,6 +4228,19 @@ async def update_poll_htmx(
                 {"request": request, "message": "Invalid server or channel"},
             )
 
+        # Fetch role name if role ping is enabled
+        ping_role_name = None
+        if ping_role_enabled and ping_role_id:
+            try:
+                role = guild.get_role(int(ping_role_id))
+                if role:
+                    ping_role_name = role.name
+                    logger.info(f"Fetched role name '{ping_role_name}' for role ID {ping_role_id}")
+                else:
+                    logger.warning(f"Role {ping_role_id} not found in guild {server_id}")
+            except Exception as e:
+                logger.error(f"Error fetching role name for role {ping_role_id}: {e}")
+
         # Update poll using setattr to avoid SQLAlchemy Column type issues
         setattr(poll, "name", name)
         setattr(poll, "question", question)
@@ -4230,6 +4261,7 @@ async def update_poll_htmx(
         setattr(poll, "multiple_choice", multiple_choice)
         setattr(poll, "ping_role_enabled", ping_role_enabled)
         setattr(poll, "ping_role_id", ping_role_id)
+        setattr(poll, "ping_role_name", ping_role_name)
 
         db.commit()
 

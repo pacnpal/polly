@@ -274,6 +274,23 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                         )
                         winner_text += f"{winner_emoji} {winner_option} ({winner_votes} votes, {winner_percentage:.1f}%)\n"
                     embed.add_field(name="🏆 Winners", value=winner_text, inline=True)
+        elif poll_status == "closed":
+            # Show "No votes cast" for closed polls with no votes
+            embed.add_field(name="🏆 Winner", value="No votes cast", inline=True)
+
+        # Add poll type information for closed polls (same as the old results message)
+        if poll_status == "closed":
+            poll_anonymous = bool(getattr(poll, "anonymous", False))
+            poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+
+            poll_type = []
+            if poll_anonymous:
+                poll_type.append("🔒 Anonymous")
+            if poll_multiple_choice:
+                poll_type.append("☑️ Multiple Choice")
+
+            if poll_type:
+                embed.add_field(name="📋 Poll Type", value=" • ".join(poll_type), inline=False)
     else:
         # Just show options without results
         for i, option in enumerate(poll.options):
@@ -892,9 +909,14 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
             logger.warning(f"Poll message {poll_message_id} not found")
             return False
 
-        # Update embed - ALWAYS show results for closed polls
+        # Update embed - ALWAYS show results for closed polls, regardless of anonymity
         poll_status = str(getattr(poll, "status", "unknown"))
-        show_results = poll_status == "closed" or bool(poll.should_show_results())
+        if poll_status == "closed":
+            # For closed polls, ALWAYS show results (both anonymous and non-anonymous)
+            show_results = True
+        else:
+            # For active/scheduled polls, respect the should_show_results logic
+            show_results = bool(poll.should_show_results())
         
         embed = await create_poll_embed(poll, show_results=show_results)
         await message.edit(embed=embed)
