@@ -8,6 +8,7 @@
             <a href="/htmx/poll/{{ poll.id }}/export-csv" download
                class="btn btn-sm btn-outline-success"
                title="Export to CSV"
+               hx-disable
                onclick="setTimeout(() => { this.style.opacity = '0.6'; setTimeout(() => { this.style.opacity = '1'; }, 1000); }, 100);">
                 <i class="fas fa-download me-1"></i>Export CSV
             </a>
