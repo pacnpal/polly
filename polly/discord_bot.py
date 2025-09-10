@@ -173,6 +173,53 @@ async def create_quick_poll_command(
 
 
 @bot.event
+async def on_guild_role_create(role):
+    """Handle guild role creation - invalidate role cache"""
+    try:
+        from .enhanced_cache_service import get_enhanced_cache_service
+        cache_service = get_enhanced_cache_service()
+        
+        invalidated = await cache_service.invalidate_guild_roles_cache(str(role.guild.id))
+        logger.info(f"Role '{role.name}' created in guild {role.guild.name} - invalidated {invalidated} cache entries")
+    except Exception as e:
+        logger.warning(f"Error invalidating role cache after role creation: {e}")
+
+
+@bot.event
+async def on_guild_role_delete(role):
+    """Handle guild role deletion - invalidate role cache"""
+    try:
+        from .enhanced_cache_service import get_enhanced_cache_service
+        cache_service = get_enhanced_cache_service()
+        
+        invalidated = await cache_service.invalidate_guild_roles_cache(str(role.guild.id))
+        logger.info(f"Role '{role.name}' deleted from guild {role.guild.name} - invalidated {invalidated} cache entries")
+    except Exception as e:
+        logger.warning(f"Error invalidating role cache after role deletion: {e}")
+
+
+@bot.event
+async def on_guild_role_update(before, after):
+    """Handle guild role updates - invalidate role cache if permissions changed"""
+    try:
+        # Check if role permissions changed (affects whether bot can ping the role)
+        permissions_changed = (
+            before.mentionable != after.mentionable or
+            before.managed != after.managed or
+            before.name != after.name
+        )
+        
+        if permissions_changed:
+            from .enhanced_cache_service import get_enhanced_cache_service
+            cache_service = get_enhanced_cache_service()
+            
+            invalidated = await cache_service.invalidate_guild_roles_cache(str(after.guild.id))
+            logger.info(f"Role '{after.name}' updated in guild {after.guild.name} - invalidated {invalidated} cache entries")
+    except Exception as e:
+        logger.warning(f"Error invalidating role cache after role update: {e}")
+
+
+@bot.event
 async def on_reaction_add(reaction, user):
     """Handle poll voting via reactions using bulletproof operations"""
     if user.bot:

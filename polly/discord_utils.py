@@ -1378,7 +1378,20 @@ async def send_vote_confirmation_dm(
 
 
 async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, Any]]:
-    """Get roles for a guild that can be mentioned/pinged by the bot"""
+    """Get roles for a guild that can be mentioned/pinged by the bot with caching"""
+    # Try to get from cache first
+    try:
+        from .enhanced_cache_service import get_enhanced_cache_service
+        cache_service = get_enhanced_cache_service()
+        
+        cached_roles = await cache_service.get_cached_guild_roles_for_ping(guild_id)
+        if cached_roles:
+            logger.debug(f"Retrieved {len(cached_roles)} roles from cache for guild {guild_id}")
+            return cached_roles
+    except Exception as cache_error:
+        logger.warning(f"Error accessing role cache for guild {guild_id}: {cache_error}")
+
+    # Fetch from Discord API if not cached
     roles = []
 
     if not bot or not bot.guilds:
@@ -1433,25 +1446,45 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
                     can_ping_role = True
 
                 if can_ping_role:
-                    roles.append(
-                        {
-                            "id": str(role.id),
-                            "name": role.name,
-                            "color": str(role.color)
-                            if role.color != discord.Color.default()
-                            else None,
-                            "position": role.position,
-                            "mentionable": role.mentionable,
-                            "managed": role.managed,
-                            "can_ping": True,  # All roles in this list can be pinged by the bot
-                        }
-                    )
+                    role_data = {
+                        "id": str(role.id),
+                        "name": role.name,
+                        "color": str(role.color)
+                        if role.color != discord.Color.default()
+                        else None,
+                        "position": role.position,
+                        "mentionable": role.mentionable,
+                        "managed": role.managed,
+                        "can_ping": True,  # All roles in this list can be pinged by the bot
+                    }
+                    roles.append(role_data)
+                    
+                    # Cache individual role validation
+                    try:
+                        from .enhanced_cache_service import get_enhanced_cache_service
+                        cache_service = get_enhanced_cache_service()
+                        await cache_service.cache_role_validation(
+                            guild_id, str(role.id), True, role.name
+                        )
+                    except Exception as validation_cache_error:
+                        logger.warning(f"Error caching role validation for {role.name}: {validation_cache_error}")
+                        
             except Exception as e:
                 logger.warning(f"Error processing role {role.name}: {e}")
                 continue
 
         # Sort roles by position (higher position = higher in hierarchy)
         roles.sort(key=lambda x: x.get("position", 0), reverse=True)
+
+        # Cache the results
+        if roles:
+            try:
+                from .enhanced_cache_service import get_enhanced_cache_service
+                cache_service = get_enhanced_cache_service()
+                await cache_service.cache_guild_roles_for_ping(guild_id, roles)
+                logger.info(f"Cached {len(roles)} pingable roles for guild {guild_id}")
+            except Exception as cache_error:
+                logger.warning(f"Error caching roles for guild {guild_id}: {cache_error}")
 
         logger.debug(
             f"Found {len(roles)} pingable roles in guild {guild.name} (bot_admin={bot_has_admin})"

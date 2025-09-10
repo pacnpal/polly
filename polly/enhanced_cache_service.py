@@ -275,6 +275,101 @@ class EnhancedCacheService(CacheService):
             logger.error(f"Error getting cache stats: {e}")
             return {"error": str(e)}
 
+    # Role Ping Caching (Extended TTL for role data)
+    async def cache_guild_roles_for_ping(
+        self, guild_id: str, roles: List[Dict[str, Any]]
+    ) -> bool:
+        """Cache guild roles specifically for role ping functionality with extended TTL"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"guild_roles_ping:{guild_id}"
+        success = await redis_client.cache_set(cache_key, roles, self.guild_info_ttl)  # 30 minutes
+
+        if success:
+            logger.info(
+                f"Cached {len(roles)} pingable roles for guild {guild_id} with {self.guild_info_ttl}s TTL"
+            )
+
+        return success
+
+    async def get_cached_guild_roles_for_ping(
+        self, guild_id: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Get cached guild roles for role ping functionality"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return None
+
+        cache_key = f"guild_roles_ping:{guild_id}"
+        cached_roles = await redis_client.cache_get(cache_key)
+
+        if cached_roles:
+            logger.debug(
+                f"Retrieved {len(cached_roles)} cached pingable roles for guild {guild_id}"
+            )
+
+        return cached_roles
+
+    async def cache_role_validation(
+        self, guild_id: str, role_id: str, can_ping: bool, role_name: Optional[str] = None
+    ) -> bool:
+        """Cache role ping validation results"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"role_validation:{guild_id}:{role_id}"
+        validation_data = {
+            "can_ping": can_ping,
+            "role_name": role_name or "",
+            "cached_at": datetime.now().isoformat(),
+        }
+        
+        return await redis_client.cache_set(cache_key, validation_data, self.guild_info_ttl)  # 30 minutes
+
+    async def get_cached_role_validation(
+        self, guild_id: str, role_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get cached role ping validation"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return None
+
+        cache_key = f"role_validation:{guild_id}:{role_id}"
+        return await redis_client.cache_get(cache_key)
+
+    async def invalidate_guild_roles_cache(self, guild_id: str) -> int:
+        """Invalidate all role-related cache for a guild"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return 0
+
+        patterns = [
+            f"guild_roles:{guild_id}",
+            f"guild_roles_ping:{guild_id}",
+        ]
+
+        count = 0
+        for pattern in patterns:
+            if await redis_client.cache_delete(pattern):
+                count += 1
+
+        # Also invalidate role validation cache for this guild
+        try:
+            if redis_client._client:
+                async for key in redis_client._client.scan_iter(
+                    match=f"cache:role_validation:{guild_id}:*"
+                ):
+                    if await redis_client._client.delete(key):
+                        count += 1
+        except Exception as e:
+            logger.warning(f"Error invalidating role validation cache for guild {guild_id}: {e}")
+
+        logger.info(f"Invalidated {count} role cache entries for guild {guild_id}")
+        return count
+
     # Cache Warming for Frequently Accessed Data
     async def warm_guild_cache(self, guild_id: str, bot) -> bool:
         """Pre-warm cache with guild data to prevent rate limiting"""
@@ -282,8 +377,9 @@ class EnhancedCacheService(CacheService):
             # Check if we already have cached data
             cached_emojis = await self.get_cached_guild_emojis_extended(guild_id)
             cached_info = await self.get_cached_guild_info(guild_id)
+            cached_roles = await self.get_cached_guild_roles_for_ping(guild_id)
 
-            if cached_emojis and cached_info:
+            if cached_emojis and cached_info and cached_roles:
                 logger.debug(f"Guild {guild_id} cache already warm")
                 return True
 
@@ -322,6 +418,14 @@ class EnhancedCacheService(CacheService):
                         continue
 
                 await self.cache_guild_emojis_extended(guild_id, emoji_list)
+
+            # Cache guild roles for ping functionality
+            if not cached_roles:
+                # Import here to avoid circular imports
+                from .discord_utils import get_guild_roles
+                roles = await get_guild_roles(bot, guild_id)
+                if roles:
+                    await self.cache_guild_roles_for_ping(guild_id, roles)
 
             logger.info(f"Successfully warmed cache for guild {guild_id}")
             return True
