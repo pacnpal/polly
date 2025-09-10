@@ -7,6 +7,7 @@ import json
 import logging
 import shutil
 import hashlib
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -25,6 +26,14 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
     logger.warning("PIL/Pillow not available - image compression disabled")
+
+# Browser automation imports for dashboard screenshots (optional dependencies)
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logger.warning("Playwright not available - dashboard screenshot capture disabled")
 
 
 class StaticPageGenerator:
@@ -61,6 +70,13 @@ class StaticPageGenerator:
         self.max_width = 1920  # Maximum width for images
         self.max_height = 1080  # Maximum height for images
         self.png_optimize = True  # Optimize PNG files
+        
+        # Dashboard screenshot settings
+        self.enable_dashboard_screenshots = PLAYWRIGHT_AVAILABLE  # Enable dashboard screenshots if Playwright is available
+        self.screenshot_width = 1920  # Screenshot viewport width
+        self.screenshot_height = 1080  # Screenshot viewport height
+        self.screenshot_quality = 90  # Screenshot JPEG quality
+        self.screenshot_timeout = 30000  # Screenshot timeout in milliseconds
         
     def _get_static_page_path(self, poll_id: int, page_type: str = "results") -> Path:
         """Get the file path for a static page"""
@@ -239,8 +255,8 @@ class StaticPageGenerator:
                 unique_voters = len(unique_users)
                 results = poll.get_results()
                 
-                # Generate static HTML
-                template = self.jinja_env.get_template("static/poll_dashboard.html")
+                # Generate static HTML using the dashboard component template
+                template = self.jinja_env.get_template("htmx/components/poll_dashboard.html")
                 html_content = template.render(
                     poll=poll,
                     vote_data=vote_data,
@@ -716,6 +732,161 @@ class StaticPageGenerator:
         except Exception as e:
             logger.error(f"❌ IMAGE CLEANUP - Error cleaning up images for poll {poll_id}: {e}")
             return 0
+
+    def _get_dashboard_screenshot_path(self, poll_id: int) -> Path:
+        """Get the file path for a dashboard screenshot"""
+        filename = f"poll_{poll_id}_dashboard_screenshot.jpg"
+        return self.shared_images_dir / filename
+        
+    async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "http://localhost:8000") -> Optional[str]:
+        """
+        Capture a screenshot of the complete dashboard using headless browser with secure one-time token
+        
+        Args:
+            poll_id: The poll ID
+            creator_id: The poll creator's user ID
+            base_url: Base URL of the application
+            
+        Returns: Static URL path to screenshot if successful, None if failed
+        """
+        if not self.enable_dashboard_screenshots:
+            logger.warning(f"📸 SCREENSHOT - Playwright not available, skipping dashboard screenshot for poll {poll_id}")
+            return None
+            
+        try:
+            logger.info(f"📸 SCREENSHOT - Starting secure dashboard screenshot capture for poll {poll_id}")
+            
+            screenshot_path = self._get_dashboard_screenshot_path(poll_id)
+            
+            # Check if screenshot already exists
+            if screenshot_path.exists():
+                logger.info(f"📸 SCREENSHOT - Using existing dashboard screenshot for poll {poll_id}")
+                return f"/static/images/shared/{screenshot_path.name}"
+            
+            # Create secure one-time token for authentication
+            from .web_app import create_screenshot_token
+            token = await create_screenshot_token(poll_id, creator_id)
+            
+            # Construct secure dashboard URL with token
+            secure_dashboard_url = f"{base_url}/screenshot/poll/{poll_id}/dashboard?token={token}"
+            
+            logger.info(f"📸 SCREENSHOT - Using secure authenticated URL for poll {poll_id}")
+            
+            async with async_playwright() as p:
+                # Launch headless browser (works without GUI)
+                browser = await p.chromium.launch(
+                    headless=True,  # Always headless for server environments
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--no-first-run',
+                        '--no-default-browser-check',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding'
+                    ]
+                )
+                
+                try:
+                    # Create new page with specific viewport
+                    page = await browser.new_page(
+                        viewport={
+                            'width': self.screenshot_width,
+                            'height': self.screenshot_height
+                        }
+                    )
+                    
+                    # Set longer timeout for complex dashboards
+                    page.set_default_timeout(self.screenshot_timeout)
+                    
+                    logger.info(f"📸 SCREENSHOT - Navigating to secure dashboard URL for poll {poll_id}")
+                    
+                    # Navigate to secure dashboard
+                    await page.goto(secure_dashboard_url, wait_until='networkidle')
+                    
+                    # Wait for dashboard content to load
+                    await page.wait_for_selector('#poll-dashboard-container', timeout=10000)
+                    
+                    # Wait for any images to load
+                    await page.wait_for_load_state('networkidle')
+                    
+                    # Additional wait for Discord avatars and dynamic content
+                    await page.wait_for_timeout(2000)
+                    
+                    logger.info(f"📸 SCREENSHOT - Capturing full page screenshot")
+                    
+                    # Capture full page screenshot
+                    screenshot_bytes = await page.screenshot(
+                        path=str(screenshot_path),
+                        type='jpeg',
+                        quality=self.screenshot_quality,
+                        full_page=True
+                    )
+                    
+                    logger.info(f"📸 SCREENSHOT - Successfully captured dashboard screenshot: {screenshot_path}")
+                    
+                    # Return static URL
+                    return f"/static/images/shared/{screenshot_path.name}"
+                    
+                finally:
+                    await browser.close()
+                    
+        except Exception as e:
+            logger.error(f"❌ SCREENSHOT - Error capturing dashboard screenshot for poll {poll_id}: {e}")
+            logger.exception("Full traceback for screenshot error:")
+            return None
+            
+    async def generate_dashboard_with_screenshot(self, poll_id: int, bot=None, base_url: str = "http://localhost:8000") -> bool:
+        """
+        Generate static dashboard with screenshot capture
+        
+        Args:
+            poll_id: The poll ID
+            bot: Discord bot instance
+            base_url: Base URL of the application for screenshot capture
+            
+        Returns: True if successful, False if failed
+        """
+        try:
+            logger.info(f"🔧 SCREENSHOT GEN - Generating dashboard with screenshot for poll {poll_id}")
+            
+            # First generate the regular static dashboard
+            dashboard_success = await self.generate_static_poll_dashboard(poll_id, bot)
+            if not dashboard_success:
+                logger.error(f"❌ SCREENSHOT GEN - Failed to generate static dashboard for poll {poll_id}")
+                return False
+            
+            # Get poll creator ID for secure token generation
+            db = get_db_session()
+            try:
+                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                if not poll:
+                    logger.error(f"❌ SCREENSHOT GEN - Poll {poll_id} not found for screenshot")
+                    return False
+                
+                creator_id = TypeSafeColumn.get_string(poll, "creator_id")
+                if not creator_id:
+                    logger.error(f"❌ SCREENSHOT GEN - No creator_id found for poll {poll_id}")
+                    return False
+                    
+            finally:
+                db.close()
+            
+            # Capture dashboard screenshot with secure token
+            screenshot_url = await self.capture_dashboard_screenshot(poll_id, creator_id, base_url)
+            
+            if screenshot_url:
+                logger.info(f"✅ SCREENSHOT GEN - Successfully generated dashboard with screenshot for poll {poll_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ SCREENSHOT GEN - Dashboard generated but screenshot failed for poll {poll_id}")
+                return True  # Still consider success since we have the HTML
+                
+        except Exception as e:
+            logger.error(f"❌ SCREENSHOT GEN - Error generating dashboard with screenshot for poll {poll_id}: {e}")
+            return False
 
     async def get_image_storage_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics about image storage"""

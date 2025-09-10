@@ -5,8 +5,10 @@ FastAPI application setup and core web functionality.
 
 import os
 import asyncio
+import secrets
+import hashlib
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # Import debug configuration
@@ -46,6 +48,132 @@ templates = Jinja2Templates(directory="templates")
 # Add global template variable for debug
 _debug_ctx = get_debug_context()
 templates.env.globals["POLLY_DEBUG"] = _debug_ctx.get("debug_mode", False)
+
+# Global storage for one-time screenshot tokens (in production, use Redis)
+_screenshot_tokens = {}
+
+class ScreenshotToken:
+    """Secure one-time-use token for dashboard screenshots"""
+    
+    def __init__(self, poll_id: int, creator_id: str, expires_in_minutes: int = 5):
+        self.poll_id = poll_id
+        self.creator_id = creator_id
+        self.token = secrets.token_urlsafe(32)  # 256-bit secure random token
+        self.created_at = datetime.now(pytz.UTC)
+        self.expires_at = self.created_at + timedelta(minutes=expires_in_minutes)
+        self.used = False
+        self.used_at = None
+        
+    def is_valid(self) -> bool:
+        """Check if token is still valid (not used and not expired)"""
+        now = datetime.now(pytz.UTC)
+        return not self.used and now < self.expires_at
+        
+    def mark_used(self) -> None:
+        """Mark token as used (one-time use)"""
+        self.used = True
+        self.used_at = datetime.now(pytz.UTC)
+        
+    def to_dict(self) -> dict:
+        """Convert to dictionary for storage"""
+        return {
+            "poll_id": self.poll_id,
+            "creator_id": self.creator_id,
+            "token": self.token,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat(),
+            "used": self.used,
+            "used_at": self.used_at.isoformat() if self.used_at else None
+        }
+
+async def create_screenshot_token(poll_id: int, creator_id: str) -> str:
+    """Create a secure one-time-use token for dashboard screenshots"""
+    # Clean up expired tokens first
+    await cleanup_expired_screenshot_tokens()
+    
+    # Create new token
+    token_obj = ScreenshotToken(poll_id, creator_id)
+    token_key = token_obj.token
+    
+    # Store token (in production, use Redis with TTL)
+    _screenshot_tokens[token_key] = token_obj
+    
+    logger.info(f"🔐 SCREENSHOT TOKEN - Created token for poll {poll_id} by user {creator_id}, expires at {token_obj.expires_at}")
+    
+    return token_key
+
+async def validate_and_consume_screenshot_token(token: str, poll_id: int) -> tuple[bool, str]:
+    """Validate and consume a screenshot token (one-time use)"""
+    try:
+        # Clean up expired tokens first
+        await cleanup_expired_screenshot_tokens()
+        
+        # Check if token exists
+        if token not in _screenshot_tokens:
+            logger.warning(f"🔐 SCREENSHOT TOKEN - Invalid token attempted for poll {poll_id}")
+            return False, "Invalid token"
+            
+        token_obj = _screenshot_tokens[token]
+        
+        # Verify token is for the correct poll
+        if token_obj.poll_id != poll_id:
+            logger.warning(f"🔐 SCREENSHOT TOKEN - Token poll mismatch: expected {poll_id}, got {token_obj.poll_id}")
+            return False, "Token poll mismatch"
+            
+        # Check if token is valid (not used and not expired)
+        if not token_obj.is_valid():
+            if token_obj.used:
+                logger.warning(f"🔐 SCREENSHOT TOKEN - Token already used for poll {poll_id}")
+                return False, "Token already used"
+            else:
+                logger.warning(f"🔐 SCREENSHOT TOKEN - Token expired for poll {poll_id}")
+                return False, "Token expired"
+                
+        # Mark token as used (one-time use)
+        token_obj.mark_used()
+        
+        logger.info(f"🔐 SCREENSHOT TOKEN - Successfully validated and consumed token for poll {poll_id}")
+        
+        # Schedule token cleanup after a short delay
+        asyncio.create_task(cleanup_used_token_delayed(token, 30))  # Clean up after 30 seconds
+        
+        return True, "Token valid"
+        
+    except Exception as e:
+        logger.error(f"🔐 SCREENSHOT TOKEN - Error validating token for poll {poll_id}: {e}")
+        return False, "Token validation error"
+
+async def cleanup_expired_screenshot_tokens():
+    """Clean up expired and used screenshot tokens"""
+    try:
+        now = datetime.now(pytz.UTC)
+        tokens_to_remove = []
+        
+        for token_key, token_obj in _screenshot_tokens.items():
+            # Remove if expired or used more than 1 hour ago
+            if (now > token_obj.expires_at or 
+                (token_obj.used and token_obj.used_at and 
+                 now > token_obj.used_at + timedelta(hours=1))):
+                tokens_to_remove.append(token_key)
+                
+        for token_key in tokens_to_remove:
+            del _screenshot_tokens[token_key]
+            
+        if tokens_to_remove:
+            logger.info(f"🔐 SCREENSHOT TOKEN - Cleaned up {len(tokens_to_remove)} expired/used tokens")
+            
+    except Exception as e:
+        logger.error(f"🔐 SCREENSHOT TOKEN - Error during token cleanup: {e}")
+
+async def cleanup_used_token_delayed(token: str, delay_seconds: int):
+    """Clean up a used token after a delay"""
+    try:
+        await asyncio.sleep(delay_seconds)
+        if token in _screenshot_tokens:
+            del _screenshot_tokens[token]
+            logger.debug(f"🔐 SCREENSHOT TOKEN - Cleaned up used token after {delay_seconds}s delay")
+    except Exception as e:
+        logger.error(f"🔐 SCREENSHOT TOKEN - Error in delayed token cleanup: {e}")
 
 
 async def get_user_preferences(user_id: str) -> dict:
@@ -458,6 +586,141 @@ def add_core_routes(app: FastAPI):
     
     # Add static poll routes
     add_static_poll_routes(app)
+    
+    # Add secure screenshot routes
+    add_screenshot_routes(app)
+
+
+def add_screenshot_routes(app: FastAPI):
+    """Add secure one-time-use screenshot routes for Playwright"""
+    
+    @app.get("/screenshot/poll/{poll_id}/dashboard")
+    async def secure_dashboard_screenshot(poll_id: int, token: str, request: Request):
+        """Secure one-time-use dashboard endpoint for Playwright screenshots"""
+        try:
+            logger.info(f"🔐 SCREENSHOT ACCESS - Attempting to access poll {poll_id} dashboard with token")
+            
+            # Validate and consume the one-time token
+            is_valid, message = await validate_and_consume_screenshot_token(token, poll_id)
+            
+            if not is_valid:
+                logger.warning(f"🔐 SCREENSHOT ACCESS - Token validation failed for poll {poll_id}: {message}")
+                from fastapi import HTTPException
+                raise HTTPException(status_code=403, detail=f"Access denied: {message}")
+            
+            # Token is valid and consumed - serve the dashboard
+            logger.info(f"🔐 SCREENSHOT ACCESS - Token validated, serving dashboard for poll {poll_id}")
+            
+            # Get poll data from database
+            from .database import Poll, Vote, TypeSafeColumn
+            
+            db = get_db_session()
+            try:
+                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                if not poll:
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=404, detail="Poll not found")
+                
+                # Get all votes for this poll
+                votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
+                
+                # Get poll data
+                options = poll.options
+                emojis = poll.emojis
+                is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
+                
+                # Prepare vote data with Discord usernames (for screenshot purposes)
+                vote_data = []
+                unique_users = set()
+                
+                # For screenshots, we can show real usernames since it's for the poll creator
+                from .discord_bot import get_bot_instance
+                bot = get_bot_instance()
+                
+                for vote in votes:
+                    try:
+                        user_id = TypeSafeColumn.get_string(vote, "user_id")
+                        option_index = TypeSafeColumn.get_int(vote, "option_index")
+                        voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
+                        
+                        # Get Discord username for screenshot
+                        username = "Unknown User"
+                        avatar_url = None
+                        
+                        if bot and user_id:
+                            try:
+                                discord_user = await bot.fetch_user(int(user_id))
+                                if discord_user:
+                                    username = discord_user.display_name or discord_user.name
+                                    avatar_url = discord_user.avatar.url if discord_user.avatar else None
+                            except Exception as e:
+                                logger.warning(f"Could not fetch Discord user {user_id}: {e}")
+                                username = f"User {user_id[:8]}..."
+                        
+                        # Get option details
+                        option_text = options[option_index] if option_index < len(options) else "Unknown Option"
+                        emoji = emojis[option_index] if option_index < len(emojis) else "📊"
+                        
+                        vote_data.append({
+                            "user_id": user_id,
+                            "username": username,
+                            "avatar_url": avatar_url,
+                            "option_index": option_index,
+                            "option_text": option_text,
+                            "emoji": emoji,
+                            "voted_at": voted_at,
+                            "is_unique": user_id not in unique_users
+                        })
+                        
+                        unique_users.add(user_id)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing vote data for screenshot: {e}")
+                        continue
+                
+                # Get summary statistics
+                total_votes = len(votes)
+                unique_voters = len(unique_users)
+                results = poll.get_results()
+                
+                # Format datetime function for template
+                from .htmx_endpoints import format_datetime_for_user
+                
+                # Render the dashboard template for screenshot
+                response = templates.TemplateResponse(
+                    "htmx/components/poll_dashboard.html",
+                    {
+                        "request": request,
+                        "poll": poll,
+                        "vote_data": vote_data,
+                        "total_votes": total_votes,
+                        "unique_voters": unique_voters,
+                        "results": results,
+                        "options": options,
+                        "emojis": emojis,
+                        "is_anonymous": is_anonymous,
+                        "show_usernames_to_creator": True,  # Always show usernames for screenshots
+                        "format_datetime_for_user": format_datetime_for_user,
+                        "is_screenshot": True  # Flag to indicate this is for screenshot
+                    }
+                )
+                
+                # Add headers to prevent caching and indicate this is a screenshot endpoint
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+                response.headers["X-Screenshot-Endpoint"] = "true"
+                
+                logger.info(f"🔐 SCREENSHOT ACCESS - Successfully served dashboard for poll {poll_id}")
+                return response
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"🔐 SCREENSHOT ACCESS - Error serving secure dashboard for poll {poll_id}: {e}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail="Error loading dashboard")
 
 
 def add_static_poll_routes(app: FastAPI):
