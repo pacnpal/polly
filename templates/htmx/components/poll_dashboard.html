@@ -153,17 +153,23 @@
         <div class="mt-3 text-center">
             <small class="text-muted">
                 <i class="fas fa-sync-alt me-1"></i>
+                {% if poll.status == 'active' %}
                 Updates automatically every 5 seconds
+                {% else %}
+                Realtime updates stopped (poll is {{ poll.status }})
+                {% endif %}
             </small>
         </div>
         {% endif %}
     </div>
 </div>
 
-<!-- Auto-refresh the dashboard every 5 seconds -->
-<div hx-get="/htmx/poll/{{ poll.id }}/dashboard" 
-     hx-trigger="every 5s" 
+<!-- Auto-refresh the dashboard every 5 seconds (only for active polls) -->
+{% if poll.status == 'active' %}
+<div hx-get="/htmx/poll/{{ poll.id }}/dashboard"
+     hx-trigger="every 5s"
      hx-swap="innerHTML"
      hx-target="#poll-dashboard-container"
      style="display: none;">
 </div>
+{% endif %}

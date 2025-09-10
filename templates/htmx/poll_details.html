@@ -51,9 +51,9 @@
                     <!-- Poll Options and Results with Real-time Updates -->
                     <div class="mb-4">
                         <h6 class="text-muted">Options & Results</h6>
-                        <div id="poll-results-realtime" 
-                             hx-get="/htmx/poll/{{ poll.id }}/results-realtime" 
-                             hx-trigger="load, every 5s" 
+                        <div id="poll-results-realtime"
+                             hx-get="/htmx/poll/{{ poll.id }}/results-realtime"
+                             {% if poll.status == 'active' %}hx-trigger="load, every 5s"{% else %}hx-trigger="load"{% endif %}
                              hx-swap="innerHTML">
                             <!-- Real-time results will be loaded here -->
                             {% set total_votes = poll.get_total_votes() %}
