@@ -1,0 +1,71 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+DOCKER_DEV_GUIDE.md
+
+# Development files
+.env.example
+.pytest_cache/
+.ruff_cache/
+.cache/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Development scripts
+scripts/
+demo_*.py
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs (these will be mounted as volumes)
+logs/
+*.log
+
+# Database files (these will be mounted as volumes)
+db/
+*.db
+*.db-*
+
+# Data directories (these will be mounted as volumes)  
+data/
+
+# Node modules (if any)
+node_modules/
+
+# Docker files (not needed in build context)
+docker-compose*.yml
+Dockerfile.*
+
+# Temporary files
+tmp/
+temp/

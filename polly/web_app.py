@@ -349,7 +349,7 @@ def add_core_routes(app: FastAPI):
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request):
         """Home page"""
-return templates.TemplateResponse("index.html", {"request": request, "POLLY_DEBUG": _debug_ctx.get("debug_mode", False)})
+        return templates.TemplateResponse("index.html", {"request": request, "POLLY_DEBUG": _debug_ctx.get("debug_mode", False)})
 
     @app.get("/health")
     async def health_check():
@@ -440,7 +440,7 @@ return templates.TemplateResponse("index.html", {"request": request, "POLLY_DEBU
             "TURNSTILE_SITE_KEY", default="1x00000000000000000000AA"
         )
 
-return templates.TemplateResponse(
+        return templates.TemplateResponse(
             "dashboard_htmx.html",
             {
                 "request": request,

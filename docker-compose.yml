@@ -17,7 +17,9 @@ services:
       - polly-network
 
   polly:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: polly-app
     # Only expose to localhost - not accessible from external network
     ports:
@@ -48,6 +50,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
     networks:
       - polly-network
 
