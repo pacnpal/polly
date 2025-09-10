@@ -689,14 +689,20 @@ class StaticPageGenerator:
                 # Check for images in poll data
                 images_to_process = []
                 
-                # Check for image_url field
-                image_url = TypeSafeColumn.get_string(poll, "image_url")
-                if image_url:
-                    # Convert URL to local path if it's a local upload
-                    if image_url.startswith('/static/uploads/'):
-                        local_path = Path(image_url[1:])  # Remove leading slash
+                # Check for image_path field (this is where poll images are actually stored)
+                image_path = TypeSafeColumn.get_string(poll, "image_path")
+                if image_path:
+                    # Convert path to URL format for mapping
+                    if image_path.startswith('static/uploads/'):
+                        image_url = f"/{image_path}"  # Add leading slash for URL
+                        local_path = Path(image_path)
                         if local_path.exists():
                             images_to_process.append((image_url, local_path))
+                    elif image_path.startswith('/static/uploads/'):
+                        # Already has leading slash
+                        local_path = Path(image_path[1:])  # Remove leading slash for file path
+                        if local_path.exists():
+                            images_to_process.append((image_path, local_path))
                 
                 # Check for images in poll question or description
                 question = TypeSafeColumn.get_string(poll, "question", "")
