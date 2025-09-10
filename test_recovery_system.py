@@ -6,9 +6,10 @@ import asyncio
 import logging
 from decouple import config
 from polly.recovery_manager import RecoveryManager, get_recovery_manager
+DISCORD_TOKEN = config("DISCORD_TOKEN")
 from polly.discord_bot import get_bot_instance
 
-DISCORD_TOKEN = config("DISCORD_TOKEN")
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
