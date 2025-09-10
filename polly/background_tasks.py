@@ -205,6 +205,23 @@ async def close_poll(poll_id: int):
         finally:
             db.close()
 
+        # STEP 5: Generate static content for closed poll
+        try:
+            from .static_page_generator import generate_static_content_on_poll_close
+            
+            logger.info(f"🔧 CLOSE POLL {poll_id} - Generating static content for closed poll")
+            static_success = await generate_static_content_on_poll_close(poll_id, bot)
+            
+            if static_success:
+                logger.info(f"✅ CLOSE POLL {poll_id} - Static content generated successfully")
+            else:
+                logger.warning(f"⚠️ CLOSE POLL {poll_id} - Static content generation failed, but poll closure continues")
+                
+        except Exception as static_error:
+            logger.error(f"❌ CLOSE POLL {poll_id} - Error generating static content: {static_error}")
+            # Don't fail the entire poll closure process if static generation fails
+            logger.info(f"🔄 CLOSE POLL {poll_id} - Continuing with poll closure despite static generation failure")
+
         logger.info(f"🎉 CLOSE POLL {poll_id} - Poll closure process completed")
 
     except Exception as e:
@@ -385,6 +402,42 @@ async def restore_scheduled_jobs():
 
     # First, clean up polls whose messages have been deleted
     await cleanup_polls_with_deleted_messages()
+    
+    # Run static content recovery for existing closed polls
+    await run_static_content_recovery_on_startup()
+
+
+async def run_static_content_recovery_on_startup():
+    """Run static content recovery for existing closed polls on startup"""
+    try:
+        from .static_recovery import run_static_content_recovery
+        from .discord_bot import get_bot_instance
+        
+        logger.info("🔄 STARTUP RECOVERY - Starting static content recovery for existing closed polls")
+        
+        bot = get_bot_instance()
+        if not bot:
+            logger.warning("⚠️ STARTUP RECOVERY - Bot instance not available, skipping static recovery")
+            return
+        
+        # Run recovery with a reasonable limit to avoid overwhelming the system on startup
+        results = await run_static_content_recovery(bot, limit=50)
+        
+        if results["successful_generations"] > 0:
+            logger.info(f"✅ STARTUP RECOVERY - Generated static content for {results['successful_generations']} existing closed polls")
+        
+        if results["failed_generations"] > 0:
+            logger.warning(f"⚠️ STARTUP RECOVERY - Failed to generate static content for {results['failed_generations']} polls")
+        
+        if results["polls_needing_static"] == 0:
+            logger.info("✅ STARTUP RECOVERY - All existing closed polls already have static content")
+        
+        logger.info(f"📊 STARTUP RECOVERY - Recovery complete: {results['successful_generations']}/{results['polls_needing_static']} polls processed")
+        
+    except Exception as e:
+        logger.error(f"❌ STARTUP RECOVERY - Error during static content recovery: {e}")
+        # Don't fail startup if recovery fails
+        logger.info("🔄 STARTUP RECOVERY - Continuing startup despite recovery failure")
 
     # Debug scheduler status
     if not scheduler:

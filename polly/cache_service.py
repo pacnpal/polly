@@ -198,6 +198,55 @@ class CacheService:
         cache_key = f"poll_results:{poll_id}"
         return await redis_client.cache_set(cache_key, results, self.poll_data_ttl)
 
+    # Static Content Caching
+    async def cache_static_page_status(self, poll_id: int, has_static: bool) -> bool:
+        """Cache whether a poll has static content available"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"static_page:{poll_id}"
+        # Cache for 7 days since closed polls don't change
+        return await redis_client.cache_set(cache_key, {"has_static": has_static}, 604800)
+
+    async def get_cached_static_page_status(self, poll_id: int) -> Optional[bool]:
+        """Get cached static page availability status"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return None
+
+        cache_key = f"static_page:{poll_id}"
+        result = await redis_client.cache_get(cache_key)
+        return result.get("has_static") if result else None
+
+    async def invalidate_static_page_status(self, poll_id: int) -> bool:
+        """Invalidate cached static page status"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"static_page:{poll_id}"
+        return await redis_client.cache_delete(cache_key)
+
+    async def cache_closed_poll_results(self, poll_id: int, results: Dict[str, Any]) -> bool:
+        """Cache closed poll results with extended TTL (7 days)"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"closed_poll_results:{poll_id}"
+        # 7 days TTL for closed polls since they don't change
+        return await redis_client.cache_set(cache_key, results, 604800)
+
+    async def get_cached_closed_poll_results(self, poll_id: int) -> Optional[Dict[str, Any]]:
+        """Get cached closed poll results"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return None
+
+        cache_key = f"closed_poll_results:{poll_id}"
+        return await redis_client.cache_get(cache_key)
+
     async def get_cached_poll_results(self, poll_id: int) -> Optional[Dict[str, Any]]:
         """Get cached poll results"""
         redis_client = await self._get_redis()

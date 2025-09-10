@@ -455,6 +455,74 @@ def add_core_routes(app: FastAPI):
 
     # Add HTMX endpoints
     add_htmx_routes(app)
+    
+    # Add static poll routes
+    add_static_poll_routes(app)
+
+
+def add_static_poll_routes(app: FastAPI):
+    """Add static poll page routes to serve cached content for closed polls"""
+    from .static_page_generator import get_static_page_generator
+    from fastapi.responses import FileResponse, JSONResponse
+    from pathlib import Path
+    
+    @app.get("/poll/{poll_id}/static", response_class=HTMLResponse)
+    async def serve_static_poll_details(poll_id: int):
+        """Serve static poll details page for closed polls"""
+        try:
+            generator = get_static_page_generator()
+            
+            # Check if static page exists
+            if generator.static_page_exists(poll_id, "details"):
+                static_path = generator._get_static_page_path(poll_id, "details")
+                
+                # Read and return the static HTML content
+                with open(static_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                return HTMLResponse(
+                    content=html_content,
+                    headers={
+                        "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                        "X-Static-Content": "true"
+                    }
+                )
+            else:
+                # Static page doesn't exist, return 404
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Static poll page not found")
+                
+        except Exception as e:
+            logger.error(f"Error serving static poll {poll_id}: {e}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail="Error loading static poll page")
+    
+    @app.get("/poll/{poll_id}/data.json")
+    async def serve_static_poll_data(poll_id: int):
+        """Serve static poll data JSON for closed polls"""
+        try:
+            generator = get_static_page_generator()
+            
+            # Check if static data exists
+            data_path = generator._get_static_data_path(poll_id)
+            if data_path.exists():
+                return FileResponse(
+                    path=str(data_path),
+                    media_type="application/json",
+                    headers={
+                        "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                        "X-Static-Content": "true"
+                    }
+                )
+            else:
+                # Static data doesn't exist, return 404
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Static poll data not found")
+                
+        except Exception as e:
+            logger.error(f"Error serving static poll data {poll_id}: {e}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail="Error loading static poll data")
 
 
 def add_htmx_routes(app: FastAPI):

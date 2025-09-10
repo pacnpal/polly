@@ -3457,7 +3457,7 @@ async def create_poll_htmx(
 async def get_poll_details_htmx(
     poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
-    """Get poll details view as HTML for HTMX"""
+    """Get poll details view as HTML for HTMX - redirects to static version for closed polls"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
     db = get_db_session()
     try:
@@ -3475,6 +3475,32 @@ async def get_poll_details_htmx(
                 {"request": request, "message": "Poll not found or access denied"},
             )
 
+        # Check if poll is closed and static content is available
+        poll_status = TypeSafeColumn.get_string(poll, "status")
+        if poll_status == "closed":
+            from .static_page_generator import get_static_page_generator
+            generator = get_static_page_generator()
+            
+            # Check if static page exists
+            if generator.static_page_exists(poll_id, "details"):
+                logger.info(f"🔄 STATIC REDIRECT - Redirecting poll {poll_id} details to static version")
+                # Return redirect response to static page
+                from fastapi.responses import RedirectResponse
+                return RedirectResponse(url=f"/poll/{poll_id}/static", status_code=302)
+            else:
+                # Static page doesn't exist yet, try to generate it
+                logger.info(f"🔧 STATIC GEN - Generating missing static content for closed poll {poll_id}")
+                try:
+                    success = await generator.regenerate_static_content_if_needed(poll_id)
+                    if success and generator.static_page_exists(poll_id, "details"):
+                        logger.info(f"✅ STATIC GEN - Successfully generated static content for poll {poll_id}")
+                        return RedirectResponse(url=f"/poll/{poll_id}/static", status_code=302)
+                    else:
+                        logger.warning(f"⚠️ STATIC GEN - Failed to generate static content for poll {poll_id}, serving dynamic")
+                except Exception as e:
+                    logger.error(f"❌ STATIC GEN - Error generating static content for poll {poll_id}: {e}")
+
+        # Serve dynamic content for active/scheduled polls or if static generation failed
         return templates.TemplateResponse(
             "htmx/poll_details.html",
             {

@@ -199,6 +199,47 @@ async def get_recovery_stats(
         )
 
 
+async def regenerate_static_content(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+) -> JSONResponse:
+    """Regenerate all static content for closed polls"""
+    try:
+        from .static_recovery import StaticContentRecovery
+        
+        recovery = StaticContentRecovery()
+        result = await recovery.regenerate_all_static_content()
+        
+        logger.info(f"Static content regeneration initiated by user {current_user.username}")
+        return JSONResponse(content=result)
+            
+    except Exception as e:
+        logger.error(f"Static content regeneration error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "success": False}
+        )
+
+
+async def get_static_content_stats(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+) -> JSONResponse:
+    """Get static content statistics"""
+    try:
+        from .static_recovery import StaticContentRecovery
+        
+        recovery = StaticContentRecovery()
+        stats = await recovery.get_static_content_stats()
+        
+        return JSONResponse(content={"success": True, "stats": stats})
+            
+    except Exception as e:
+        logger.error(f"Static content stats error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "success": False}
+        )
+
+
 def add_admin_routes(app):
     """Add admin routes to the FastAPI app"""
 
@@ -237,3 +278,15 @@ def add_admin_routes(app):
         request: Request, current_user: DiscordUser = Depends(require_auth)
     ):
         return await get_recovery_stats(request, current_user)
+
+    @app.post("/admin/static/regenerate")
+    async def admin_regenerate_static_content(
+        request: Request, current_user: DiscordUser = Depends(require_auth)
+    ):
+        return await regenerate_static_content(request, current_user)
+
+    @app.get("/admin/static/stats")
+    async def admin_static_content_stats(
+        request: Request, current_user: DiscordUser = Depends(require_auth)
+    ):
+        return await get_static_content_stats(request, current_user)
