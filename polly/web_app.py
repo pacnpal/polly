@@ -159,21 +159,28 @@ async def validate_and_consume_screenshot_token(token: str, poll_id: int) -> tup
     try:
         from .redis_client import get_redis_client
         
+        logger.info(f"🔐 SCREENSHOT TOKEN DEBUG - Starting validation for token {token[:16]}... poll {poll_id}")
+        
         # Get Redis client
         redis_client = await get_redis_client()
         if not redis_client.is_connected:
             logger.warning("🔐 SCREENSHOT TOKEN - Redis not available, checking fallback memory storage")
             return await validate_and_consume_screenshot_token_fallback(token, poll_id)
         
+        logger.info(f"🔐 SCREENSHOT TOKEN DEBUG - Redis connected successfully")
+        
         # Clean up expired tokens first
         await cleanup_expired_screenshot_tokens_redis(redis_client)
         
         # Check if token exists in Redis
         token_key = f"screenshot_token:{token}"
+        logger.info(f"🔐 SCREENSHOT TOKEN DEBUG - Looking for Redis key: {token_key}")
+        
         token_data = await redis_client.get(token_key)
+        logger.info(f"🔐 SCREENSHOT TOKEN DEBUG - Redis returned: {type(token_data)} - {token_data}")
         
         if not token_data or not isinstance(token_data, dict):
-            logger.warning(f"🔐 SCREENSHOT TOKEN - Invalid token attempted for poll {poll_id}")
+            logger.warning(f"🔐 SCREENSHOT TOKEN - Token not found in Redis for poll {poll_id}, checking fallback")
             # Also check fallback storage
             return await validate_and_consume_screenshot_token_fallback(token, poll_id)
         
