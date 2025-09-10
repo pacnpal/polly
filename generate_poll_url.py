@@ -48,7 +48,7 @@ async def generate_poll_url(poll_id: int, base_url: str = "https://polly.pacnp.a
         auth_url = f"{base_url}/screenshot/poll/{poll_id}/dashboard?token={token}"
         
         print(f"✅ POLL URL - Generated authenticated URL for poll {poll_id}")
-        print(f"🔐 POLL URL - Token expires in 5 minutes and is single-use only")
+        print("🔐 POLL URL - Token expires in 5 minutes and is single-use only")
         
         return auth_url
         

@@ -11,7 +11,6 @@ import os
 import secrets
 from datetime import datetime, timedelta
 import pytz
-from decouple import config
 
 # Add the project directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -124,7 +123,7 @@ async def generate_poll_url(poll_id: int, base_url: str = "https://polly.pacnp.a
         auth_url = f"{base_url}/screenshot/poll/{poll_id}/dashboard?token={token}"
         
         print(f"✅ POLL URL - Generated authenticated URL for poll {poll_id}")
-        print(f"🔐 POLL URL - Token expires in 5 minutes and is single-use only")
+        print("🔐 POLL URL - Token expires in 5 minutes and is single-use only")
         
         return auth_url
         
