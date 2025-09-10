@@ -31,7 +31,7 @@ intents.message_content = True
 intents.guilds = True
 intents.reactions = True
 
-bot = commands.Bot(command_prefix=None, intents=intents)
+bot = commands.Bot(command_prefix=lambda bot, message: None, intents=intents)
 
 
 @bot.event
