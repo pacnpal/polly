@@ -433,11 +433,11 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             # First, get the poll with all fields using a direct query to ensure all columns are loaded
             poll_data = db.execute(
                 text("""
-                    SELECT id, name, question, options, emojis, server_id, server_name, 
+                    SELECT id, name, question, options_json, emojis_json, server_id, server_name, 
                            channel_id, channel_name, open_time, close_time, timezone, 
                            anonymous, multiple_choice, ping_role_enabled, ping_role_id, 
                            ping_role_name, image_path, image_message_text, status, 
-                           message_id, creator_id, created_at, updated_at
+                           message_id, creator_id, created_at
                     FROM polls WHERE id = :poll_id
                 """),
                 {"poll_id": poll_id}
