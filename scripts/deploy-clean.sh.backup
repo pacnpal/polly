@@ -139,104 +139,65 @@ else
 fi
 
 echo ""
+print_status "🐳 Updating Docker containers..."
 
-# ========================================
-# PROACTIVE DOCKER CLEANUP - BEFORE BUILD
-# ========================================
-if [ "$CLEANUP_IMAGES" = true ]; then
-    print_status "🧹 Pre-deployment Docker cleanup to prevent errors..."
-    
-    # Stop containers first to free up references to images
-    print_status "🛑 Stopping containers to release image references..."
-    if [ "$REBUILD_ALL" = true ]; then
-        docker-compose down
-    else
-        docker-compose stop polly 2>/dev/null || true
-    fi
-    
-    # Remove any containers that might be referencing old images
-    DANGLING_CONTAINERS=$(docker ps -aq --filter "status=exited" --filter "status=created")
-    if [ -n "$DANGLING_CONTAINERS" ]; then
-        echo "$DANGLING_CONTAINERS" | xargs docker rm 2>/dev/null || true
-        print_status "Removed stopped/created containers"
-    fi
-    
-    # Clean up problematic and dangling images BEFORE building
-    print_status "🗑️  Removing dangling and problematic images..."
-    DANGLING_IMAGES=$(docker images -f 'dangling=true' -q)
-    if [ -n "$DANGLING_IMAGES" ]; then
-        echo "$DANGLING_IMAGES" | xargs docker rmi -f 2>/dev/null || true
-        print_status "Removed dangling images"
-    fi
-    
-    # Get the project name for targeted cleanup
-    PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]')
-    
-    # Remove old Polly images (keep only the most recent 1 to prevent conflicts)
-    print_status "🗑️  Removing old ${PROJECT_NAME}_polly images to prevent ContainerConfig errors..."
-    OLD_POLLY_IMAGES=$(docker images "${PROJECT_NAME}_polly" --format "table {{.ID}}\t{{.CreatedAt}}" | tail -n +2 | sort -k2 -r | tail -n +2 | awk '{print $1}')
-    
-    if [ -n "$OLD_POLLY_IMAGES" ]; then
-        echo "$OLD_POLLY_IMAGES" | xargs docker rmi -f 2>/dev/null || true
-        print_status "Removed old ${PROJECT_NAME}_polly images"
-    fi
-    
-    # Also clean up any <none>:<none> images that might be corrupted
-    NONE_IMAGES=$(docker images --filter "dangling=true" --filter "reference=*/*:*" -q)
-    if [ -n "$NONE_IMAGES" ]; then
-        echo "$NONE_IMAGES" | xargs docker rmi -f 2>/dev/null || true
-        print_status "Removed <none>:<none> images"
-    fi
-    
-    # Clean build cache before building
-    docker builder prune -f --filter="until=24h" 2>/dev/null || true
-    print_status "Cleaned build cache"
-    
-    if [ "$AGGRESSIVE_CLEANUP" = true ]; then
-        print_warning "🔥 Performing aggressive pre-build cleanup..."
-        # Remove all unused images (not just dangling)
-        docker image prune -af --filter="until=24h" 2>/dev/null || true
-        # Clean all build cache
-        docker builder prune -af 2>/dev/null || true
-        # Clean system (containers, networks, etc.)
-        docker system prune -f 2>/dev/null || true
-        print_warning "⚠️  Aggressive pre-build cleanup completed"
-    fi
-    
-    print_success "✅ Pre-deployment cleanup completed - ready for clean build"
-else
-    print_status "⏭️  Skipping Docker cleanup"
-fi
-
-echo ""
-print_status "🐳 Building and starting Docker containers..."
-
-# Deployment strategy - now with clean slate
+# Deployment strategy
 if [ "$REBUILD_ALL" = true ]; then
     print_status "🔄 Rebuilding all containers..."
+    docker-compose down
     docker-compose build --no-cache
     docker-compose up -d
     DEPLOYMENT_TYPE="Full rebuild"
 else
-    print_status "🔄 Building and starting Polly container..."
+    print_status "🔄 Updating Polly container only..."
+    docker-compose stop polly
     docker-compose build --no-cache polly
     docker-compose up -d
     DEPLOYMENT_TYPE="Polly update"
 fi
 
-# Post-deployment cleanup (lighter since we cleaned before)
+# Docker cleanup
 if [ "$CLEANUP_IMAGES" = true ]; then
     echo ""
-    print_status "🧹 Post-deployment cleanup..."
+    print_status "🧹 Cleaning up Docker images and cache..."
     
-    # Just remove any new dangling images created during build
+    # Basic cleanup - remove dangling images
     DANGLING_IMAGES=$(docker images -f 'dangling=true' -q)
     if [ -n "$DANGLING_IMAGES" ]; then
         echo "$DANGLING_IMAGES" | xargs docker rmi 2>/dev/null || true
-        print_status "Removed new dangling images"
+        print_status "Removed dangling images"
+    fi
+    
+    # Clean old Polly images (keep only latest 2 versions)
+    PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]')
+    OLD_POLLY_IMAGES=$(docker images "${PROJECT_NAME}-polly" --format "table {{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}" | tail -n +2 | sort -k3 -r | tail -n +3 | awk '{print $2}')
+    
+    if [ -n "$OLD_POLLY_IMAGES" ]; then
+        echo "$OLD_POLLY_IMAGES" | xargs docker rmi 2>/dev/null || true
+        print_status "Removed old Polly images"
+    fi
+    
+    # Clean build cache (keep recent layers)
+    docker builder prune -f --filter="until=24h" 2>/dev/null || true
+    
+    if [ "$AGGRESSIVE_CLEANUP" = true ]; then
+        print_warning "🔥 Performing aggressive cleanup..."
+        
+        # Remove all unused images (not just dangling)
+        docker image prune -af --filter="until=24h" 2>/dev/null || true
+        
+        # Clean all build cache
+        docker builder prune -af 2>/dev/null || true
+        
+        # Clean system (containers, networks, etc.)
+        docker system prune -f 2>/dev/null || true
+        
+        print_warning "⚠️  Aggressive cleanup completed - this may slow down future builds"
     fi
     
     print_success "✅ Docker cleanup completed"
+else
+    print_status "⏭️  Skipping Docker cleanup"
 fi
 
 # Wait for services and health checks
