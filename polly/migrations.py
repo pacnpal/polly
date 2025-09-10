@@ -96,6 +96,14 @@ class DatabaseMigrator:
                     "ALTER TABLE user_preferences ADD COLUMN timezone_explicitly_set BOOLEAN DEFAULT 0"
                 ],
             },
+            {
+                "version": 9,
+                "name": "add_open_immediately",
+                "description": "Add open_immediately column to support immediate poll opening",
+                "sql": [
+                    "ALTER TABLE polls ADD COLUMN open_immediately BOOLEAN DEFAULT 0"
+                ],
+            },
         ]
 
     def _get_initial_schema_sql(self) -> List[str]:

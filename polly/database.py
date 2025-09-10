@@ -104,6 +104,8 @@ class Poll(Base):
     anonymous = Column(Boolean, default=False)  # Hide results until poll ends
     # Allow multiple selections
     multiple_choice = Column(Boolean, default=False)
+    # Open poll immediately upon creation
+    open_immediately = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
     status = Column(String(20), default="scheduled")  # scheduled/active/closed
 

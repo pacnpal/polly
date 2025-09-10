@@ -366,53 +366,81 @@ class PollValidator:
 
     @staticmethod
     def validate_poll_timing(
-        open_time: datetime, close_time: datetime, timezone_str: str = "UTC"
+        open_time: datetime, close_time: datetime, timezone_str: str = "UTC", open_immediately: bool = False
     ) -> Tuple[datetime, datetime]:
         """Validate poll timing with comprehensive checks"""
-        if not isinstance(open_time, datetime) or not isinstance(close_time, datetime):
-            raise ValidationError("Invalid datetime format", "timing")
+        if not isinstance(close_time, datetime):
+            raise ValidationError("Invalid close time format", "timing")
 
-        # Ensure times are timezone-aware
-        if open_time.tzinfo is None:
-            tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
-            open_time = tz.localize(open_time)
+        # Handle immediate polls
+        if open_immediately:
+            # For immediate polls, set open time to current time
+            now = datetime.now(pytz.UTC)
+            open_utc = now.replace(second=0, microsecond=0)
+            
+            # Ensure close time is timezone-aware
+            if close_time.tzinfo is None:
+                tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
+                close_time = tz.localize(close_time)
+            
+            close_utc = close_time.astimezone(pytz.UTC)
+            
+            # Validate close time is in the future
+            min_close_time = now + timedelta(minutes=PollValidator.MIN_POLL_DURATION_MINUTES)
+            if close_utc <= min_close_time:
+                user_tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
+                suggested_time = min_close_time.astimezone(user_tz).strftime("%I:%M %p")
+                raise ValidationError(
+                    f"Poll must run for at least {PollValidator.MIN_POLL_DURATION_MINUTES} minutes. Try {suggested_time} or later for close time.",
+                    "close_time",
+                )
+        else:
+            # Regular scheduled polls
+            if not isinstance(open_time, datetime):
+                raise ValidationError("Invalid open time format", "timing")
 
-        if close_time.tzinfo is None:
-            tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
-            close_time = tz.localize(close_time)
+            # Ensure times are timezone-aware
+            if open_time.tzinfo is None:
+                tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
+                open_time = tz.localize(open_time)
 
-        # Convert to UTC for comparison
-        open_utc = open_time.astimezone(pytz.UTC)
-        close_utc = close_time.astimezone(pytz.UTC)
+            if close_time.tzinfo is None:
+                tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
+                close_time = tz.localize(close_time)
 
-        # Get current time with buffer for scheduling
-        now = datetime.now(pytz.UTC)
-        min_start_time = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            # Convert to UTC for comparison
+            open_utc = open_time.astimezone(pytz.UTC)
+            close_utc = close_time.astimezone(pytz.UTC)
 
-        # Validate open time is in the future
-        if open_utc < min_start_time:
-            user_tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
-            suggested_time = min_start_time.astimezone(user_tz).strftime("%I:%M %p")
-            raise ValidationError(
-                f"Poll must be scheduled for at least the next minute. Try {suggested_time} or later.",
-                "open_time",
-            )
+            # Get current time with buffer for scheduling
+            now = datetime.now(pytz.UTC)
+            min_start_time = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
 
-        # Validate close time is after open time
-        if close_utc <= open_utc:
-            raise ValidationError(
-                "Poll close time must be after open time", "close_time"
-            )
+            # Validate open time is in the future
+            if open_utc < min_start_time:
+                user_tz = pytz.timezone(PollValidator.validate_timezone(timezone_str))
+                suggested_time = min_start_time.astimezone(user_tz).strftime("%I:%M %p")
+                raise ValidationError(
+                    f"Poll must be scheduled for at least the next minute. Try {suggested_time} or later.",
+                    "open_time",
+                )
 
-        # Validate minimum duration
+            # Validate close time is after open time
+            if close_utc <= open_utc:
+                raise ValidationError(
+                    "Poll close time must be after open time", "close_time"
+                )
+
+            # Validate minimum duration
+            duration = close_utc - open_utc
+            if duration < timedelta(minutes=PollValidator.MIN_POLL_DURATION_MINUTES):
+                raise ValidationError(
+                    f"Poll must run for at least {PollValidator.MIN_POLL_DURATION_MINUTES} minutes",
+                    "timing",
+                )
+
+        # Validate maximum duration (applies to both immediate and scheduled polls)
         duration = close_utc - open_utc
-        if duration < timedelta(minutes=PollValidator.MIN_POLL_DURATION_MINUTES):
-            raise ValidationError(
-                f"Poll must run for at least {PollValidator.MIN_POLL_DURATION_MINUTES} minutes",
-                "timing",
-            )
-
-        # Validate maximum duration
         if duration > timedelta(days=PollValidator.MAX_POLL_DURATION_DAYS):
             raise ValidationError(
                 f"Poll cannot run for more than {PollValidator.MAX_POLL_DURATION_DAYS} days",
@@ -485,15 +513,27 @@ class PollValidator:
             # Validate timing
             open_time_raw = poll_data.get("open_time")
             close_time_raw = poll_data.get("close_time")
+            open_immediately = bool(poll_data.get("open_immediately", False))
 
-            if not open_time_raw or not close_time_raw:
-                raise ValidationError("Open time and close time are required", "timing")
+            # For immediate polls, open_time is not required
+            if not open_immediately and not open_time_raw:
+                raise ValidationError("Open time is required for scheduled polls", "open_time")
+            
+            if not close_time_raw:
+                raise ValidationError("Close time is required", "close_time")
 
-            open_time, close_time = PollValidator.validate_poll_timing(
-                open_time_raw, close_time_raw, validated_data["timezone"]
-            )
+            # For immediate polls, we don't need the raw open_time
+            if open_immediately:
+                open_time, close_time = PollValidator.validate_poll_timing(
+                    None, close_time_raw, validated_data["timezone"], open_immediately
+                )
+            else:
+                open_time, close_time = PollValidator.validate_poll_timing(
+                    open_time_raw, close_time_raw, validated_data["timezone"], open_immediately
+                )
             validated_data["open_time"] = open_time
             validated_data["close_time"] = close_time
+            validated_data["open_immediately"] = open_immediately
 
             # Validate emojis (CRITICAL FIX - this was missing!)
             # Try to get bot instance for emoji preparation

@@ -114,8 +114,19 @@
                 <emoji-picker></emoji-picker>
             </div>
 
+            <!-- Open Immediately Option -->
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="open-immediately" name="open_immediately" value="true">
+                    <label class="form-check-label" for="open-immediately">
+                        <i class="fas fa-play me-1"></i>Open Immediately
+                        <small class="text-muted d-block">Start the poll as soon as it's created</small>
+                    </label>
+                </div>
+            </div>
+
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-md-6" id="open-time-container">
                     <div class="mb-3">
                         <label for="open-time" class="form-label">Open Time <span class="text-danger">*</span></label>
                         <input type="datetime-local" data-emoji-input="unicode" class="form-control" id="open-time" name="open_time" value="{{ open_time }}" required>
@@ -868,6 +879,34 @@
                 roleSelectionContainer.style.display = 'block';
             } else {
                 roleSelectionContainer.style.display = 'none';
+            }
+        }
+
+        // Open Immediately checkbox functionality
+        const openImmediatelyCheckbox = document.getElementById('open-immediately');
+        const openTimeContainer = document.getElementById('open-time-container');
+        const openTimeInput = document.getElementById('open-time');
+        
+        if (openImmediatelyCheckbox && openTimeContainer && openTimeInput) {
+            // Show/hide open time field based on checkbox state
+            openImmediatelyCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    openTimeContainer.style.display = 'none';
+                    openTimeInput.removeAttribute('required');
+                    openTimeInput.value = ''; // Clear the value when hidden
+                } else {
+                    openTimeContainer.style.display = 'block';
+                    openTimeInput.setAttribute('required', 'required');
+                }
+            });
+            
+            // Initialize visibility based on current checkbox state
+            if (openImmediatelyCheckbox.checked) {
+                openTimeContainer.style.display = 'none';
+                openTimeInput.removeAttribute('required');
+            } else {
+                openTimeContainer.style.display = 'block';
+                openTimeInput.setAttribute('required', 'required');
             }
         }
 

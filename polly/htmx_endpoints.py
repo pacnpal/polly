@@ -2679,6 +2679,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     open_time = safe_get_form_data(form_data, "open_time")
     close_time = safe_get_form_data(form_data, "close_time")
     timezone_str = safe_get_form_data(form_data, "timezone", "US/Eastern")
+    open_immediately = form_data.get("open_immediately") == "true"
 
     # Validate poll name
     if not name or len(name.strip()) < 3:
@@ -2772,8 +2773,8 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     else:
         validated_data["options"] = options
 
-    # Validate times
-    if not open_time:
+    # Validate times - skip open_time validation if opening immediately
+    if not open_immediately and not open_time:
         validation_errors.append(
             {
                 "field_name": "Open Time",
@@ -2791,55 +2792,97 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
         )
     else:
         try:
-            # Parse times with timezone
-            open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
-            close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-
-            # Validate times
-            now = datetime.now(pytz.UTC)
-            next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-
-            if open_dt < next_minute:
-                user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
-                next_minute_local = next_minute.astimezone(user_tz)
-                suggested_time = next_minute_local.strftime("%I:%M %p")
-                validation_errors.append(
-                    {
-                        "field_name": "Open Time",
-                        "message": "Must be scheduled for at least the next minute",
-                        "suggestion": f"Try {suggested_time} or later to give the system time to process",
-                    }
-                )
-            elif close_dt <= open_dt:
-                validation_errors.append(
-                    {
-                        "field_name": "Close Time",
-                        "message": "Must be after the open time",
-                        "suggestion": "Make sure your poll runs for at least a few minutes so people can vote",
-                    }
-                )
-            else:
-                # Check minimum duration (1 minute)
-                duration = close_dt - open_dt
-                if duration < timedelta(minutes=1):
+            # Parse times with timezone - handle immediate vs scheduled polls
+            if open_immediately:
+                # For immediate polls, set open_time to current time and only validate close_time
+                now = datetime.now(pytz.UTC)
+                open_dt = now
+                close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+                
+                # Validate close time is in the future
+                if close_dt <= now:
+                    user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                    next_minute_local = (now + timedelta(minutes=1)).astimezone(user_tz)
+                    suggested_time = next_minute_local.strftime("%I:%M %p")
                     validation_errors.append(
                         {
-                            "field_name": "Poll Duration",
-                            "message": "Poll must run for at least 1 minute",
-                            "suggestion": "Give people time to see and respond to your poll",
-                        }
-                    )
-                elif duration > timedelta(days=30):
-                    validation_errors.append(
-                        {
-                            "field_name": "Poll Duration",
-                            "message": "Poll cannot run for more than 30 days",
-                            "suggestion": "Try a shorter duration to keep engagement high",
+                            "field_name": "Close Time",
+                            "message": "Must be in the future for immediate polls",
+                            "suggestion": f"Try {suggested_time} or later",
                         }
                     )
                 else:
-                    validated_data["open_time"] = open_dt
-                    validated_data["close_time"] = close_dt
+                    # Check minimum duration (1 minute)
+                    duration = close_dt - open_dt
+                    if duration < timedelta(minutes=1):
+                        validation_errors.append(
+                            {
+                                "field_name": "Poll Duration",
+                                "message": "Poll must run for at least 1 minute",
+                                "suggestion": "Give people time to see and respond to your poll",
+                            }
+                        )
+                    elif duration > timedelta(days=30):
+                        validation_errors.append(
+                            {
+                                "field_name": "Poll Duration",
+                                "message": "Poll cannot run for more than 30 days",
+                                "suggestion": "Try a shorter duration to keep engagement high",
+                            }
+                        )
+                    else:
+                        validated_data["open_time"] = open_dt
+                        validated_data["close_time"] = close_dt
+            else:
+                # For scheduled polls, validate both times normally
+                open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
+                close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
+
+                # Validate times
+                now = datetime.now(pytz.UTC)
+                next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+                if open_dt < next_minute:
+                    user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                    next_minute_local = next_minute.astimezone(user_tz)
+                    suggested_time = next_minute_local.strftime("%I:%M %p")
+                    validation_errors.append(
+                        {
+                            "field_name": "Open Time",
+                            "message": "Must be scheduled for at least the next minute",
+                            "suggestion": f"Try {suggested_time} or later to give the system time to process",
+                        }
+                    )
+                elif close_dt <= open_dt:
+                    validation_errors.append(
+                        {
+                            "field_name": "Close Time",
+                            "message": "Must be after the open time",
+                            "suggestion": "Make sure your poll runs for at least a few minutes so people can vote",
+                        }
+                    )
+                else:
+                    # Check minimum duration (1 minute)
+                    duration = close_dt - open_dt
+                    if duration < timedelta(minutes=1):
+                        validation_errors.append(
+                            {
+                                "field_name": "Poll Duration",
+                                "message": "Poll must run for at least 1 minute",
+                                "suggestion": "Give people time to see and respond to your poll",
+                            }
+                        )
+                    elif duration > timedelta(days=30):
+                        validation_errors.append(
+                            {
+                                "field_name": "Poll Duration",
+                                "message": "Poll cannot run for more than 30 days",
+                                "suggestion": "Try a shorter duration to keep engagement high",
+                            }
+                        )
+                    else:
+                        validated_data["open_time"] = open_dt
+                        validated_data["close_time"] = close_dt
         except Exception:
             validation_errors.append(
                 {
@@ -2874,6 +2917,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     validated_data["image_message_text"] = safe_get_form_data(
         form_data, "image_message_text", ""
     )
+    validated_data["open_immediately"] = open_immediately
 
     is_valid = len(validation_errors) == 0
     return is_valid, validation_errors, validated_data
@@ -3010,6 +3054,9 @@ async def create_poll_htmx(
         else:
             logger.info(f"🔔 ROLE PING DEBUG - Role ping is disabled or no role ID provided")
 
+        # Extract open_immediately flag
+        open_immediately = validated_data["open_immediately"]
+
         # Prepare poll data for bulletproof operations
         poll_data = {
             "name": name,
@@ -3027,6 +3074,7 @@ async def create_poll_htmx(
             "ping_role_id": ping_role_id,
             "ping_role_name": ping_role_name,
             "creator_id": current_user.id,
+            "open_immediately": open_immediately,
         }
 
         # Handle image file

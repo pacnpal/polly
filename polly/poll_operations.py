@@ -330,11 +330,31 @@ class BulletproofPollOperations:
                     "step": "database",
                 }
 
-            # STEP 5: All polls are scheduled only - no immediate posting
+            # STEP 5: Handle immediate vs scheduled polls
             open_time = validated_data["open_time"]
-            logger.info(
-                f"Step 5: Poll scheduled for {open_time}, will be posted by scheduler"
-            )
+            open_immediately = validated_data.get("open_immediately", False)
+            
+            if open_immediately:
+                # For immediate polls, set status to active and post immediately
+                logger.info("Step 5: Poll set to open immediately, updating status to active")
+                try:
+                    db = get_db_session()
+                    try:
+                        poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                        if poll:
+                            setattr(poll, "status", "active")
+                            db.commit()
+                            logger.info(f"Poll {poll_id} status updated to active for immediate opening")
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.error(f"Failed to update poll status to active: {e}")
+                    # Don't fail the entire operation for this
+            else:
+                # Regular scheduled polls
+                logger.info(
+                    f"Step 5: Poll scheduled for {open_time}, will be posted by scheduler"
+                )
             # Image message text is already stored in the database during poll creation
 
             # STEP 6: Final Database Update

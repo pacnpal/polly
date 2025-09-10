@@ -28,6 +28,7 @@ class PollJSONValidator:
         "ping_role_enabled",
         "ping_role_id",
         "image_message_text",
+        "open_immediately",
     ]
 
     @staticmethod
@@ -169,6 +170,12 @@ class PollJSONValidator:
             elif len(data["image_message_text"].strip()) > 2000:
                 warnings.append(
                     "Field 'image_message_text' must be less than 2000 characters - clearing image message"
+                )
+
+        if "open_immediately" in data and data["open_immediately"] is not None:
+            if not isinstance(data["open_immediately"], bool):
+                warnings.append(
+                    "Field 'open_immediately' must be a boolean (true/false) - setting to false"
                 )
 
         # Validate time fields - these generate warnings and get reset to defaults
@@ -371,6 +378,13 @@ class PollJSONValidator:
                 processed_data["image_message_text"] = text
             else:
                 processed_data["image_message_text"] = ""
+
+        # Process open_immediately - reset if warnings indicate issues
+        open_immediately_warnings = [w for w in warnings if "open_immediately" in w.lower()]
+        if open_immediately_warnings or not isinstance(data.get("open_immediately"), bool):
+            processed_data["open_immediately"] = False
+        else:
+            processed_data["open_immediately"] = data.get("open_immediately", False)
 
         # Process times - reset if warnings indicate issues
         time_warnings = [w for w in warnings if "time" in w.lower()]
