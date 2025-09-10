@@ -140,8 +140,8 @@ class StaticPageGenerator:
                 unique_voters = len(unique_users)
                 results = poll.get_results()
                 
-                # Generate static HTML using the new template
-                template = self.jinja_env.get_template("static/poll_details_static.html")
+                # Generate static HTML using the component template
+                template = self.jinja_env.get_template("static/poll_details_static_component.html")
                 html_content = template.render(
                     poll=poll,
                     vote_data=vote_data,
