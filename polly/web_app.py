@@ -467,27 +467,104 @@ def add_static_poll_routes(app: FastAPI):
     
     @app.get("/poll/{poll_id}/static", response_class=HTMLResponse)
     async def serve_static_poll_details(poll_id: int):
-        """Serve static poll details page for closed polls"""
+        """Serve static poll details page for closed polls with proper HTML wrapper"""
         try:
             generator = get_static_page_generator()
             
-            # Check if static page exists
-            if generator.static_page_exists(poll_id, "details"):
-                static_path = generator._get_static_page_path(poll_id, "details")
+            # Check if static data exists
+            data_path = generator._get_static_data_path(poll_id)
+            if data_path.exists():
+                # Load the static data
+                import json
+                with open(data_path, 'r', encoding='utf-8') as f:
+                    poll_data = json.load(f)
                 
-                # Read and return the static HTML content
-                with open(static_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
+                # Render the component template with proper HTML wrapper
+                component_html = generator.jinja_env.get_template("static/poll_details_static_component.html").render(**poll_data)
+                
+                # Create full HTML page with proper structure
+                poll_name = poll_data.get('poll', {}).get('name', 'Poll Results')
+                full_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{poll_name} - Static Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/polly-custom.css" rel="stylesheet">
+    <style>
+        .poll-status-closed {{
+            background-color: #dc3545 !important;
+        }}
+        .progress-bar-height {{
+            height: 20px;
+        }}
+        .progress-bar-small {{
+            height: 15px;
+        }}
+        .avatar-small {{
+            width: 24px;
+            height: 24px;
+        }}
+        .avatar-placeholder {{
+            width: 24px;
+            height: 24px;
+            font-size: 10px;
+        }}
+        .text-truncate-150 {{
+            max-width: 150px;
+        }}
+        .table-scroll-container {{
+            max-height: 400px;
+            overflow-y: auto;
+        }}
+        .table-col-narrow {{ width: 5%; }}
+        .table-col-medium {{ width: 15%; }}
+        .table-col-wide {{ width: 20%; }}
+        .table-col-wider {{ width: 25%; }}
+        .table-col-widest {{ width: 35%; }}
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid mt-3">
+        <!-- Static Page Header -->
+        <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <i class="fas fa-archive me-2"></i>
+                <strong>Static Poll Results</strong> - This page contains final results with no live updates.
+            </div>
+            <span class="badge bg-primary">
+                <i class="fas fa-file-alt me-1"></i>Static Content
+            </span>
+        </div>
+        
+        {component_html}
+        
+        <!-- Footer -->
+        <div class="text-center mt-4 mb-3">
+            <div class="alert alert-light">
+                <small class="text-muted">
+                    <i class="fas fa-info-circle me-1"></i>
+                    This static page contains final poll results and requires no API calls or live updates.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>"""
                 
                 return HTMLResponse(
-                    content=html_content,
+                    content=full_html,
                     headers={
                         "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
                         "X-Static-Content": "true"
                     }
                 )
             else:
-                # Static page doesn't exist, return 404
+                # Static data doesn't exist, return 404
                 from fastapi import HTTPException
                 raise HTTPException(status_code=404, detail="Static poll page not found")
                 
