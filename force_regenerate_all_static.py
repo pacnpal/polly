@@ -99,7 +99,7 @@ async def force_regenerate_all_static():
         if success_count > 0:
             try:
                 image_stats = await generator.get_image_storage_stats()
-                print(f"\n🖼️ IMAGE COMPRESSION - Statistics:")
+                print("\n🖼️ IMAGE COMPRESSION - Statistics:")
                 print(f"📊 Total storage: {image_stats['total_storage_mb']:.1f}MB")
                 print(f"🔗 Shared images: {image_stats['shared_images']['count']} files ({image_stats['shared_images']['total_size_mb']:.1f}MB)")
                 print(f"📁 Poll-specific images: {image_stats['poll_specific_images']['count']} files ({image_stats['poll_specific_images']['total_size_mb']:.1f}MB)")

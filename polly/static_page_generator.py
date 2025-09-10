@@ -7,7 +7,6 @@ import json
 import logging
 import shutil
 import hashlib
-import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -861,7 +860,7 @@ class StaticPageGenerator:
                     # Additional wait for Discord avatars and dynamic content
                     await page.wait_for_timeout(2000)
                     
-                    logger.info(f"📸 SCREENSHOT - Capturing full page screenshot")
+                    logger.info("📸 SCREENSHOT - Capturing full page screenshot")
                     
                     # Capture full page screenshot
                     screenshot_bytes = await page.screenshot(
