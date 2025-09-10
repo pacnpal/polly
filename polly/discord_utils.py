@@ -424,20 +424,59 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             f"🚀 POSTING POLL {poll_id} - Starting post_poll_to_channel (from poll_id)"
         )
 
-        # Fetch poll from database
+        # Fetch poll from database with explicit field loading
         db = get_db_session()
         try:
             from sqlalchemy.orm import joinedload
+            from sqlalchemy import text
 
+            # First, get the poll with all fields using a direct query to ensure all columns are loaded
+            poll_data = db.execute(
+                text("""
+                    SELECT id, name, question, options, emojis, server_id, server_name, 
+                           channel_id, channel_name, open_time, close_time, timezone, 
+                           anonymous, multiple_choice, ping_role_enabled, ping_role_id, 
+                           ping_role_name, image_path, image_message_text, status, 
+                           message_id, creator_id, created_at, updated_at
+                    FROM polls WHERE id = :poll_id
+                """),
+                {"poll_id": poll_id}
+            ).fetchone()
+            
+            if not poll_data:
+                logger.error(f"❌ POSTING POLL {poll_id} - Poll not found in database")
+                return {"success": False, "error": "Poll not found in database"}
+            
+            # Now get the ORM object with votes loaded
             poll = (
                 db.query(Poll)
                 .options(joinedload(Poll.votes))
                 .filter(Poll.id == poll_id)
                 .first()
             )
+            
             if not poll:
-                logger.error(f"❌ POSTING POLL {poll_id} - Poll not found in database")
-                return {"success": False, "error": "Poll not found in database"}
+                logger.error(f"❌ POSTING POLL {poll_id} - Poll ORM object not found")
+                return {"success": False, "error": "Poll ORM object not found"}
+            
+            # Ensure role ping data is correctly set from the direct query
+            if poll_data:
+                logger.info(f"🔔 ROLE PING INITIAL LOAD - Direct query results:")
+                logger.info(f"🔔 ROLE PING INITIAL LOAD - ping_role_enabled: {poll_data.ping_role_enabled}")
+                logger.info(f"🔔 ROLE PING INITIAL LOAD - ping_role_id: {poll_data.ping_role_id}")
+                logger.info(f"🔔 ROLE PING INITIAL LOAD - ping_role_name: {poll_data.ping_role_name}")
+                
+                # Force set the role ping attributes from the direct query to ensure they're correct
+                if poll_data.ping_role_enabled and poll_data.ping_role_id:
+                    setattr(poll, "ping_role_enabled", bool(poll_data.ping_role_enabled))
+                    setattr(poll, "ping_role_id", poll_data.ping_role_id)
+                    setattr(poll, "ping_role_name", poll_data.ping_role_name)
+                    logger.info(f"🔔 ROLE PING INITIAL LOAD - ✅ Forced role ping data from direct query")
+                else:
+                    logger.info(f"🔔 ROLE PING INITIAL LOAD - No role ping data in direct query")
+            else:
+                logger.error(f"🔔 ROLE PING INITIAL LOAD - poll_data is None")
+                
         except Exception as e:
             logger.error(
                 f"❌ POSTING POLL {poll_id} - Error fetching poll from database: {e}"

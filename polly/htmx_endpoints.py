@@ -222,7 +222,7 @@ def validate_emoji(emoji_text: str) -> tuple[bool, str]:
 def validate_and_normalize_timezone(timezone_str: str) -> str:
     """Validate and normalize timezone string, handling EDT/EST issues"""
     if not timezone_str:
-        return "UTC"
+        return "US/Eastern"  # Default to Eastern instead of UTC
 
     # Handle common timezone aliases and server timezone issues
     timezone_mapping = {
@@ -249,11 +249,11 @@ def validate_and_normalize_timezone(timezone_str: str) -> str:
         pytz.timezone(timezone_str)
         return timezone_str
     except pytz.UnknownTimeZoneError:
-        logger.warning(f"Unknown timezone '{timezone_str}', defaulting to UTC")
-        return "UTC"
+        logger.warning(f"Unknown timezone '{timezone_str}', defaulting to US/Eastern")
+        return "US/Eastern"  # Default to Eastern instead of UTC
     except Exception as e:
         logger.error(f"Error validating timezone '{timezone_str}': {e}")
-        return "UTC"
+        return "US/Eastern"  # Default to Eastern instead of UTC
 
 
 def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> datetime:
@@ -2678,7 +2678,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     channel_id = safe_get_form_data(form_data, "channel_id")
     open_time = safe_get_form_data(form_data, "open_time")
     close_time = safe_get_form_data(form_data, "close_time")
-    timezone_str = safe_get_form_data(form_data, "timezone", "UTC")
+    timezone_str = safe_get_form_data(form_data, "timezone", "US/Eastern")
 
     # Validate poll name
     if not name or len(name.strip()) < 3:
@@ -2930,6 +2930,10 @@ async def create_poll_htmx(
             logger.info(
                 f"Poll creation validation failed for user {current_user.id}: {len(validation_errors)} errors"
             )
+            # Log each validation error for debugging
+            for i, error in enumerate(validation_errors):
+                logger.error(f"Validation error {i + 1}: {error}")
+                print(f"🔍 VALIDATION ERROR {i + 1}: {error}")
             # Return a 400 status code to trigger client-side validation
             from fastapi import HTTPException
 
