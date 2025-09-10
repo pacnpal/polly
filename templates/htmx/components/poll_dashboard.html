@@ -56,8 +56,8 @@
         <div class="row mb-4">
             {% for i in range(options|length) %}
             {% set option_votes = results.get(i, 0) %}
-            {% set percentage = (option_votes / total_votes * 100) if total_votes &gt; 0 else 0 %}
-            {% set emoji = emojis[i] if i &lt; emojis|length else "🇦" %}
+            {% set percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0 %}
+            {% set emoji = emojis[i] if i < emojis|length else "🇦" %}
             <div class="col-md-6 mb-3">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <span><strong>{{ emoji }} {{ options[i]|e }}</strong></span>

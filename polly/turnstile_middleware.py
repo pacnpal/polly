@@ -192,5 +192,9 @@ class TurnstileSecurityMiddleware(BaseHTTPMiddleware):
 
         except Exception as e:
             # Don't crash on security middleware errors
-            logger.error(f"Turnstile middleware error: {e}")
+            try:
+                err_msg = str(e)
+            except Exception:
+                err_msg = "<unprintable exception>"
+            logger.error(f"Turnstile middleware error: {err_msg}")
             return await call_next(request)
