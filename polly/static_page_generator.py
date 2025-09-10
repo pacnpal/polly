@@ -140,7 +140,7 @@ class StaticPageGenerator:
                 unique_voters = len(unique_users)
                 results = poll.get_results()
                 
-                # Generate static HTML using the new template
+                # Generate static HTML using the new component template
                 template = self.jinja_env.get_template("static/poll_details_static.html")
                 html_content = template.render(
                     poll=poll,
@@ -340,7 +340,7 @@ class StaticPageGenerator:
         
         return results
         
-    def static_page_exists(self, poll_id: int, page_type: str = "results") -> bool:
+    def static_page_exists(self, poll_id: int, page_type: str = "details") -> bool:
         """Check if a static page exists for a poll"""
         static_path = self._get_static_page_path(poll_id, page_type)
         return static_path.exists()
@@ -429,11 +429,10 @@ class StaticPageGenerator:
                     return False
                     
                 # Check if any static files are missing
-                results_exists = self.static_page_exists(poll_id, "results")
-                dashboard_exists = self.static_page_exists(poll_id, "dashboard")
+                details_exists = self.static_page_exists(poll_id, "details")
                 data_exists = self._get_static_data_path(poll_id).exists()
                 
-                if not (results_exists and dashboard_exists and data_exists):
+                if not (details_exists and data_exists):
                     logger.info(f"🔄 STATIC GEN - Regenerating missing static content for poll {poll_id}")
                     results = await self.generate_all_static_content(poll_id, bot)
                     return all(results.values())
@@ -446,6 +445,149 @@ class StaticPageGenerator:
         except Exception as e:
             logger.error(f"❌ STATIC GEN - Error checking/regenerating static content for poll {poll_id}: {e}")
             return False
+
+    def _is_static_page_component_compatible(self, poll_id: int, page_type: str = "details") -> bool:
+        """Check if existing static page uses the new component-based template"""
+        try:
+            static_path = self._get_static_page_path(poll_id, page_type)
+            if not static_path.exists():
+                return False
+                
+            # Read the static file and check for component indicators
+            with open(static_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Check for new component system indicators
+            component_indicators = [
+                'class="container-fluid"',  # New component structure
+                'is_static=True',  # Static page indicator
+                'No Live Updates',  # Static page messaging
+                'Generated at:'  # Static generation timestamp
+            ]
+            
+            # Check for old standalone indicators that should NOT be present
+            standalone_indicators = [
+                '<!DOCTYPE html>',  # Full HTML document
+                '<html',  # HTML tag
+                '<head>',  # Head section
+                '<body>'  # Body section
+            ]
+            
+            has_component_indicators = any(indicator in content for indicator in component_indicators)
+            has_standalone_indicators = any(indicator in content for indicator in standalone_indicators)
+            
+            # Compatible if it has component indicators and no standalone indicators
+            is_compatible = has_component_indicators and not has_standalone_indicators
+            
+            logger.info(f"📄 STATIC CHECK - Poll {poll_id} {page_type} page compatibility: {is_compatible} (component: {has_component_indicators}, standalone: {has_standalone_indicators})")
+            return is_compatible
+            
+        except Exception as e:
+            logger.error(f"❌ STATIC CHECK - Error checking compatibility for poll {poll_id} {page_type}: {e}")
+            return False
+
+    async def force_regenerate_incompatible_static_pages(self, bot=None) -> Dict[str, Any]:
+        """Force regeneration of all static pages that are not compatible with the new component system"""
+        try:
+            logger.info("🔄 STATIC FORCE - Starting forced regeneration of incompatible static pages")
+            
+            db = get_db_session()
+            try:
+                # Get all closed polls
+                closed_polls = db.query(Poll).filter(Poll.status == "closed").all()
+                
+                results = {
+                    "total_polls": len(closed_polls),
+                    "checked": 0,
+                    "incompatible": 0,
+                    "regenerated": 0,
+                    "failed": 0,
+                    "details": []
+                }
+                
+                for poll in closed_polls:
+                    poll_id = poll.id
+                    results["checked"] += 1
+                    
+                    try:
+                        # Check if details page exists and is compatible
+                        details_exists = self.static_page_exists(poll_id, "details")
+                        details_compatible = self._is_static_page_component_compatible(poll_id, "details") if details_exists else False
+                        
+                        # Check if data file exists
+                        data_exists = self._get_static_data_path(poll_id).exists()
+                        
+                        needs_regeneration = False
+                        reasons = []
+                        
+                        if not details_exists:
+                            needs_regeneration = True
+                            reasons.append("details page missing")
+                        elif not details_compatible:
+                            needs_regeneration = True
+                            reasons.append("details page incompatible with component system")
+                            
+                        if not data_exists:
+                            needs_regeneration = True
+                            reasons.append("data file missing")
+                        
+                        if needs_regeneration:
+                            results["incompatible"] += 1
+                            logger.info(f"🔄 STATIC FORCE - Poll {poll_id} needs regeneration: {', '.join(reasons)}")
+                            
+                            # Force regeneration
+                            generation_results = await self.generate_all_static_content(poll_id, bot)
+                            
+                            if all(generation_results.values()):
+                                results["regenerated"] += 1
+                                logger.info(f"✅ STATIC FORCE - Successfully regenerated poll {poll_id}")
+                                results["details"].append({
+                                    "poll_id": poll_id,
+                                    "status": "success",
+                                    "reasons": reasons
+                                })
+                            else:
+                                results["failed"] += 1
+                                logger.error(f"❌ STATIC FORCE - Failed to regenerate poll {poll_id}")
+                                results["details"].append({
+                                    "poll_id": poll_id,
+                                    "status": "failed",
+                                    "reasons": reasons,
+                                    "generation_results": generation_results
+                                })
+                        else:
+                            logger.info(f"✅ STATIC FORCE - Poll {poll_id} is already compatible")
+                            results["details"].append({
+                                "poll_id": poll_id,
+                                "status": "already_compatible"
+                            })
+                            
+                    except Exception as e:
+                        results["failed"] += 1
+                        logger.error(f"❌ STATIC FORCE - Error processing poll {poll_id}: {e}")
+                        results["details"].append({
+                            "poll_id": poll_id,
+                            "status": "error",
+                            "error": str(e)
+                        })
+                
+                logger.info(f"🏁 STATIC FORCE - Completed: {results['checked']} checked, {results['incompatible']} incompatible, {results['regenerated']} regenerated, {results['failed']} failed")
+                return results
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"❌ STATIC FORCE - Error during forced regeneration: {e}")
+            return {
+                "error": str(e),
+                "total_polls": 0,
+                "checked": 0,
+                "incompatible": 0,
+                "regenerated": 0,
+                "failed": 0,
+                "details": []
+            }
 
     def _calculate_file_hash(self, file_path: Path) -> str:
         """Calculate SHA-256 hash of a file for deduplication"""

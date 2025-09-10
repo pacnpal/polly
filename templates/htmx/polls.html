@@ -270,31 +270,7 @@
     </div>
 </div>
 
-<!-- Real-time Poll Updates Container -->
-<div id="polls-realtime-container"
-     hx-get="/htmx/polls-realtime{% if current_filter %}?filter={{ current_filter }}{% endif %}"
-     hx-trigger="load, every 5s"
-     hx-swap="innerHTML">
-    <!-- Real-time poll data will be loaded here -->
-
-    <!-- Fallback content for when no polls exist or there's an error -->
-    {% if error %}
-    <div class="col-12 text-center">
-        <div class="alert alert-warning">
-            <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
-        </div>
-        <button type="button" class="btn btn-primary" hx-get="/htmx/polls" hx-target="#main-content">
-            <i class="fas fa-refresh me-1"></i>Retry
-        </button>
-    </div>
-    {% elif not polls %}
-    <div class="col-12 text-center">
-        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-        <h5 class="text-muted">No polls yet</h5>
-        <p class="text-muted">Create your first poll to get started!</p>
-        <button type="button" class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
-            <i class="fas fa-plus me-1"></i>Create Poll
-        </button>
-    </div>
-    {% endif %}
+<!-- Static Poll Cards Container (no real-time updates on main listing) -->
+<div id="polls-static-container">
+    {% include 'htmx/components/poll_cards_content.html' %}
 </div>
