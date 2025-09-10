@@ -163,8 +163,43 @@ async def start_background_tasks():
     # Start background tasks
     # Note: Automatic bot owner notifications are initialized in discord_bot.py after bot is ready
     asyncio.create_task(start_scheduler())
-    asyncio.create_task(start_bot())
+    bot_task = asyncio.create_task(start_bot())
     asyncio.create_task(start_reaction_safeguard())
+    
+    # Start comprehensive recovery after bot is ready
+    asyncio.create_task(start_recovery_process(bot_task))
+
+
+async def start_recovery_process(bot_task):
+    """Start the recovery process after bot is ready"""
+    try:
+        # Wait for bot to start
+        await bot_task
+        
+        # Give bot a moment to fully initialize
+        await asyncio.sleep(3)
+        
+        # Get bot instance and perform recovery
+        from .discord_bot import get_bot_instance
+        bot = get_bot_instance()
+        
+        if bot and bot.is_ready():
+            logger.info("🔄 Starting comprehensive recovery process")
+            
+            # Import here to avoid circular imports
+            from .recovery_manager import perform_startup_recovery
+            recovery_result = await perform_startup_recovery(bot)
+            
+            if recovery_result["success"]:
+                logger.info(f"✅ Recovery completed successfully: {recovery_result['message']}")
+                logger.info(f"📊 Recovery stats: {recovery_result['stats']}")
+            else:
+                logger.error(f"❌ Recovery failed: {recovery_result.get('message', 'Unknown error')}")
+        else:
+            logger.warning("⚠️ Bot not ready for recovery process")
+            
+    except Exception as e:
+        logger.error(f"❌ Recovery process failed: {e}")
 
 
 async def shutdown_background_tasks():

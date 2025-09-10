@@ -111,6 +111,94 @@ async def get_system_health(
         return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
 
 
+async def manual_full_recovery(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+) -> JSONResponse:
+    """Manual full recovery endpoint for administrators"""
+    try:
+        from .discord_bot import get_bot_instance
+        from .recovery_manager import perform_startup_recovery
+        
+        bot = get_bot_instance()
+        if not bot or not bot.is_ready():
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Discord bot is not ready", "success": False}
+            )
+        
+        logger.info(f"Manual full recovery initiated by user {current_user.username}")
+        recovery_result = await perform_startup_recovery(bot)
+        
+        if recovery_result["success"]:
+            logger.info(f"Manual recovery completed successfully by {current_user.username}")
+            return JSONResponse(content=recovery_result)
+        else:
+            logger.error(f"Manual recovery failed for {current_user.username}: {recovery_result.get('error')}")
+            return JSONResponse(status_code=500, content=recovery_result)
+            
+    except Exception as e:
+        logger.error(f"Manual recovery endpoint error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "success": False}
+        )
+
+
+async def recover_specific_poll(
+    poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
+) -> JSONResponse:
+    """Recover a specific poll by ID"""
+    try:
+        from .discord_bot import get_bot_instance
+        from .recovery_manager import recover_poll
+        
+        bot = get_bot_instance()
+        if not bot or not bot.is_ready():
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Discord bot is not ready", "success": False}
+            )
+        
+        logger.info(f"Manual poll recovery for poll {poll_id} initiated by user {current_user.username}")
+        recovery_result = await recover_poll(bot, poll_id)
+        
+        if recovery_result["success"]:
+            logger.info(f"Poll {poll_id} recovery completed successfully by {current_user.username}")
+            return JSONResponse(content=recovery_result)
+        else:
+            logger.error(f"Poll {poll_id} recovery failed for {current_user.username}: {recovery_result.get('error')}")
+            return JSONResponse(status_code=500, content=recovery_result)
+            
+    except Exception as e:
+        logger.error(f"Poll recovery endpoint error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "success": False}
+        )
+
+
+async def get_recovery_stats(
+    request: Request, current_user: DiscordUser = Depends(require_auth)
+) -> JSONResponse:
+    """Get current recovery statistics"""
+    try:
+        from .recovery_manager import get_recovery_manager
+        
+        recovery_manager = get_recovery_manager()
+        if recovery_manager:
+            stats = recovery_manager.get_recovery_stats()
+            return JSONResponse(content={"success": True, "stats": stats})
+        else:
+            return JSONResponse(content={"success": True, "stats": {}, "message": "Recovery manager not initialized"})
+            
+    except Exception as e:
+        logger.error(f"Recovery stats endpoint error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "success": False}
+        )
+
+
 def add_admin_routes(app):
     """Add admin routes to the FastAPI app"""
 
@@ -131,3 +219,21 @@ def add_admin_routes(app):
         request: Request, current_user: DiscordUser = Depends(require_auth)
     ):
         return await get_system_health(request, current_user)
+
+    @app.post("/admin/recovery/full")
+    async def admin_manual_full_recovery(
+        request: Request, current_user: DiscordUser = Depends(require_auth)
+    ):
+        return await manual_full_recovery(request, current_user)
+
+    @app.post("/admin/recovery/poll/{poll_id}")
+    async def admin_recover_specific_poll(
+        poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
+    ):
+        return await recover_specific_poll(poll_id, request, current_user)
+
+    @app.get("/admin/recovery/stats")
+    async def admin_recovery_stats(
+        request: Request, current_user: DiscordUser = Depends(require_auth)
+    ):
+        return await get_recovery_stats(request, current_user)
