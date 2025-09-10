@@ -702,10 +702,25 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        from .htmx_endpoints import export_poll_csv
-
-        bot = get_bot_instance()
-        return await export_poll_csv(poll_id, request, bot, current_user)
+        logger.info(f"🔍 CSV Export Route Called - poll_id: {poll_id}, user: {current_user.username}")
+        logger.info(f"🔍 Request URL: {request.url}")
+        logger.info(f"🔍 Request method: {request.method}")
+        
+        try:
+            from .htmx_endpoints import export_poll_csv
+            logger.info(f"🔍 Successfully imported export_poll_csv function")
+            
+            bot = get_bot_instance()
+            logger.info(f"🔍 Bot instance obtained: {bot is not None}")
+            
+            logger.info(f"🔍 Calling export_poll_csv function...")
+            result = await export_poll_csv(poll_id, request, bot, current_user)
+            logger.info(f"🔍 CSV export function completed successfully")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ CSV Export Route Error: {e}", exc_info=True)
+            raise
 
 
 # Create the app instance
