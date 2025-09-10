@@ -466,7 +466,7 @@ def add_static_poll_routes(app: FastAPI):
     from fastapi.responses import FileResponse
     
     @app.get("/poll/{poll_id}/static", response_class=HTMLResponse)
-    async def serve_static_poll_details(poll_id: int):
+    async def serve_static_poll_details(poll_id: int, request: Request):
         """Serve static poll details page for closed polls using proper template"""
         try:
             from .database import Poll, Vote, TypeSafeColumn
@@ -538,6 +538,7 @@ def add_static_poll_routes(app: FastAPI):
                 response = templates.TemplateResponse(
                     "static/poll_details_static_wrapper.html",
                     {
+                        "request": request,  # Required by FastAPI templates
                         "poll": poll,
                         "vote_data": vote_data,
                         "total_votes": total_votes,
