@@ -628,26 +628,38 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_id: {refreshed_ping_role_id}")
             logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_name: {refreshed_ping_role_name}")
             
-            # If role ping data is missing from refreshed poll but was present in original, restore it
-            if (original_ping_role_enabled and not refreshed_ping_role_enabled) or \
-               (original_ping_role_id and not refreshed_ping_role_id):
-                logger.warning(f"🔔 ROLE PING FIX - Role ping data lost during refresh, restoring from original")
-                logger.warning(f"🔔 ROLE PING FIX - Restoring: enabled={original_ping_role_enabled}, id={original_ping_role_id}, name={original_ping_role_name}")
+            # CRITICAL FIX: The issue is that the original poll object being passed to this function
+            # already has False/None values, which means the problem is earlier in the chain.
+            # Let's force a direct database query to get the actual stored values
+            logger.info(f"🔔 ROLE PING FIX - Performing direct database query to verify stored values")
+            
+            # Query the database directly to see what's actually stored
+            from sqlalchemy import text
+            db_poll_data = db.execute(
+                text("SELECT ping_role_enabled, ping_role_id, ping_role_name FROM polls WHERE id = :poll_id"),
+                {"poll_id": original_poll_id}
+            ).fetchone()
+            
+            if db_poll_data:
+                db_ping_role_enabled, db_ping_role_id, db_ping_role_name = db_poll_data
+                logger.info(f"🔔 ROLE PING FIX - Direct DB query results:")
+                logger.info(f"🔔 ROLE PING FIX - db_ping_role_enabled: {db_ping_role_enabled}")
+                logger.info(f"🔔 ROLE PING FIX - db_ping_role_id: {db_ping_role_id}")
+                logger.info(f"🔔 ROLE PING FIX - db_ping_role_name: {db_ping_role_name}")
                 
-                # Restore the role ping data to the refreshed poll object
-                setattr(poll, "ping_role_enabled", original_ping_role_enabled)
-                setattr(poll, "ping_role_id", original_ping_role_id)
-                setattr(poll, "ping_role_name", original_ping_role_name)
-                
-                # Commit the restored data to database
-                try:
-                    db.commit()
-                    logger.info(f"🔔 ROLE PING FIX - Successfully restored and committed role ping data")
-                except Exception as commit_error:
-                    logger.error(f"🔔 ROLE PING FIX - Failed to commit restored role ping data: {commit_error}")
-                    db.rollback()
+                # Use the direct database values if they exist
+                if db_ping_role_enabled and db_ping_role_id:
+                    logger.info(f"🔔 ROLE PING FIX - Using direct database values for role ping")
+                    setattr(poll, "ping_role_enabled", bool(db_ping_role_enabled))
+                    setattr(poll, "ping_role_id", db_ping_role_id)
+                    setattr(poll, "ping_role_name", db_ping_role_name)
+                    
+                    logger.info(f"🔔 ROLE PING FIX - ✅ Successfully restored role ping data from direct DB query")
+                    logger.info(f"🔔 ROLE PING FIX - Final values: enabled={bool(db_ping_role_enabled)}, id={db_ping_role_id}, name={db_ping_role_name}")
+                else:
+                    logger.info(f"🔔 ROLE PING FIX - Direct DB query shows no role ping data stored")
             else:
-                logger.info(f"🔔 ROLE PING FIX - Role ping data preserved correctly after refresh")
+                logger.error(f"🔔 ROLE PING FIX - Direct DB query returned no results for poll {original_poll_id}")
             
             logger.debug(
                 f"✅ POSTING POLL {getattr(poll, 'id', 'unknown')} - Successfully refreshed poll from database"
