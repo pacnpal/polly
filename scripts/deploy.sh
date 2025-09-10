@@ -87,9 +87,9 @@ if [ ! -d ".git" ] && [ "$SKIP_GIT" = false ]; then
     exit 1
 fi
 
-# Check if docker-compose.yml exists
-if [ ! -f "docker-compose.yml" ]; then
-    print_error "docker-compose.yml not found! Make sure you're in the project root."
+# Check if docker compose.yml exists
+if [ ! -f "docker compose.yml" ]; then
+    print_error "docker compose.yml not found! Make sure you're in the project root."
     exit 1
 fi
 
@@ -170,22 +170,22 @@ print_status "🐳 Updating Docker containers..."
 
 # Show current container status
 print_status "Current container status:"
-docker-compose ps
+docker compose ps
 
 echo ""
 
 # Deployment strategy
 if [ "$REBUILD_ALL" = true ]; then
     print_status "🔄 Rebuilding all containers..."
-    docker-compose down
-    docker-compose build --no-cache
-    docker-compose up -d
+    docker compose down
+    docker compose build --no-cache
+    docker compose up -d
     DEPLOYMENT_TYPE="Full rebuild"
 else
     print_status "🔄 Updating Polly container only (Redis will remain unchanged)..."
-    docker-compose stop polly
-    docker-compose build --no-cache polly
-    docker-compose up -d
+    docker compose stop polly
+    docker compose build --no-cache polly
+    docker compose up -d
     DEPLOYMENT_TYPE="Polly update"
 fi
 
@@ -198,14 +198,14 @@ print_status "🩺 Running health checks..."
 
 # Check Redis
 REDIS_STATUS="❌ Down"
-if docker-compose ps redis | grep -q "Up"; then
+if docker compose ps redis | grep -q "Up"; then
     REDIS_STATUS="✅ Running"
 fi
 
 # Check Polly
 POLLY_STATUS="❌ Down"
 POLLY_HEALTH="❌ Unhealthy"
-if docker-compose ps polly | grep -q "Up"; then
+if docker compose ps polly | grep -q "Up"; then
     POLLY_STATUS="✅ Running"
     
     # Test health endpoint
@@ -240,12 +240,12 @@ echo "Health: $POLLY_HEALTH"
 # Show final container status
 echo ""
 print_status "📋 Final container status:"
-docker-compose ps
+docker compose ps
 
 echo ""
 print_status "💡 Useful post-deployment commands:"
-echo "  docker-compose logs -f polly    # Follow Polly logs"
-echo "  docker-compose logs -f          # Follow all logs" 
+echo "  docker compose logs -f polly    # Follow Polly logs"
+echo "  docker compose logs -f          # Follow all logs" 
 echo "  make status                     # Check detailed status"
 echo "  curl http://localhost:8000/health # Manual health check"
 
@@ -255,7 +255,7 @@ read -p "🔍 Show recent Polly logs? (y/N): " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     print_status "Recent Polly logs:"
-    docker-compose logs --tail=20 polly
+    docker compose logs --tail=20 polly
 fi
 
 print_success "🚀 Deployment complete! Polly is ready to serve requests."

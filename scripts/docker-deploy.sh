@@ -102,25 +102,25 @@ fi
 
 # Stop services first
 print_status "Stopping existing containers..."
-docker-compose down
+docker compose down
 
 if [ "$SKIP_BUILD" = true ]; then
     print_status "Starting containers without building..."
-    docker-compose up -d
+    docker compose up -d
 else
     # Build and start services based on options
     if [ "$REBUILD_ALL" = true ]; then
         print_status "Building all containers..."
-        docker-compose build --no-cache
-        docker-compose up -d
+        docker compose build --no-cache
+        docker compose up -d
     elif [ "$REBUILD_POLLY" = true ]; then
         print_status "Building only Polly container..."
-        docker-compose build --no-cache polly
-        docker-compose up -d
+        docker compose build --no-cache polly
+        docker compose up -d
     elif [ "$REBUILD_REDIS" = true ]; then
         print_status "Building only Redis container (pulling latest image)..."
-        docker-compose pull redis
-        docker-compose up -d
+        docker compose pull redis
+        docker compose up -d
     fi
 fi
 
@@ -132,14 +132,14 @@ sleep 5
 print_status "Checking service health..."
 
 # Check Redis
-if docker-compose ps redis | grep -q "Up"; then
+if docker compose ps redis | grep -q "Up"; then
     print_success "✅ Redis container is running"
 else
     print_error "❌ Redis container is not running"
 fi
 
 # Check Polly
-if docker-compose ps polly | grep -q "Up"; then
+if docker compose ps polly | grep -q "Up"; then
     print_success "✅ Polly container is running"
     
     # Test health endpoint
@@ -157,10 +157,10 @@ fi
 
 print_success "🎉 Deployment completed!"
 print_status "You can check logs with:"
-echo "  docker-compose logs -f polly    # Polly logs"
-echo "  docker-compose logs -f redis    # Redis logs"
-echo "  docker-compose logs -f          # All logs"
+echo "  docker compose logs -f polly    # Polly logs"
+echo "  docker compose logs -f redis    # Redis logs"
+echo "  docker compose logs -f          # All logs"
 
 print_status "You can check status with:"
-echo "  docker-compose ps              # Container status"
-echo "  docker-compose top             # Process status"
+echo "  docker compose ps              # Container status"
+echo "  docker compose top             # Process status"

@@ -19,9 +19,9 @@ git pull
 
 # Update container
 echo "🐳 Updating Polly container..."
-docker-compose stop polly
-docker-compose build --no-cache polly
-docker-compose up -d
+docker compose stop polly
+docker compose build --no-cache polly
+docker compose up -d
 
 # Quick health check
 echo "🩺 Health check..."
@@ -29,5 +29,5 @@ sleep 5
 if curl -f -s http://localhost:8000/health > /dev/null; then
     echo "✅ Update complete! Polly is healthy and ready."
 else
-    echo "⚠️  Update complete but health check failed. Check logs with: docker-compose logs polly"
+    echo "⚠️  Update complete but health check failed. Check logs with: docker compose logs polly"
 fi

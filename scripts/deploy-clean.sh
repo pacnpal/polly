@@ -149,9 +149,9 @@ if [ "$CLEANUP_IMAGES" = true ]; then
     # Stop containers first to free up references to images
     print_status "🛑 Stopping containers to release image references..."
     if [ "$REBUILD_ALL" = true ]; then
-        docker-compose down
+        docker compose down
     else
-        docker-compose stop polly 2>/dev/null || true
+        docker compose stop polly 2>/dev/null || true
     fi
     
     # Remove any containers that might be referencing old images
@@ -214,13 +214,13 @@ print_status "🐳 Building and starting Docker containers..."
 # Deployment strategy - now with clean slate
 if [ "$REBUILD_ALL" = true ]; then
     print_status "🔄 Rebuilding all containers..."
-    docker-compose build --no-cache
-    docker-compose up -d
+    docker compose build --no-cache
+    docker compose up -d
     DEPLOYMENT_TYPE="Full rebuild"
 else
     print_status "🔄 Building and starting Polly container..."
-    docker-compose build --no-cache polly
-    docker-compose up -d
+    docker compose build --no-cache polly
+    docker compose up -d
     DEPLOYMENT_TYPE="Polly update"
 fi
 
@@ -274,6 +274,6 @@ echo "Image cleanup: $([ "$CLEANUP_IMAGES" = true ] && echo "✅ Enabled" || ech
 echo "Polly health: $([ "$POLLY_HEALTHY" = true ] && echo "✅ Healthy" || echo "❌ Check logs")"
 
 print_status "Container status:"
-docker-compose ps
+docker compose ps
 
 print_success "🚀 Deployment complete!"
