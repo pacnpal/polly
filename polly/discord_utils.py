@@ -790,7 +790,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             role_id = str(getattr(poll, "ping_role_id"))
             role_name = str(getattr(poll, "ping_role_name", "Unknown Role"))
             message_content = (
-                f"<@&{role_id}> 📊 **Poll '{getattr(poll, 'name', '')}' is now open!**"
+                f"<@&{role_id}> 📊 **Vote now!**"
             )
             role_ping_attempted = True
             logger.info(
