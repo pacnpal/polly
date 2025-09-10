@@ -42,18 +42,20 @@ async def force_regenerate_all_static():
             print(f"\n🔧 FORCE REGENERATE - Processing poll {poll_id}: '{poll_name}'")
             
             try:
-                # Force regenerate static content
-                success = await generator.generate_static_poll_details(poll_id)
+                # Force regenerate all static content with image compression
+                results = await generator.generate_all_static_content(poll_id)
                 
-                if success:
-                    print(f"✅ FORCE REGENERATE - Successfully generated static content for poll {poll_id}")
+                if all(results.values()):
+                    print(f"✅ FORCE REGENERATE - Successfully generated all static content for poll {poll_id}")
                     success_count += 1
                     
-                    # Verify the file was created
+                    # Verify the files were created
                     static_path = generator._get_static_page_path(poll_id, "details")
+                    data_path = generator._get_static_data_path(poll_id)
+                    
                     if static_path.exists():
                         file_size = static_path.stat().st_size
-                        print(f"📁 FORCE REGENERATE - Static file created: {static_path} ({file_size} bytes)")
+                        print(f"📁 FORCE REGENERATE - Static HTML created: {static_path} ({file_size} bytes)")
                         
                         # Check content preview
                         with open(static_path, 'r', encoding='utf-8') as f:
@@ -65,10 +67,21 @@ async def force_regenerate_all_static():
                         else:
                             print(f"⚠️ FORCE REGENERATE - Warning: poll {poll_id} may not be in component format")
                     else:
-                        print(f"❌ FORCE REGENERATE - Static file not found after generation for poll {poll_id}")
+                        print(f"❌ FORCE REGENERATE - Static HTML file not found after generation for poll {poll_id}")
                         error_count += 1
+                        
+                    if data_path.exists():
+                        data_size = data_path.stat().st_size
+                        print(f"📁 FORCE REGENERATE - Static JSON created: {data_path} ({data_size} bytes)")
+                    else:
+                        print(f"❌ FORCE REGENERATE - Static JSON file not found after generation for poll {poll_id}")
+                        
+                    # Show image processing results
+                    if results.get("details_page"):
+                        print(f"🖼️ FORCE REGENERATE - Images processed and compressed for poll {poll_id}")
                 else:
-                    print(f"❌ FORCE REGENERATE - Failed to generate static content for poll {poll_id}")
+                    failed_components = [k for k, v in results.items() if not v]
+                    print(f"❌ FORCE REGENERATE - Failed to generate some static content for poll {poll_id}: {failed_components}")
                     error_count += 1
                     
             except Exception as e:
@@ -82,8 +95,24 @@ async def force_regenerate_all_static():
         print(f"❌ Errors: {error_count} polls")
         print(f"📊 Total closed polls: {len(closed_polls)}")
         
+        # Get image storage statistics
         if success_count > 0:
-            print(f"\n🎉 FORCE REGENERATE - Successfully regenerated {success_count} static poll components!")
+            try:
+                image_stats = await generator.get_image_storage_stats()
+                print(f"\n🖼️ IMAGE COMPRESSION - Statistics:")
+                print(f"📊 Total storage: {image_stats['total_storage_mb']:.1f}MB")
+                print(f"🔗 Shared images: {image_stats['shared_images']['count']} files ({image_stats['shared_images']['total_size_mb']:.1f}MB)")
+                print(f"📁 Poll-specific images: {image_stats['poll_specific_images']['count']} files ({image_stats['poll_specific_images']['total_size_mb']:.1f}MB)")
+                print(f"♻️ Deduplication: {'Enabled' if image_stats['deduplication_enabled'] else 'Disabled'}")
+                print(f"📏 Max image size: {image_stats['max_image_size_mb']}MB")
+                
+                if image_stats['shared_images']['formats']:
+                    print(f"🎨 Image formats: {', '.join(f'{ext}({count})' for ext, count in image_stats['shared_images']['formats'].items())}")
+                    
+            except Exception as e:
+                print(f"⚠️ IMAGE COMPRESSION - Could not get statistics: {e}")
+            
+            print(f"\n🎉 FORCE REGENERATE - Successfully regenerated {success_count} static poll components with image compression!")
         
         if error_count > 0:
             print(f"\n⚠️ FORCE REGENERATE - {error_count} polls had errors during regeneration")

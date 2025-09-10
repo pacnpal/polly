@@ -66,10 +66,13 @@ class StaticPageGenerator:
         
         # Image compression settings
         self.enable_compression = PIL_AVAILABLE  # Enable compression if PIL is available
-        self.compression_quality = 85  # JPEG quality (1-100)
-        self.max_width = 1920  # Maximum width for images
-        self.max_height = 1080  # Maximum height for images
+        self.compression_quality = 80  # JPEG quality (1-100) - reduced for better compression
+        self.max_width = 1200  # Maximum width for images - reduced for web optimization
+        self.max_height = 800  # Maximum height for images - reduced for web optimization
         self.png_optimize = True  # Optimize PNG files
+        self.webp_quality = 85  # WebP quality for modern browsers
+        self.enable_webp_conversion = True  # Convert images to WebP when possible
+        self.progressive_jpeg = True  # Enable progressive JPEG for better loading
         
         # Dashboard screenshot settings
         self.enable_dashboard_screenshots = PLAYWRIGHT_AVAILABLE  # Enable dashboard screenshots if Playwright is available
@@ -318,7 +321,7 @@ class StaticPageGenerator:
                     "results": poll.get_results(),
                     "is_anonymous": TypeSafeColumn.get_bool(poll, "anonymous", False),
                     "multiple_choice": TypeSafeColumn.get_bool(poll, "multiple_choice", False),
-                    "close_time": TypeSafeColumn.get_datetime(poll, "close_time").isoformat() if TypeSafeColumn.get_datetime(poll, "close_time") else None,
+                    "close_time": TypeSafeColumn.get_datetime(poll, "close_time").isoformat() if TypeSafeColumn.get_datetime(poll, "close_time") is not None else None,
                     "generated_at": datetime.now().isoformat(),
                     "is_static": True
                 }
@@ -520,9 +523,16 @@ class StaticPageGenerator:
             # Generate filename with hash for deduplication
             file_extension = source_path.suffix.lower()
             
-            # For compressed images, use .jpg extension for better compression
-            if self.enable_compression and PIL_AVAILABLE and file_extension in ['.png', '.bmp', '.tiff']:
-                compressed_extension = '.jpg'
+            # Determine optimal output format for compression
+            if self.enable_compression and PIL_AVAILABLE:
+                if self.enable_webp_conversion and file_extension in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff']:
+                    # WebP provides best compression for most images
+                    compressed_extension = '.webp'
+                elif file_extension in ['.png', '.bmp', '.tiff']:
+                    # Convert to JPEG for better compression of non-transparent images
+                    compressed_extension = '.jpg'
+                else:
+                    compressed_extension = file_extension
             else:
                 compressed_extension = file_extension
                 
@@ -569,7 +579,7 @@ class StaticPageGenerator:
 
     async def _compress_and_copy_image(self, source_path: Path, dest_path: Path, original_extension: str) -> bool:
         """
-        Compress and resize image using PIL/Pillow
+        Enhanced image compression with WebP support and better optimization
         
         Returns: True if successful, False if failed
         """
@@ -579,41 +589,77 @@ class StaticPageGenerator:
         try:
             # Open image
             with Image.open(source_path) as img:
-                # Convert RGBA to RGB for JPEG compatibility
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    # Create white background for transparency
-                    background = Image.new('RGB', img.size, (255, 255, 255))
+                # Handle transparency for different formats
+                has_transparency = img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info)
+                
+                # Convert image mode for optimal compression
+                if self.enable_webp_conversion and dest_path.suffix.lower() == '.webp':
+                    # WebP supports transparency, keep RGBA if needed
                     if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                    img = background
-                elif img.mode not in ('RGB', 'L'):
-                    img = img.convert('RGB')
+                        img = img.convert('RGBA' if has_transparency else 'RGB')
+                    elif img.mode not in ('RGBA', 'RGB', 'L'):
+                        img = img.convert('RGBA' if has_transparency else 'RGB')
+                elif dest_path.suffix.lower() in ['.jpg', '.jpeg']:
+                    # JPEG doesn't support transparency, convert to RGB with white background
+                    if has_transparency:
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                        img = background
+                    elif img.mode not in ('RGB', 'L'):
+                        img = img.convert('RGB')
+                elif dest_path.suffix.lower() == '.png':
+                    # PNG supports transparency, preserve it
+                    if img.mode == 'P':
+                        img = img.convert('RGBA' if has_transparency else 'RGB')
+                    elif img.mode not in ('RGBA', 'RGB', 'L'):
+                        img = img.convert('RGBA' if has_transparency else 'RGB')
                 
                 # Auto-orient image based on EXIF data
-                img = ImageOps.exif_transpose(img)
+                if PIL_AVAILABLE:
+                    img = ImageOps.exif_transpose(img)
                 
                 # Resize if image is too large
                 original_size = img.size
                 if img.width > self.max_width or img.height > self.max_height:
+                    # Use high-quality resampling
                     img.thumbnail((self.max_width, self.max_height), Image.Resampling.LANCZOS)
                     logger.info(f"📏 IMAGE RESIZE - Resized from {original_size} to {img.size}")
                 
-                # Determine save format and options
-                save_format = 'JPEG'
-                save_options = {
-                    'quality': self.compression_quality,
-                    'optimize': True,
-                    'progressive': True
-                }
+                # Determine save format and options based on destination extension
+                dest_extension = dest_path.suffix.lower()
                 
-                # Handle PNG optimization
-                if original_extension.lower() == '.png' and dest_path.suffix.lower() == '.png':
+                if dest_extension == '.webp' and self.enable_webp_conversion:
+                    # WebP format - excellent compression with quality
+                    save_format = 'WebP'
+                    save_options = {
+                        'quality': self.webp_quality,
+                        'method': 6,  # Compression method (0-6, higher = better compression)
+                        'lossless': False,  # Use lossy compression for better file size
+                        'optimize': True
+                    }
+                elif dest_extension in ['.jpg', '.jpeg']:
+                    # JPEG format - good compression for photos
+                    save_format = 'JPEG'
+                    save_options = {
+                        'quality': self.compression_quality,
+                        'optimize': True,
+                        'progressive': self.progressive_jpeg,
+                        'subsampling': 0,  # Better quality subsampling
+                        'qtables': 'web_high'  # Optimized quantization tables
+                    }
+                elif dest_extension == '.png':
+                    # PNG format - lossless with optimization
                     save_format = 'PNG'
                     save_options = {
                         'optimize': self.png_optimize,
-                        'compress_level': 6  # PNG compression level (0-9)
+                        'compress_level': 9  # Maximum PNG compression (0-9)
                     }
+                else:
+                    # Fallback to original format
+                    save_format = img.format or 'JPEG'
+                    save_options = {'optimize': True}
                 
                 # Save compressed image
                 img.save(dest_path, format=save_format, **save_options)
