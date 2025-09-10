@@ -3475,45 +3475,79 @@ async def get_poll_details_htmx(
                 {"request": request, "message": "Poll not found or access denied"},
             )
 
-        # Check if poll is closed and serve static component
+        # Check if poll is closed and serve static component within dashboard
         poll_status = TypeSafeColumn.get_string(poll, "status")
         if poll_status == "closed":
-            from .static_page_generator import get_static_page_generator
-            generator = get_static_page_generator()
+            logger.info(f"📄 STATIC SERVE - Serving static component for closed poll {poll_id} within dashboard")
             
-            # Check if static component exists
-            if generator.static_page_exists(poll_id, "details"):
-                logger.info(f"📄 STATIC SERVE - Serving static component for closed poll {poll_id}")
-                # Read and return the static component directly
+            # Get the data needed for the static component template
+            # This replicates the data that would be in the static file
+            votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
+            
+            # Prepare vote data (anonymized for static pages)
+            vote_data = []
+            unique_users = set()
+            
+            for vote in votes:
                 try:
-                    static_path = generator._get_static_page_path(poll_id, "details")
-                    with open(static_path, 'r', encoding='utf-8') as f:
-                        static_content = f.read()
+                    user_id = TypeSafeColumn.get_string(vote, "user_id")
+                    option_index = TypeSafeColumn.get_int(vote, "option_index")
+                    voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
                     
-                    from fastapi.responses import HTMLResponse
-                    return HTMLResponse(content=static_content)
-                except Exception as e:
-                    logger.error(f"❌ STATIC SERVE - Error reading static content for poll {poll_id}: {e}")
-            else:
-                # Static component doesn't exist yet, try to generate it
-                logger.info(f"🔧 STATIC GEN - Generating missing static content for closed poll {poll_id}")
-                try:
-                    success = await generator.regenerate_static_content_if_needed(poll_id)
-                    if success and generator.static_page_exists(poll_id, "details"):
-                        logger.info(f"✅ STATIC GEN - Successfully generated static content for poll {poll_id}")
-                        # Read and return the newly generated static component
-                        static_path = generator._get_static_page_path(poll_id, "details")
-                        with open(static_path, 'r', encoding='utf-8') as f:
-                            static_content = f.read()
-                        
-                        from fastapi.responses import HTMLResponse
-                        return HTMLResponse(content=static_content)
+                    # For static pages, always anonymize usernames for privacy
+                    if user_id not in unique_users:
+                        username = f"User {len(unique_users) + 1}"
                     else:
-                        logger.warning(f"⚠️ STATIC GEN - Failed to generate static content for poll {poll_id}, serving dynamic")
+                        username = f"User {list(unique_users).index(user_id) + 1}"
+                    
+                    # Get option details
+                    options = poll.options
+                    emojis = poll.emojis
+                    option_text = options[option_index] if option_index < len(options) else "Unknown Option"
+                    emoji = emojis[option_index] if option_index < len(emojis) else "📊"
+                    
+                    vote_data.append({
+                        "username": username,
+                        "option_index": option_index,
+                        "option_text": option_text,
+                        "emoji": emoji,
+                        "voted_at": voted_at,
+                        "is_unique": user_id not in unique_users
+                    })
+                    
+                    unique_users.add(user_id)
+                    
                 except Exception as e:
-                    logger.error(f"❌ STATIC GEN - Error generating static content for poll {poll_id}: {e}")
+                    logger.error(f"Error processing vote data: {e}")
+                    continue
+            
+            # Get poll data
+            options = poll.options
+            emojis = poll.emojis
+            is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
+            total_votes = len(votes)
+            unique_voters = len(unique_users)
+            results = poll.get_results()
+            
+            # Serve the static component template with the data
+            return templates.TemplateResponse(
+                "static/poll_details_static_component.html",
+                {
+                    "request": request,
+                    "poll": poll,
+                    "vote_data": vote_data,
+                    "total_votes": total_votes,
+                    "unique_voters": unique_voters,
+                    "results": results,
+                    "options": options,
+                    "emojis": emojis,
+                    "is_anonymous": is_anonymous,
+                    "generated_at": datetime.now(),
+                    "is_static": True
+                }
+            )
 
-        # Serve dynamic content for active/scheduled polls or if static generation failed
+        # Serve dynamic content for active/scheduled polls
         return templates.TemplateResponse(
             "htmx/poll_details.html",
             {
@@ -4284,11 +4318,7 @@ async def export_poll_csv(
 
         # CSV content ready for response
         # Return CSV as a file download
-        try:
-            from fastapi.responses import Response
-        except Exception:
-            # Fallback import (should not happen in FastAPI context)
-            pass
+        from fastapi.responses import Response
 
         headers = {
             "Content-Disposition": f'attachment; filename="{filename}"',
