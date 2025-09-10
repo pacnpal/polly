@@ -406,6 +406,163 @@ def get_user_preferences(user_id: str) -> dict:
         db.close()
 
 
+async def close_poll_htmx(
+    poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)
+):
+    """Close an active poll via HTMX"""
+    logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
+    db = get_db_session()
+    try:
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
+        if not poll:
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Poll not found or access denied"},
+            )
+
+        if TypeSafeColumn.get_string(poll, "status") != "active":
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Only active polls can be closed"},
+            )
+
+        # Extract poll data before closing for role ping notification
+        poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
+        ping_role_enabled = TypeSafeColumn.get_bool(poll, "ping_role_enabled", False)
+        ping_role_id = TypeSafeColumn.get_string(poll, "ping_role_id")
+        ping_role_name = TypeSafeColumn.get_string(poll, "ping_role_name", "Unknown Role")
+        channel_id = TypeSafeColumn.get_string(poll, "channel_id")
+        ping_role_on_update = TypeSafeColumn.get_bool(poll, "ping_role_on_update", False)
+        ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
+
+        # Update poll status to closed
+        setattr(poll, "status", "closed")
+        setattr(poll, "updated_at", datetime.now(pytz.UTC))
+        db.commit()
+
+        logger.info(f"Poll {poll_id} closed by user {current_user.id}")
+
+        # Send role ping notification if enabled
+        if ping_role_enabled and ping_role_id and bot and channel_id and ping_role_on_close:
+            try:
+                import discord
+                channel = bot.get_channel(int(channel_id))
+                if channel and isinstance(channel, discord.TextChannel):
+                    logger.info(f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure")
+                    
+                    # Send role ping notification for manual poll closure
+                    try:
+                        message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has been manually closed!**"
+                        await channel.send(content=message_content)
+                        logger.info(f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure")
+                    except discord.Forbidden:
+                        # Role ping failed due to permissions, send without role ping
+                        logger.warning(f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}")
+                        try:
+                            fallback_content = f"📊 **Poll '{poll_name}' has been manually closed!**"
+                            await channel.send(content=fallback_content)
+                            logger.info(f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}")
+                        except Exception as fallback_error:
+                            logger.error(f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}")
+            except Exception as ping_error:
+                logger.error(f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}")
+
+        return templates.TemplateResponse(
+            "htmx/components/alert_success.html",
+            {
+                "request": request,
+                "message": "Poll closed successfully! Redirecting to polls...",
+                "redirect_url": "/htmx/polls",
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Error closing poll {poll_id}: {e}")
+        db.rollback()
+        return templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": f"Error closing poll: {str(e)}"},
+        )
+    finally:
+        db.close()
+
+
+async def open_poll_now_htmx(
+    poll_id: int, request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)
+):
+    """Open a scheduled poll immediately via HTMX"""
+    logger.info(f"User {current_user.id} requesting to open poll {poll_id} immediately")
+    db = get_db_session()
+    try:
+        poll = (
+            db.query(Poll)
+            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+            .first()
+        )
+        if not poll:
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Poll not found or access denied"},
+            )
+
+        if TypeSafeColumn.get_string(poll, "status") != "scheduled":
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Only scheduled polls can be opened immediately"},
+            )
+
+        # Update poll status to active and set open time to now
+        setattr(poll, "status", "active")
+        setattr(poll, "open_time", datetime.now(pytz.UTC))
+        setattr(poll, "updated_at", datetime.now(pytz.UTC))
+        db.commit()
+
+        # Remove the scheduled opening job
+        try:
+            scheduler.remove_job(f"open_poll_{poll_id}")
+            logger.info(f"Removed scheduled opening job for poll {poll_id}")
+        except Exception as e:
+            logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
+
+        # Post the poll to Discord immediately
+        try:
+            from .discord_utils import post_poll_to_channel
+            await post_poll_to_channel(bot, poll_id)
+            logger.info(f"Poll {poll_id} opened immediately by user {current_user.id}")
+        except Exception as e:
+            logger.error(f"Error posting poll {poll_id} to Discord: {e}")
+            # Revert status change if posting failed
+            setattr(poll, "status", "scheduled")
+            db.commit()
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Error posting poll to Discord"},
+            )
+
+        return templates.TemplateResponse(
+            "htmx/components/alert_success.html",
+            {
+                "request": request,
+                "message": "Poll opened successfully! Redirecting to polls...",
+                "redirect_url": "/htmx/polls",
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Error opening poll {poll_id} immediately: {e}")
+        db.rollback()
+        return templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": f"Error opening poll: {str(e)}"},
+        )
+    finally:
+        db.close()
+
+
 def get_priority_timezone_for_user(user_id: str) -> str:
     """Get timezone for new poll creation based on priority system:
     1. Last poll preference (highest priority)
