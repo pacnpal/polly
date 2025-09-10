@@ -22,3 +22,4 @@ uv.lock
 tests/polly.db
 polly.db
 static/polls/
+static/images/
