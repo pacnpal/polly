@@ -295,6 +295,10 @@ class BulletproofPollOperations:
                         timezone=validated_data["timezone"],
                         anonymous=validated_data["anonymous"],
                         multiple_choice=validated_data.get("multiple_choice", False),
+                        # Add role ping fields
+                        ping_role_enabled=validated_data.get("ping_role_enabled", False),
+                        ping_role_id=validated_data.get("ping_role_id"),
+                        ping_role_name=validated_data.get("ping_role_name"),
                         image_path=image_info["file_path"] if image_info else None,
                         image_message_text=image_message_text or "",
                     )

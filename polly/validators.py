@@ -521,8 +521,36 @@ class PollValidator:
                 raise ValidationError("Creator ID is required", "creator_id")
             validated_data["creator_id"] = creator_id
 
+            # Validate role ping fields
+            ping_role_enabled = bool(poll_data.get("ping_role_enabled", False))
+            validated_data["ping_role_enabled"] = ping_role_enabled
+            
+            if ping_role_enabled:
+                ping_role_id = poll_data.get("ping_role_id", "")
+                if ping_role_id and isinstance(ping_role_id, str) and ping_role_id.strip():
+                    # Validate Discord role ID format (should be numeric string)
+                    if re.match(r"^\d+$", ping_role_id.strip()):
+                        validated_data["ping_role_id"] = ping_role_id.strip()
+                    else:
+                        raise ValidationError("Invalid role ID format", "ping_role_id")
+                else:
+                    validated_data["ping_role_id"] = None
+                
+                # Role name is optional but should be validated if provided
+                ping_role_name = poll_data.get("ping_role_name", "")
+                if ping_role_name and isinstance(ping_role_name, str):
+                    validated_data["ping_role_name"] = ping_role_name.strip()
+                else:
+                    validated_data["ping_role_name"] = None
+            else:
+                validated_data["ping_role_id"] = None
+                validated_data["ping_role_name"] = None
+
             logger.debug(
                 f"✅ VALIDATOR - Emojis validated and included: {validated_data.get('emojis', [])}"
+            )
+            logger.debug(
+                f"✅ VALIDATOR - Role ping data validated: enabled={validated_data.get('ping_role_enabled')}, role_id={validated_data.get('ping_role_id')}, role_name={validated_data.get('ping_role_name')}"
             )
 
             return validated_data
