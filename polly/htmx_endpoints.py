@@ -4224,7 +4224,9 @@ async def export_poll_csv(
             pass
 
         headers = {
-            "Content-Disposition": f"attachment; filename={filename}"
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "text/csv",
+            "Cache-Control": "no-cache"
         }
 
         logger.info("🔍 CSV EXPORT DEBUG - Returning CSV Response with attachment headers")
