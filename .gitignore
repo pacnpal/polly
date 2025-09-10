@@ -21,3 +21,4 @@ test_app_migration.py
 uv.lock
 tests/polly.db
 polly.db
+static/polls/
