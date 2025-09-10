@@ -104,6 +104,15 @@ class DatabaseMigrator:
                     "ALTER TABLE polls ADD COLUMN open_immediately BOOLEAN DEFAULT 0"
                 ],
             },
+            {
+                "version": 10,
+                "name": "add_role_ping_notification_options",
+                "description": "Add separate options for role ping on poll closure and updates",
+                "sql": [
+                    "ALTER TABLE polls ADD COLUMN ping_role_on_close BOOLEAN DEFAULT 0",
+                    "ALTER TABLE polls ADD COLUMN ping_role_on_update BOOLEAN DEFAULT 0"
+                ],
+            },
         ]
 
     def _get_initial_schema_sql(self) -> List[str]:

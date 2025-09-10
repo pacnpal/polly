@@ -212,13 +212,14 @@
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="ping-role-enabled" name="ping_role_enabled" value="true" {% if poll.ping_role_enabled %}checked{% endif %}>
                     <label class="form-check-label" for="ping-role-enabled">
-                        <i class="fas fa-at me-1"></i>Ping a role when poll is opened and closed?
-                        <small class="text-muted d-block">Mention a role to notify members when the poll starts and ends</small>
+                        <i class="fas fa-at me-1"></i>Enable role pinging for this poll
+                        <small class="text-muted d-block">Allow notifications to be sent to a specific role</small>
                     </label>
                 </div>
                 
+                <!-- Role Selection and Notification Options (initially hidden) -->
                 <div id="role-selection-container" class="mt-3" style="display: {% if poll.ping_role_enabled %}block{% else %}none{% endif %};">
-                    <label for="role-select" class="form-label">Select Role</label>
+                    <label for="role-select" class="form-label">Select Role to Ping</label>
                     <select class="form-select" id="role-select" name="ping_role_id"
                             hx-get="/htmx/roles" hx-target="#role-select" hx-include="[name='server_id']"
                             hx-trigger="load from:#server-select">
@@ -228,6 +229,26 @@
                         <option value="{{ poll.ping_role_id }}" selected>{{ poll.ping_role_name or 'Selected Role' }}</option>
                         {% endif %}
                     </select>
+                    
+                    <!-- Notification Options -->
+                    <div class="mt-3">
+                        <label class="form-label">When to send role notifications:</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="ping-role-on-close" name="ping_role_on_close" value="true" {% if poll.ping_role_on_close %}checked{% endif %}>
+                            <label class="form-check-label" for="ping-role-on-close">
+                                <i class="fas fa-flag-checkered me-1"></i>When poll closes
+                                <small class="text-muted d-block">Notify when the poll ends and results are available</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="ping-role-on-update" name="ping_role_on_update" value="true" {% if poll.ping_role_on_update %}checked{% endif %}>
+                            <label class="form-check-label" for="ping-role-on-update">
+                                <i class="fas fa-sync-alt me-1"></i>When poll is updated
+                                <small class="text-muted d-block">Notify when the poll message is refreshed or changed</small>
+                            </label>
+                        </div>
+                        <small class="text-muted">Note: Role will always be pinged when the poll opens, regardless of these settings.</small>
+                    </div>
                 </div>
             </div>
         </div>

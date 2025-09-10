@@ -98,6 +98,10 @@ class Poll(Base):
     ping_role_name = Column(String(255), nullable=True)
     # Whether to ping role when poll opens and closes
     ping_role_enabled = Column(Boolean, default=False)
+    # Whether to ping role when poll closes (default off)
+    ping_role_on_close = Column(Boolean, default=False)
+    # Whether to ping role when poll is updated (default off)
+    ping_role_on_update = Column(Boolean, default=False)
     open_time = Column(DateTime, nullable=False)  # When poll opens
     close_time = Column(DateTime, nullable=False)  # When poll closes
     timezone = Column(String(50), default="UTC")  # Timezone for scheduling

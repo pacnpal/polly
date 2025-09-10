@@ -1035,11 +1035,12 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
         embed = await create_poll_embed(poll, show_results=show_results)
         await message.edit(embed=embed)
 
-        # Send role ping notification for poll status changes (if enabled)
+        # Send role ping notification for poll status changes (if enabled and configured)
         ping_role_enabled = getattr(poll, "ping_role_enabled", False)
         ping_role_id = getattr(poll, "ping_role_id", None)
+        ping_role_on_update = getattr(poll, "ping_role_on_update", False)
         
-        if ping_role_enabled and ping_role_id and poll_status == "closed":
+        if ping_role_enabled and ping_role_id and ping_role_on_update and poll_status == "closed":
             try:
                 poll_name = str(getattr(poll, "name", "Unknown Poll"))
                 role_name = str(getattr(poll, "ping_role_name", "Unknown Role"))
@@ -1195,13 +1196,15 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
         embed = await create_poll_results_embed(poll)
         poll_name = str(getattr(poll, "name", ""))
 
-        # Check if role ping is enabled and prepare content
+        # Check if role ping is enabled and configured for poll closure
         message_content = f"📊 **Poll '{poll_name}' has ended!**"
         role_ping_attempted = False
-        if getattr(poll, "ping_role_enabled", False) and getattr(
-            poll, "ping_role_id", None
-        ):
-            role_id = str(getattr(poll, "ping_role_id"))
+        ping_role_enabled = getattr(poll, "ping_role_enabled", False)
+        ping_role_id = getattr(poll, "ping_role_id", None)
+        ping_role_on_close = getattr(poll, "ping_role_on_close", False)
+        
+        if ping_role_enabled and ping_role_id and ping_role_on_close:
+            role_id = str(ping_role_id)
             role_name = str(getattr(poll, "ping_role_name", "Unknown Role"))
             message_content = f"<@&{role_id}> {message_content}"
             role_ping_attempted = True

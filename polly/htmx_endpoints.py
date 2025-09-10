@@ -2895,6 +2895,8 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     # Handle role ping fields
     ping_role_enabled = form_data.get("ping_role_enabled") == "true"
     ping_role_id = safe_get_form_data(form_data, "ping_role_id", "")
+    ping_role_on_close = form_data.get("ping_role_on_close") == "true"
+    ping_role_on_update = form_data.get("ping_role_on_update") == "true"
 
     # Validate role ping settings
     if ping_role_enabled and not ping_role_id:
@@ -2908,6 +2910,8 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
 
     validated_data["ping_role_enabled"] = ping_role_enabled
     validated_data["ping_role_id"] = ping_role_id if ping_role_enabled else None
+    validated_data["ping_role_on_close"] = ping_role_on_close if ping_role_enabled else False
+    validated_data["ping_role_on_update"] = ping_role_on_update if ping_role_enabled else False
 
     # Add other validated data
     validated_data["timezone"] = validate_and_normalize_timezone(timezone_str)
@@ -3057,6 +3061,10 @@ async def create_poll_htmx(
         # Extract open_immediately flag
         open_immediately = validated_data["open_immediately"]
 
+        # Extract the new role ping settings
+        ping_role_on_close = validated_data["ping_role_on_close"]
+        ping_role_on_update = validated_data["ping_role_on_update"]
+
         # Prepare poll data for bulletproof operations
         poll_data = {
             "name": name,
@@ -3073,6 +3081,8 @@ async def create_poll_htmx(
             "ping_role_enabled": ping_role_enabled,
             "ping_role_id": ping_role_id,
             "ping_role_name": ping_role_name,
+            "ping_role_on_close": ping_role_on_close,
+            "ping_role_on_update": ping_role_on_update,
             "creator_id": current_user.id,
             "open_immediately": open_immediately,
         }
@@ -4393,6 +4403,10 @@ async def update_poll_htmx(
                 {"request": request, "message": "Invalid server or channel"},
             )
 
+        # Extract the new role ping settings
+        ping_role_on_close = validated_data["ping_role_on_close"]
+        ping_role_on_update = validated_data["ping_role_on_update"]
+
         # Fetch role name if role ping is enabled
         ping_role_name = None
         if ping_role_enabled and ping_role_id:
@@ -4427,6 +4441,8 @@ async def update_poll_htmx(
         setattr(poll, "ping_role_enabled", ping_role_enabled)
         setattr(poll, "ping_role_id", ping_role_id)
         setattr(poll, "ping_role_name", ping_role_name)
+        setattr(poll, "ping_role_on_close", ping_role_on_close)
+        setattr(poll, "ping_role_on_update", ping_role_on_update)
 
         db.commit()
 
