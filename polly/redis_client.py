@@ -113,7 +113,8 @@ class RedisClient:
             # Try to parse as JSON, fallback to string
             try:
                 return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Redis JSON parse error for key {key}: {e}. Value preview: {str(value)[:200]}...")
                 return value
 
         except RedisError as e:
@@ -197,7 +198,8 @@ class RedisClient:
             # Try to parse as JSON, fallback to string
             try:
                 return json.loads(value)
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Redis hash JSON parse error for hash {name}, key {key}: {e}. Value preview: {str(value)[:200]}...")
                 return value
 
         except RedisError as e:
@@ -217,7 +219,8 @@ class RedisClient:
             for key, value in result.items():
                 try:
                     processed_result[key] = json.loads(value)
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Redis hgetall JSON parse error for hash {name}, key {key}: {e}. Value preview: {str(value)[:200]}...")
                     processed_result[key] = value
 
             return processed_result
@@ -286,7 +289,8 @@ class RedisClient:
             for value in values:
                 try:
                     processed_values.append(json.loads(value))
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning(f"Redis lrange JSON parse error for list {name}: {e}. Value preview: {str(value)[:200]}...")
                     processed_values.append(value)
 
             return processed_values

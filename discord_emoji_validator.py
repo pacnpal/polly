@@ -566,10 +566,10 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
     elif isinstance(error, commands.MissingRequiredArgument):
-        logger.warning(f"Missing argument: {error.param}")
+        logger.info(f"Missing argument: {error.param}")
         await ctx.send(f"❌ Missing required argument: `{error.param}`")
     elif isinstance(error, commands.BadArgument):
-        logger.warning(f"Bad argument: {error}")
+        logger.info(f"Bad argument: {error}")
         await ctx.send(f"❌ Invalid argument: {error}")
     else:
         logger.error(f"Unexpected error: {error}")

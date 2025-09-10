@@ -5,7 +5,7 @@ Handles all HTMX-related endpoints for dynamic web content without JavaScript.
 
 import logging
 from datetime import datetime, timedelta
-from html import escape
+from html import escape, unescape
 import pytz
 import uuid
 import aiofiles
@@ -32,6 +32,7 @@ from .discord_emoji_handler import DiscordEmojiHandler
 from .emoji_pipeline_fix import get_unified_emoji_processor
 from .json_import import PollJSONImporter, PollJSONExporter
 from .debug_config import get_debug_logger
+from .data_utils import sanitize_data_for_json, decode_html_entities_safe
 
 logger = get_debug_logger(__name__)
 
@@ -49,6 +50,8 @@ def safe_get_form_data(form_data, key: str, default: str = "") -> str:
     except Exception as e:
         logger.warning(f"Error extracting form data for key '{key}': {e}")
         return default
+
+
 
 
 def process_custom_emoji_with_fallbacks(emoji_text: str) -> tuple[bool, str]:
@@ -3899,10 +3902,13 @@ async def get_poll_dashboard_htmx(
             "show_usernames_to_creator": show_usernames_to_creator,
         }
 
+        # Sanitize all data to prevent JSON serialization errors
+        sanitized_cacheable_data = sanitize_data_for_json(cacheable_data)
+
         # Determine poll status for TTL selection
         poll_status = TypeSafeColumn.get_string(poll, "status", "active")
         # Cache with status-aware TTL (10s for active, 7 days for closed)
-        await enhanced_cache.cache_poll_dashboard(poll_id, cacheable_data, poll_status)
+        await enhanced_cache.cache_poll_dashboard(poll_id, sanitized_cacheable_data, poll_status)
         ttl_description = "7 days" if poll_status == "closed" else "10s"
         logger.debug(
             f"💾 DASHBOARD CACHED - Stored dashboard for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"

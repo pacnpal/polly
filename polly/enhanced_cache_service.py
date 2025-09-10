@@ -181,29 +181,46 @@ class EnhancedCacheService(CacheService):
         cache_key = f"poll_dashboard:{poll_id}"
         logger.info(f"🔍 CACHE DEBUG - Using cache key: {cache_key}")
 
-        cached_data = await redis_client.cache_get(cache_key)
+        try:
+            cached_data = await redis_client.cache_get(cache_key)
+        except Exception as e:
+            logger.warning(f"🔍 CACHE DEBUG - Error retrieving cache for poll {poll_id}: {e}")
+            # Clear corrupted cache entry
+            await self.invalidate_poll_dashboard(poll_id)
+            return None
 
         if cached_data:
             logger.info(f"🔍 CACHE DEBUG - Cache HIT for poll {poll_id}")
-            logger.info(
-                f"🔍 CACHE DEBUG - Retrieved data keys: {list(cached_data.keys())}"
-            )
-            logger.info(
-                f"🔍 CACHE DEBUG - Retrieved total_votes: {cached_data.get('total_votes', 'NOT_FOUND')}"
-            )
-            logger.info(
-                f"🔍 CACHE DEBUG - Retrieved unique_voters: {cached_data.get('unique_voters', 'NOT_FOUND')}"
-            )
-            logger.info(
-                f"🔍 CACHE DEBUG - Retrieved results: {cached_data.get('results', 'NOT_FOUND')}"
-            )
-            logger.info(
-                f"🔍 CACHE DEBUG - Retrieved vote_data length: {len(cached_data.get('vote_data', []))}"
-            )
+            
+            # Sanitize retrieved data to handle any HTML entities that might cause issues
+            try:
+                from .data_utils import sanitize_data_for_json
+                sanitized_data = sanitize_data_for_json(cached_data)
+                logger.info(
+                    f"🔍 CACHE DEBUG - Retrieved data keys: {list(sanitized_data.keys())}"
+                )
+                logger.info(
+                    f"🔍 CACHE DEBUG - Retrieved total_votes: {sanitized_data.get('total_votes', 'NOT_FOUND')}"
+                )
+                logger.info(
+                    f"🔍 CACHE DEBUG - Retrieved unique_voters: {sanitized_data.get('unique_voters', 'NOT_FOUND')}"
+                )
+                logger.info(
+                    f"🔍 CACHE DEBUG - Retrieved results: {sanitized_data.get('results', 'NOT_FOUND')}"
+                )
+                logger.info(
+                    f"🔍 CACHE DEBUG - Retrieved vote_data length: {len(sanitized_data.get('vote_data', []))}"
+                )
+                return sanitized_data
+            except Exception as e:
+                logger.warning(f"🔍 CACHE DEBUG - Error sanitizing cached data for poll {poll_id}: {e}")
+                # Clear corrupted cache entry and return None to force fresh data generation
+                await self.invalidate_poll_dashboard(poll_id)
+                return None
         else:
             logger.info(f"🔍 CACHE DEBUG - Cache MISS for poll {poll_id}")
 
-        return cached_data
+        return None
 
     async def invalidate_poll_dashboard(self, poll_id: int) -> bool:
         """Invalidate cached poll dashboard data"""
@@ -231,7 +248,18 @@ class EnhancedCacheService(CacheService):
             return None
 
         cache_key = f"discord_user:{user_id}"
-        return await redis_client.cache_get(cache_key)
+        try:
+            cached_data = await redis_client.cache_get(cache_key)
+            if cached_data:
+                # Sanitize retrieved data to handle any HTML entities
+                from .data_utils import sanitize_data_for_json
+                return sanitize_data_for_json(cached_data)
+            return cached_data
+        except Exception as e:
+            logger.warning(f"Error retrieving cached Discord user {user_id}: {e}")
+            # Clear corrupted cache entry
+            await redis_client.cache_delete(f"discord_user:{user_id}")
+            return None
 
     # Guild Information Caching (Extended TTL)
     async def cache_guild_info(self, guild_id: str, guild_data: Dict[str, Any]) -> bool:
