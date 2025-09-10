@@ -3457,7 +3457,7 @@ async def create_poll_htmx(
 async def get_poll_details_htmx(
     poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
-    """Get poll details view as HTML for HTMX - serves static component for closed polls"""
+    """Get poll details view as HTML for HTMX - serves static component for closed polls with image compression"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
     db = get_db_session()
     try:
@@ -3475,13 +3475,25 @@ async def get_poll_details_htmx(
                 {"request": request, "message": "Poll not found or access denied"},
             )
 
-        # Check if poll is closed and serve static component within dashboard
+        # Check if poll is closed and use static generator with image compression
         poll_status = TypeSafeColumn.get_string(poll, "status")
         if poll_status == "closed":
-            logger.info(f"📄 STATIC SERVE - Serving static component for closed poll {poll_id} within dashboard")
+            logger.info(f"📄 STATIC SERVE - Using static generator with image compression for closed poll {poll_id}")
             
-            # Get the data needed for the static component template
-            # This replicates the data that would be in the static file
+            # Import the static page generator
+            from .static_page_generator import get_static_page_generator
+            
+            # Get the static page generator instance
+            static_generator = get_static_page_generator()
+            
+            # Generate static content with image compression if not already done
+            try:
+                await static_generator.generate_static_poll_details(poll_id)
+                logger.info(f"📷 IMAGE COMPRESSION - Generated static content with compressed images for poll {poll_id}")
+            except Exception as e:
+                logger.warning(f"Static generation failed for poll {poll_id}: {e}, falling back to dynamic generation")
+            
+            # Get the data needed for the static component template (same as before)
             votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
             
             # Prepare vote data (anonymized for static pages)
@@ -3529,7 +3541,7 @@ async def get_poll_details_htmx(
             unique_voters = len(unique_users)
             results = poll.get_results()
             
-            # Serve the static component template with the data
+            # Serve the static component template with the data (images will be compressed via static generator)
             return templates.TemplateResponse(
                 "static/poll_details_static_component.html",
                 {
