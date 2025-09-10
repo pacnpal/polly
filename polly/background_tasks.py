@@ -140,11 +140,13 @@ async def close_poll(poll_id: int):
                 except Exception as update_error:
                     logger.error(f"❌ CLOSE POLL {poll_id} - Error updating poll message: {update_error}")
 
-                # Send role ping notification if enabled (without posting full results)
+                # Send role ping notification if enabled and configured for poll closure
                 ping_role_enabled = TypeSafeColumn.get_bool(fresh_poll, "ping_role_enabled", False)
                 ping_role_id = TypeSafeColumn.get_string(fresh_poll, "ping_role_id")
+                ping_role_on_close = TypeSafeColumn.get_bool(fresh_poll, "ping_role_on_close", False)
+                ping_role_name = TypeSafeColumn.get_string(fresh_poll, "ping_role_name", "Unknown Role")
                 
-                if ping_role_enabled and ping_role_id:
+                if ping_role_enabled and ping_role_id and ping_role_on_close:
                     try:
                         poll_channel_id = TypeSafeColumn.get_string(fresh_poll, "channel_id")
                         if poll_channel_id:
@@ -152,22 +154,52 @@ async def close_poll(poll_id: int):
                             if channel and isinstance(channel, discord.TextChannel):
                                 poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
                                 
-                                # Send simple role ping message
+                                # Prepare role ping message with comprehensive error handling
+                                message_content = f"📊 **Poll '{poll_name}' has ended!**"
+                                role_ping_attempted = False
+                                
+                                role_id = str(ping_role_id)
+                                message_content = f"<@&{role_id}> {message_content}"
+                                role_ping_attempted = True
+                                logger.info(
+                                    f"🔔 CLOSE POLL {poll_id} - Will ping role {ping_role_name} ({role_id}) for poll closure"
+                                )
+                                
+                                # Send role ping message with graceful error handling
                                 try:
-                                    message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has ended!**"
                                     await channel.send(content=message_content)
                                     logger.info(f"✅ CLOSE POLL {poll_id} - Sent role ping notification")
-                                except discord.Forbidden:
-                                    # Role ping failed due to permissions, send without role ping
-                                    logger.warning(f"⚠️ CLOSE POLL {poll_id} - Role ping failed due to permissions")
-                                    try:
-                                        fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
-                                        await channel.send(content=fallback_content)
-                                        logger.info(f"✅ CLOSE POLL {poll_id} - Sent fallback notification without role ping")
-                                    except Exception as fallback_error:
-                                        logger.error(f"❌ CLOSE POLL {poll_id} - Fallback notification also failed: {fallback_error}")
+                                except discord.Forbidden as role_error:
+                                    if role_ping_attempted:
+                                        # Role ping failed due to permissions, try without role ping
+                                        logger.warning(
+                                            f"⚠️ CLOSE POLL {poll_id} - Role ping failed due to permissions, posting without role ping: {role_error}"
+                                        )
+                                        try:
+                                            fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
+                                            await channel.send(content=fallback_content)
+                                            logger.info(
+                                                f"✅ CLOSE POLL {poll_id} - Sent fallback notification without role ping"
+                                            )
+                                        except Exception as fallback_error:
+                                            logger.error(
+                                                f"❌ CLOSE POLL {poll_id} - Fallback notification also failed: {fallback_error}"
+                                            )
+                                    else:
+                                        # Not a role ping issue, re-raise the error
+                                        raise role_error
+                                except Exception as send_error:
+                                    logger.error(f"❌ CLOSE POLL {poll_id} - Error sending role ping notification: {send_error}")
+                            else:
+                                logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find or access channel {poll_channel_id}")
+                        else:
+                            logger.warning(f"⚠️ CLOSE POLL {poll_id} - No channel ID found for role ping notification")
                     except Exception as ping_error:
-                        logger.error(f"❌ CLOSE POLL {poll_id} - Error sending role ping notification: {ping_error}")
+                        logger.error(f"❌ CLOSE POLL {poll_id} - Error in role ping notification process: {ping_error}")
+                elif ping_role_enabled and ping_role_id and not ping_role_on_close:
+                    logger.info(f"ℹ️ CLOSE POLL {poll_id} - Role ping enabled but ping_role_on_close is disabled")
+                elif ping_role_enabled and not ping_role_id:
+                    logger.warning(f"⚠️ CLOSE POLL {poll_id} - Role ping enabled but no role ID configured")
             else:
                 logger.error(f"❌ CLOSE POLL {poll_id} - Poll not found for message update")
         finally:
