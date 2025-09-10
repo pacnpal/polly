@@ -540,7 +540,7 @@ class StaticPageGenerator:
                     logger.info(f"✅ IMAGE COPY - Compressed and copied image: {dest_path.name} ({size_mb:.1f}MB -> {new_size_mb:.1f}MB, {compression_ratio:.1f}% reduction)")
                     return url_path
                 else:
-                    logger.warning(f"⚠️ IMAGE COPY - Compression failed, falling back to direct copy")
+                    logger.warning("⚠️ IMAGE COPY - Compression failed, falling back to direct copy")
                     
             # Fallback: direct copy without compression
             shutil.copy2(source_path, dest_path)

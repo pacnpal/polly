@@ -463,8 +463,7 @@ def add_core_routes(app: FastAPI):
 def add_static_poll_routes(app: FastAPI):
     """Add static poll page routes to serve cached content for closed polls"""
     from .static_page_generator import get_static_page_generator
-    from fastapi.responses import FileResponse, JSONResponse
-    from pathlib import Path
+    from fastapi.responses import FileResponse
     
     @app.get("/poll/{poll_id}/static", response_class=HTMLResponse)
     async def serve_static_poll_details(poll_id: int):

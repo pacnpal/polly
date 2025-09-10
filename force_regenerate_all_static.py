@@ -77,7 +77,7 @@ async def force_regenerate_all_static():
                 import traceback
                 traceback.print_exc()
         
-        print(f"\n📊 FORCE REGENERATE - Summary:")
+        print("\n📊 FORCE REGENERATE - Summary:")
         print(f"✅ Successfully processed: {success_count} polls")
         print(f"❌ Errors: {error_count} polls")
         print(f"📊 Total closed polls: {len(closed_polls)}")
@@ -93,7 +93,7 @@ async def force_regenerate_all_static():
 
 async def test_component_loading():
     """Test that the HTMX endpoint properly loads static components"""
-    print(f"\n🔍 COMPONENT TEST - Testing HTMX endpoint component loading...")
+    print("\n🔍 COMPONENT TEST - Testing HTMX endpoint component loading...")
     
     db = get_db_session()
     try:
@@ -136,7 +136,7 @@ async def test_component_loading():
             ("HTMX attributes", 'hx-get=' in content),
         ]
         
-        print(f"\n🔍 COMPONENT TEST - Component validation:")
+        print("\n🔍 COMPONENT TEST - Component validation:")
         all_passed = True
         for check_name, passed in checks:
             status = "✅" if passed else "❌"
@@ -151,7 +151,7 @@ async def test_component_loading():
             
         # Show content preview
         lines = content.split('\n')
-        print(f"\n📄 COMPONENT TEST - Content preview (first 10 lines):")
+        print("\n📄 COMPONENT TEST - Content preview (first 10 lines):")
         for i, line in enumerate(lines[:10]):
             print(f"  {i+1:2d}: {line[:80]}{'...' if len(line) > 80 else ''}")
             
