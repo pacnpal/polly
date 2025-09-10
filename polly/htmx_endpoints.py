@@ -4216,99 +4216,26 @@ async def export_poll_csv(
         print(f"🔍 CSV EXPORT DEBUG - Generated filename: '{filename}'")
 
         # CSV content ready for response
-        poll = (
-            db.query(Poll)
-            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
-            .first()
-        )
-        if not poll:
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": "Poll not found or access denied"},
-            )
+        # Return CSV as a file download
+        try:
+            from fastapi.responses import Response
+        except Exception:
+            # Fallback import (should not happen in FastAPI context)
+            pass
 
-        if TypeSafeColumn.get_string(poll, "status") != "active":
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": "Only active polls can be closed"},
-            )
+        headers = {
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
 
-        # Extract poll data before closing for role ping notification
-        poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
-        ping_role_enabled = TypeSafeColumn.get_bool(poll, "ping_role_enabled", False)
-        ping_role_id = TypeSafeColumn.get_string(poll, "ping_role_id")
-        channel_id = TypeSafeColumn.get_string(poll, "channel_id")
-        ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
-
-        # Update poll status to closed
-        setattr(poll, "status", "closed")
-        setattr(poll, "updated_at", datetime.now(pytz.UTC))
-        db.commit()
-
-        logger.info(f"Poll {poll_id} closed by user {current_user.id}")
-
-        # Send role ping notification if enabled
-        if (
-            ping_role_enabled
-            and ping_role_id
-            and bot
-            and channel_id
-            and ping_role_on_close
-        ):
-            try:
-                import discord
-
-                channel = bot.get_channel(int(channel_id))
-                if channel and isinstance(channel, discord.TextChannel):
-                    logger.info(
-                        f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure"
-                    )
-
-                    # Send role ping notification for manual poll closure
-                    try:
-                        message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has been manually closed!**"
-                        await channel.send(content=message_content)
-                        logger.info(
-                            f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure"
-                        )
-                    except discord.Forbidden:
-                        # Role ping failed due to permissions, send without role ping
-                        logger.warning(
-                            f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}"
-                        )
-                        try:
-                            fallback_content = (
-                                f"📊 **Poll '{poll_name}' has been manually closed!**"
-                            )
-                            await channel.send(content=fallback_content)
-                            logger.info(
-                                f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}"
-                            )
-                        except Exception as fallback_error:
-                            logger.error(
-                                f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}"
-                            )
-            except Exception as ping_error:
-                logger.error(
-                    f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}"
-                )
-
-        return templates.TemplateResponse(
-            "htmx/components/alert_success.html",
-            {
-                "request": request,
-                "message": "Poll closed successfully! Redirecting to polls...",
-                "redirect_url": "/htmx/polls",
-            },
-        )
+        logger.info("🔍 CSV EXPORT DEBUG - Returning CSV Response with attachment headers")
+        print("🔍 CSV EXPORT DEBUG - Returning CSV Response with attachment headers")
+        return Response(content=csv_content, media_type="text/csv", headers=headers)
 
     except Exception as e:
-        logger.error(f"Error closing poll {poll_id}: {e}")
-        db.rollback()
-        return templates.TemplateResponse(
-            "htmx/components/inline_error.html",
-            {"request": request, "message": f"Error closing poll: {str(e)}"},
-        )
+        logger.error(f"❌ CSV EXPORT DEBUG - Error exporting CSV for poll {poll_id}: {e}")
+        logger.exception("Full traceback for CSV export error:")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Error exporting CSV: {str(e)}")
     finally:
         db.close()
 
