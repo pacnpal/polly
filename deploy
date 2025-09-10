@@ -1,0 +1,3 @@
+#!/bin/bash
+# Simple deployment shortcut - git pull + update Polly + cleanup images
+./scripts/deploy-clean.sh "$@"
