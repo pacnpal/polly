@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ poll.name|e }} - Static Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/polly-custom.css" rel="stylesheet">
+    <style>
+        .poll-status-closed {
+            background-color: #dc3545 !important;
+        }
+        .progress-bar-height {
+            height: 20px;
+        }
+        .progress-bar-small {
+            height: 15px;
+        }
+        .avatar-small {
+            width: 24px;
+            height: 24px;
+        }
+        .avatar-placeholder {
+            width: 24px;
+            height: 24px;
+            font-size: 10px;
+        }
+        .text-truncate-150 {
+            max-width: 150px;
+        }
+        .table-scroll-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .table-col-narrow { width: 5%; }
+        .table-col-medium { width: 15%; }
+        .table-col-wide { width: 20%; }
+        .table-col-wider { width: 25%; }
+        .table-col-widest { width: 35%; }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid mt-3">
+        <!-- Static Page Header -->
+        <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <i class="fas fa-archive me-2"></i>
+                <strong>Static Poll Results</strong> - This page contains final results with no live updates.
+            </div>
+            <span class="badge bg-primary">
+                <i class="fas fa-file-alt me-1"></i>Static Content
+            </span>
+        </div>
+        
+        {% include 'static/poll_details_static_component.html' %}
+        
+        <!-- Footer -->
+        <div class="text-center mt-4 mb-3">
+            <div class="alert alert-light">
+                <small class="text-muted">
+                    <i class="fas fa-info-circle me-1"></i>
+                    This static page contains final poll results and requires no API calls or live updates.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
