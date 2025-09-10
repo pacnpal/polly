@@ -7,8 +7,10 @@ Creates a secure, one-time-use URL for viewing poll details that can be shared.
 import asyncio
 import sys
 import os
+from decouple import config
 from datetime import datetime
 
+DISCORD_TOKEN = config("DISCORD_TOKEN")
 # Add the project directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
