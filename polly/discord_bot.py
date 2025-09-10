@@ -106,6 +106,27 @@ async def on_guild_role_update(before, after):
 
 
 @bot.event
+async def on_error(event, *args, **kwargs):
+    """Handle bot errors and suppress command prefix errors"""
+    import sys
+    import traceback
+    
+    # Get the exception info
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+    
+    # Suppress command prefix errors since this is a reaction-only bot
+    if (exc_type == TypeError and 
+        exc_value and 
+        "command_prefix must be plain string" in str(exc_value)):
+        logger.debug(f"Suppressed command prefix error: {exc_value}")
+        return
+    
+    # Log other errors normally
+    logger.error(f"Bot error in event {event}: {exc_value}")
+    logger.error(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+
+
+@bot.event
 async def on_reaction_add(reaction, user):
     """Handle poll voting via reactions using bulletproof operations"""
     if user.bot:
