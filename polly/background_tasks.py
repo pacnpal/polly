@@ -31,7 +31,7 @@ async def close_poll(poll_id: int):
     """Close a poll using bulletproof operations and post final results"""
     try:
         from .discord_bot import get_bot_instance
-        from .discord_utils import post_poll_results, update_poll_message
+        from .discord_utils import update_poll_message
         import discord
 
         bot = get_bot_instance()

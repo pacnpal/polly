@@ -6,7 +6,6 @@ Test script to verify that .cache directory is deleted during database migration
 import os
 import sys
 import tempfile
-import shutil
 from pathlib import Path
 
 # Add project root to path

@@ -15,7 +15,7 @@ def test_datetime_validation():
     # Let's simulate this time
     current_utc = datetime(2025, 9, 10, 0, 35, 6, tzinfo=pytz.UTC)
     
-    print(f"🔍 DATETIME VALIDATION TEST")
+    print("🔍 DATETIME VALIDATION TEST")
     print(f"Form open_time: {open_time_str}")
     print(f"Form close_time: {close_time_str}")
     print(f"Form timezone: {timezone_str}")

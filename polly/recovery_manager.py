@@ -6,17 +6,16 @@ Handles vote collection, database syncing, poll state restoration, and cache war
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from datetime import datetime
+from typing import Dict, Any
 import pytz
 import discord
 from discord.ext import commands
 
 from .database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
-from .discord_utils import update_poll_message, post_poll_to_channel
+from .discord_utils import update_poll_message
 from .poll_operations import BulletproofPollOperations
 from .background_tasks import close_poll
-from .error_handler import PollErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +243,6 @@ class RecoveryManager:
         logger.info("🔄 RECOVERY MANAGER - Syncing votes and reactions")
         
         # Use the existing reaction safeguard logic but run it once for recovery
-        from .background_tasks import reaction_safeguard_task
         
         try:
             # Create a modified version that runs once instead of continuously

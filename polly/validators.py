@@ -38,6 +38,8 @@ class PollValidator:
     ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
     MIN_POLL_DURATION_MINUTES = 1
     MAX_POLL_DURATION_DAYS = 30
+    MIN_MAX_CHOICES = 2
+    MAX_MAX_CHOICES = 10
 
     @staticmethod
     def validate_poll_name(name: str) -> str:
@@ -547,6 +549,30 @@ class PollValidator:
             validated_data["multiple_choice"] = bool(
                 poll_data.get("multiple_choice", False)
             )
+
+            # Validate max_choices for multiple choice polls
+            max_choices = poll_data.get("max_choices")
+            if validated_data["multiple_choice"]:
+                if max_choices is not None and max_choices != "":
+                    try:
+                        max_choices_int = int(max_choices)
+                        # Validate range: must be between 2 and the number of available options
+                        num_options = len(validated_data["options"])
+                        if max_choices_int < 2:
+                            raise ValidationError("Maximum choices must be at least 2", "max_choices")
+                        if max_choices_int > num_options:
+                            raise ValidationError(f"Maximum choices cannot exceed the number of options ({num_options})", "max_choices")
+                        if max_choices_int > 10:
+                            raise ValidationError("Maximum choices cannot exceed 10", "max_choices")
+                        validated_data["max_choices"] = max_choices_int
+                    except (ValueError, TypeError):
+                        raise ValidationError("Maximum choices must be a valid number", "max_choices")
+                else:
+                    # If max_choices is not provided or empty, set to None (will use all options)
+                    validated_data["max_choices"] = None
+            else:
+                # For single choice polls, max_choices should always be None
+                validated_data["max_choices"] = None
 
             # Validate optional image message text
             image_message_text = poll_data.get("image_message_text", "")

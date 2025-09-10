@@ -114,6 +114,14 @@ class DatabaseMigrator:
                     "ALTER TABLE polls ADD COLUMN ping_role_on_update BOOLEAN DEFAULT 0"
                 ],
             },
+            {
+                "version": 11,
+                "name": "add_max_choices",
+                "description": "Add max_choices column for configurable multiple choice limits",
+                "sql": [
+                    "ALTER TABLE polls ADD COLUMN max_choices INTEGER"
+                ],
+            },
         ]
 
     def _get_initial_schema_sql(self) -> List[str]:

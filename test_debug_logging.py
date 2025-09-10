@@ -6,7 +6,6 @@ Verify that the DEBUG mode toggle works correctly for both backend and frontend.
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -27,7 +26,7 @@ def test_debug_mode_disabled(mock_config):
         del sys.modules[module]
     
     # Import fresh debug config
-    from polly.debug_config import DebugConfig, get_debug_config, is_debug_mode, get_debug_logger
+    from polly.debug_config import DebugConfig, get_debug_logger
     
     # Create a fresh config instance
     config = DebugConfig()
@@ -120,7 +119,6 @@ def test_javascript_integration():
     import polly.debug_config
     importlib.reload(polly.debug_config)
     
-    from polly.debug_config import get_debug_context
     
     context = get_debug_context()
     print(f"   Debug disabled context: {context}")

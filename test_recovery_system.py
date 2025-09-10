@@ -4,7 +4,7 @@ Test script to verify the recovery system implementation
 
 import asyncio
 import logging
-from polly.recovery_manager import RecoveryManager, get_recovery_manager
+from polly.recovery_manager import get_recovery_manager
 
 
 # Setup logging

@@ -3,10 +3,7 @@
 Demo script showing .cache directory cleanup during database migrations
 """
 
-import os
-import sys
 from pathlib import Path
-import shutil
 
 def create_demo_cache():
     """Create a demo .cache directory with some files"""
@@ -55,12 +52,12 @@ if __name__ == "__main__":
     print("\n3️⃣ Cache status after creation:")
     show_cache_status()
     
-    print(f"\n4️⃣ Now run a database migration and the .cache directory will be automatically deleted!")
+    print("\n4️⃣ Now run a database migration and the .cache directory will be automatically deleted!")
     print("   You can test this by running:")
     print("   - uv run python run_migration.py")
     print("   - uv run python migrate_database.py") 
     print("   - uv run python polly/migrations.py")
     print("   - Or just start the application (migrations run on startup)")
     
-    print(f"\n💡 The cache cleanup happens in polly/migrations.py in the _cleanup_cache_directory() method")
+    print("\n💡 The cache cleanup happens in polly/migrations.py in the _cleanup_cache_directory() method")
     print("   This ensures fresh cache state after any database schema changes.")

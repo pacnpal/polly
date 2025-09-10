@@ -5,16 +5,12 @@ Discord bot setup and event handling functionality.
 
 import os
 import logging
-from datetime import datetime, timedelta
-import pytz
 import discord
 from discord.ext import commands
 
 from .database import get_db_session, Poll, POLL_EMOJIS, TypeSafeColumn
 from .discord_utils import (
-    create_poll_embed,
     update_poll_message,
-    user_has_admin_permissions,
 )
 from .error_handler import (
     PollErrorHandler,
@@ -35,7 +31,7 @@ intents.message_content = True
 intents.guilds = True
 intents.reactions = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=None, intents=intents)
 
 
 @bot.event
@@ -60,116 +56,6 @@ async def on_ready():
     except Exception as e:
         # Removed manual notification - automatic system will handle this
         logger.error(f"Failed to sync commands: {e}")
-
-
-@bot.tree.command(
-    name="quickpoll", description="Create a quick poll in the current channel"
-)
-async def create_quick_poll_command(
-    interaction: discord.Interaction,
-    question: str,
-    option1: str,
-    option2: str,
-    option3: str = None,
-    option4: str = None,
-    option5: str = None,
-    anonymous: bool = False,
-):
-    """Create a quick poll via Discord slash command"""
-    # Check if user has admin permissions
-    if not user_has_admin_permissions(interaction.user):
-        await interaction.response.send_message(
-            "❌ You need Administrator or Manage Server permissions to create polls.",
-            ephemeral=True,
-        )
-        return
-
-    # Collect options
-    options = [option1, option2]
-    from .database import POLL_EMOJIS
-
-    emojis = POLL_EMOJIS[: len(options)]
-    for opt in [option3, option4, option5]:
-        if opt:
-            options.append(opt)
-
-    if len(options) > 10:
-        await interaction.response.send_message(
-            "❌ Maximum 10 poll options allowed.", ephemeral=True
-        )
-        return
-
-    # Create poll in database
-    db = get_db_session()
-    try:
-        poll = Poll(
-            name=f"Quick Poll - {question[:50]}",
-            question=question,
-            options=options,
-            emojis=emojis,
-            server_id=str(interaction.guild_id),
-            server_name=interaction.guild.name if interaction.guild else "Unknown",
-            channel_id=str(interaction.channel_id),
-            channel_name=getattr(interaction.channel, "name", "Unknown"),
-            creator_id=str(interaction.user.id),
-            open_time=datetime.now(pytz.UTC),
-            close_time=datetime.now(pytz.UTC) + timedelta(hours=24),
-            anonymous=anonymous,
-            status="active",
-        )
-        db.add(poll)
-        db.commit()
-        db.refresh(poll)
-
-        # Create embed
-        embed = await create_poll_embed(
-            poll, show_results=bool(poll.should_show_results())
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-        # Get the message and add reactions
-        message = await interaction.original_response()
-        poll.message_id = str(message.id)
-        db.commit()
-
-        # Add reaction emojis with Unicode emoji preparation
-        from .discord_emoji_handler import DiscordEmojiHandler
-
-        emoji_handler = DiscordEmojiHandler(bot)
-
-        for i in range(len(options)):
-            emoji = POLL_EMOJIS[i]
-            # Prepare emoji for reaction (handles Unicode emoji variation selectors)
-            prepared_emoji = emoji_handler.prepare_emoji_for_reaction(emoji)
-            await message.add_reaction(prepared_emoji)
-
-        # Schedule poll closure
-        from .background_tasks import get_scheduler
-        from .background_tasks import close_poll
-        from apscheduler.triggers.date import DateTrigger
-
-        scheduler = get_scheduler()
-        scheduler.add_job(
-            close_poll,
-            DateTrigger(run_date=poll.close_time),
-            args=[TypeSafeColumn.get_int(poll, "id")],
-            id=f"close_poll_{TypeSafeColumn.get_int(poll, 'id')}",
-        )
-
-    except Exception as e:
-        # Removed manual notification - automatic system will handle this
-        logger.error(f"Error creating poll: {e}")
-        if not interaction.response.is_done():
-            await interaction.response.send_message(
-                "❌ Error creating poll. Please try again.", ephemeral=True
-            )
-        else:
-            await interaction.followup.send(
-                "❌ Error creating poll. Please try again.", ephemeral=True
-            )
-    finally:
-        db.close()
 
 
 @bot.event

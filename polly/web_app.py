@@ -5,7 +5,6 @@ FastAPI application setup and core web functionality.
 
 import os
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 import pytz
@@ -715,14 +714,14 @@ def add_htmx_routes(app: FastAPI):
         
         try:
             from .htmx_endpoints import export_poll_csv
-            logger.info(f"🔍 Successfully imported export_poll_csv function")
+            logger.info("🔍 Successfully imported export_poll_csv function")
             
             bot = get_bot_instance()
             logger.info(f"🔍 Bot instance obtained: {bot is not None}")
             
-            logger.info(f"🔍 Calling export_poll_csv function...")
+            logger.info("🔍 Calling export_poll_csv function...")
             result = await export_poll_csv(poll_id, request, bot, current_user)
-            logger.info(f"🔍 CSV export function completed successfully")
+            logger.info("🔍 CSV export function completed successfully")
             return result
             
         except Exception as e:

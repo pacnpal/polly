@@ -9,7 +9,7 @@ def test_role_ping_validation():
     ping_role_enabled = "true" == "true"  # This should be True
     ping_role_id = "1412236527315976272"  # This should be a non-empty string
     
-    print(f"🔍 ROLE PING VALIDATION TEST")
+    print("🔍 ROLE PING VALIDATION TEST")
     print(f"ping_role_enabled: {ping_role_enabled} (type: {type(ping_role_enabled)})")
     print(f"ping_role_id: '{ping_role_id}' (type: {type(ping_role_id)})")
     print(f"ping_role_id stripped: '{ping_role_id.strip()}' (len: {len(ping_role_id.strip())})")

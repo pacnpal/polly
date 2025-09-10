@@ -205,6 +205,18 @@
                         <small class="text-muted d-block">Allow users to select multiple options</small>
                     </label>
                 </div>
+                
+                <!-- Choice Limit Selection (initially hidden) -->
+                <div id="choice-limit-container" class="mt-3" style="display: {% if template_data and template_data.multiple_choice %}block{% else %}none{% endif %};">
+                    <label for="max-choices" class="form-label">Maximum Choices Allowed</label>
+                    <select class="form-select" id="max-choices" name="max_choices">
+                        <option value="">Same as number of options</option>
+                        {% for i in range(2, 11) %}
+                        <option value="{{ i }}" {% if template_data and template_data.max_choices == i %}selected{% endif %}>{{ i }} choices</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Choose how many options users can select. Leave blank to allow selecting all options.</small>
+                </div>
             </div>
 
             <!-- Role Ping Section -->
@@ -927,6 +939,33 @@
             } else {
                 openTimeContainer.style.display = 'block';
                 openTimeInput.setAttribute('required', 'required');
+            }
+        }
+
+        // Multiple Choice checkbox functionality
+        const multipleChoiceCheckbox = document.getElementById('multiple-choice-poll');
+        const choiceLimitContainer = document.getElementById('choice-limit-container');
+        
+        if (multipleChoiceCheckbox && choiceLimitContainer) {
+            // Show/hide choice limit selection based on checkbox state
+            multipleChoiceCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    choiceLimitContainer.style.display = 'block';
+                } else {
+                    choiceLimitContainer.style.display = 'none';
+                    // Clear the choice limit selection when hiding
+                    const maxChoicesSelect = document.getElementById('max-choices');
+                    if (maxChoicesSelect) {
+                        maxChoicesSelect.value = '';
+                    }
+                }
+            });
+            
+            // Initialize visibility based on current checkbox state
+            if (multipleChoiceCheckbox.checked) {
+                choiceLimitContainer.style.display = 'block';
+            } else {
+                choiceLimitContainer.style.display = 'none';
             }
         }
 

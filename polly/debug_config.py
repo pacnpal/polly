@@ -3,7 +3,6 @@ Polly Debug Configuration
 Centralized debug mode configuration for consistent logging across frontend and backend.
 """
 
-import os
 import logging
 from typing import Dict, Any
 from decouple import config

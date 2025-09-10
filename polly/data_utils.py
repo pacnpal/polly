@@ -3,7 +3,7 @@ Data utility functions for sanitization and processing
 """
 import logging
 from html import unescape
-from typing import Any, Dict, List, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

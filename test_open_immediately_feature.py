@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from polly.database import get_db_session, Poll, TypeSafeColumn
 from polly.validators import PollValidator
 from polly.poll_operations import BulletproofPollOperations
-from polly.json_import import PollJSONImporter, PollJSONExporter
+from polly.json_import import PollJSONImporter
 from polly.enhanced_cache_service import get_enhanced_cache_service
 from sqlalchemy import text
 

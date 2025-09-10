@@ -3,9 +3,8 @@ HTMX Endpoints Module
 Handles all HTMX-related endpoints for dynamic web content without JavaScript.
 """
 
-import logging
 from datetime import datetime, timedelta
-from html import escape, unescape
+from html import escape
 import pytz
 import uuid
 import aiofiles
@@ -32,7 +31,7 @@ from .discord_emoji_handler import DiscordEmojiHandler
 from .emoji_pipeline_fix import get_unified_emoji_processor
 from .json_import import PollJSONImporter, PollJSONExporter
 from .debug_config import get_debug_logger
-from .data_utils import sanitize_data_for_json, decode_html_entities_safe
+from .data_utils import sanitize_data_for_json
 
 logger = get_debug_logger(__name__)
 
@@ -3114,6 +3113,35 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     validated_data["timezone"] = validate_and_normalize_timezone(timezone_str)
     validated_data["anonymous"] = form_data.get("anonymous") == "true"
     validated_data["multiple_choice"] = form_data.get("multiple_choice") == "true"
+    
+    # Handle max_choices for multiple choice polls
+    max_choices_str = safe_get_form_data(form_data, "max_choices", "")
+    max_choices = None
+    if validated_data["multiple_choice"] and max_choices_str:
+        try:
+            max_choices = int(max_choices_str)
+            # Validate max_choices is reasonable (between 2 and 10)
+            if max_choices < 2 or max_choices > 10:
+                validation_errors.append(
+                    {
+                        "field_name": "Maximum Choices",
+                        "message": "Must be between 2 and 10 choices",
+                        "suggestion": "Choose a reasonable number of choices users can select",
+                    }
+                )
+            else:
+                validated_data["max_choices"] = max_choices
+        except ValueError:
+            validation_errors.append(
+                {
+                    "field_name": "Maximum Choices",
+                    "message": "Invalid number format",
+                    "suggestion": "Please select a valid number of choices",
+                }
+            )
+    else:
+        validated_data["max_choices"] = max_choices
+    
     validated_data["creator_id"] = current_user_id
     validated_data["image_message_text"] = safe_get_form_data(
         form_data, "image_message_text", ""

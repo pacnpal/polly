@@ -7,7 +7,6 @@ import discord
 from discord.ext import commands
 from datetime import datetime
 from typing import List, Dict, Any
-import logging
 import pytz
 
 from .database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
@@ -300,107 +299,123 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
         embed.add_field(name="📝 Options", value=option_text, inline=False)
 
-        # Always show total votes for active polls
-        total_votes = poll.get_total_votes()
+    # Add choice limit information for all polls
+    poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+    if poll_multiple_choice:
+        # For multiple choice, use configurable max_choices or fall back to total options
+        max_choices = getattr(poll, "max_choices", None)
+        if max_choices and max_choices > 0:
+            num_choices = max_choices
+        else:
+            # Fallback to total number of options if max_choices not set
+            num_choices = len(poll.options)
+        choice_info = f"🔢 You may make up to **{num_choices} choices** in this poll"
+    else:
+        choice_info = "🔢 You may make **1 choice** in this poll"
+        
+    embed.add_field(name="ℹ️ How to Vote", value=choice_info, inline=False)
 
-        poll_anonymous = bool(getattr(poll, "anonymous", False))
-        if poll_anonymous:
-            # Enhanced anonymous poll display
+    # Always show total votes for active polls
+    total_votes = poll.get_total_votes()
+
+    poll_anonymous = bool(getattr(poll, "anonymous", False))
+    if poll_anonymous:
+        # Enhanced anonymous poll display
+        embed.add_field(
+            name="🔒 Anonymous Poll",
+            value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
+            inline=False,
+        )
+    else:
+        # For non-anonymous polls, ALWAYS show live results with percentages
+        if total_votes > 0:
+            # Show live vote breakdown for non-anonymous polls
+            results = poll.get_results()
+            live_results_text = ""
+
+            for i, option in enumerate(poll.options):
+                emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+                votes = results.get(i, 0)
+                percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+
+                # Shorter progress bar for live results
+                bar_length = 10
+                filled = int((percentage / 100) * bar_length)
+                bar = "█" * filled + "░" * (bar_length - filled)
+
+                live_results_text += (
+                    f"{emoji} `{bar}` **{votes}** ({percentage:.1f}%)\n"
+                )
+
             embed.add_field(
-                name="🔒 Anonymous Poll",
-                value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
-                inline=False,
+                name="📈 Live Results", value=live_results_text, inline=False
+            )
+
+            embed.add_field(
+                name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
             )
         else:
-            # For non-anonymous polls, ALWAYS show live results with percentages
-            if total_votes > 0:
-                # Show live vote breakdown for non-anonymous polls
-                results = poll.get_results()
-                live_results_text = ""
+            # Even with 0 votes, show the structure for non-anonymous polls
+            results_text = ""
+            for i, option in enumerate(poll.options):
+                emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+                bar = "░" * 10  # Empty bar
+                results_text += f"{emoji} `{bar}` **0** (0.0%)\n"
 
-                for i, option in enumerate(poll.options):
-                    emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-                    votes = results.get(i, 0)
-                    percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+            embed.add_field(
+                name="📈 Live Results", value=results_text, inline=False
+            )
 
-                    # Shorter progress bar for live results
-                    bar_length = 10
-                    filled = int((percentage / 100) * bar_length)
-                    bar = "█" * filled + "░" * (bar_length - filled)
+    # Add timing information with timezone support
+    if poll_status == "scheduled":
+        # Only show opens time for scheduled polls, with timezone-specific time
+        poll_timezone = str(getattr(poll, "timezone", "UTC"))
+        if poll_timezone and poll_timezone != "UTC":
+            try:
+                # Validate and normalize timezone first
+                from .utils import validate_and_normalize_timezone
 
-                    live_results_text += (
-                        f"{emoji} `{bar}` **{votes}** ({percentage:.1f}%)\n"
-                    )
-
+                normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                tz = pytz.timezone(normalized_tz)
+                local_open = poll.open_time.astimezone(tz)
                 embed.add_field(
-                    name="📈 Live Results", value=live_results_text, inline=False
+                    name=f"Opens ({normalized_tz})",
+                    value=local_open.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True,
+                )
+            except Exception as e:
+                logger.debug(f"Could not format timezone {poll_timezone}: {e}")
+                # Fallback to UTC
+                embed.add_field(
+                    name="Opens (UTC)",
+                    value=poll.open_time.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True,
                 )
 
+    # Show close time for scheduled and active polls
+    if poll_status in ["scheduled", "active"]:
+        poll_timezone = str(getattr(poll, "timezone", "UTC"))
+        if poll_timezone and poll_timezone != "UTC":
+            try:
+                # Validate and normalize timezone first
+                from .utils import validate_and_normalize_timezone
+
+                normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                tz = pytz.timezone(normalized_tz)
+                local_close = poll.close_time.astimezone(tz)
                 embed.add_field(
-                    name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
+                    name=f"Closes ({normalized_tz})",
+                    value=local_close.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True,
                 )
-            else:
-                # Even with 0 votes, show the structure for non-anonymous polls
-                results_text = ""
-                for i, option in enumerate(poll.options):
-                    emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-                    bar = "░" * 10  # Empty bar
-                    results_text += f"{emoji} `{bar}` **0** (0.0%)\n"
-
+            except Exception as e:
+                logger.debug(f"Could not format timezone {poll_timezone}: {e}")
+                # Fallback to UTC
                 embed.add_field(
-                    name="📈 Live Results", value=results_text, inline=False
+                    name="Closes (UTC)",
+                    value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True,
                 )
-
-        # Add timing information with timezone support
-        if poll_status == "scheduled":
-            # Only show opens time for scheduled polls, with timezone-specific time
-            poll_timezone = str(getattr(poll, "timezone", "UTC"))
-            if poll_timezone and poll_timezone != "UTC":
-                try:
-                    # Validate and normalize timezone first
-                    from .utils import validate_and_normalize_timezone
-
-                    normalized_tz = validate_and_normalize_timezone(poll_timezone)
-                    tz = pytz.timezone(normalized_tz)
-                    local_open = poll.open_time.astimezone(tz)
-                    embed.add_field(
-                        name=f"Opens ({normalized_tz})",
-                        value=local_open.strftime("%Y-%m-%d %I:%M %p"),
-                        inline=True,
-                    )
-                except Exception as e:
-                    logger.debug(f"Could not format timezone {poll_timezone}: {e}")
-                    # Fallback to UTC
-                    embed.add_field(
-                        name="Opens (UTC)",
-                        value=poll.open_time.strftime("%Y-%m-%d %I:%M %p"),
-                        inline=True,
-                    )
-
-        # Show close time for scheduled and active polls
-        if poll_status in ["scheduled", "active"]:
-            poll_timezone = str(getattr(poll, "timezone", "UTC"))
-            if poll_timezone and poll_timezone != "UTC":
-                try:
-                    # Validate and normalize timezone first
-                    from .utils import validate_and_normalize_timezone
-
-                    normalized_tz = validate_and_normalize_timezone(poll_timezone)
-                    tz = pytz.timezone(normalized_tz)
-                    local_close = poll.close_time.astimezone(tz)
-                    embed.add_field(
-                        name=f"Closes ({normalized_tz})",
-                        value=local_close.strftime("%Y-%m-%d %I:%M %p"),
-                        inline=True,
-                    )
-                except Exception as e:
-                    logger.debug(f"Could not format timezone {poll_timezone}: {e}")
-                    # Fallback to UTC
-                    embed.add_field(
-                        name="Closes (UTC)",
-                        value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
-                        inline=True,
-                    )
 
     # Add poll info in footer without Poll ID
     embed.set_footer(text="Created by Polly")
@@ -462,7 +477,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             
             # Ensure role ping data is correctly set from the direct query
             if poll_data:
-                logger.info(f"🔔 ROLE PING INITIAL LOAD - Direct query results:")
+                logger.info("🔔 ROLE PING INITIAL LOAD - Direct query results:")
                 logger.info(f"🔔 ROLE PING INITIAL LOAD - ping_role_enabled: {poll_data.ping_role_enabled}")
                 logger.info(f"🔔 ROLE PING INITIAL LOAD - ping_role_id: {poll_data.ping_role_id}")
                 logger.info(f"🔔 ROLE PING INITIAL LOAD - ping_role_name: {poll_data.ping_role_name}")
@@ -472,11 +487,11 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
                     setattr(poll, "ping_role_enabled", bool(poll_data.ping_role_enabled))
                     setattr(poll, "ping_role_id", poll_data.ping_role_id)
                     setattr(poll, "ping_role_name", poll_data.ping_role_name)
-                    logger.info(f"🔔 ROLE PING INITIAL LOAD - ✅ Forced role ping data from direct query")
+                    logger.info("🔔 ROLE PING INITIAL LOAD - ✅ Forced role ping data from direct query")
                 else:
-                    logger.info(f"🔔 ROLE PING INITIAL LOAD - No role ping data in direct query")
+                    logger.info("🔔 ROLE PING INITIAL LOAD - No role ping data in direct query")
             else:
-                logger.error(f"🔔 ROLE PING INITIAL LOAD - poll_data is None")
+                logger.error("🔔 ROLE PING INITIAL LOAD - poll_data is None")
                 
         except Exception as e:
             logger.error(
@@ -630,7 +645,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         original_ping_role_id = getattr(poll, "ping_role_id", None)
         original_ping_role_name = getattr(poll, "ping_role_name", None)
         
-        logger.info(f"🔔 ROLE PING FIX - Preserving original role ping data before refresh:")
+        logger.info("🔔 ROLE PING FIX - Preserving original role ping data before refresh:")
         logger.info(f"🔔 ROLE PING FIX - original_ping_role_enabled: {original_ping_role_enabled}")
         logger.info(f"🔔 ROLE PING FIX - original_ping_role_id: {original_ping_role_id}")
         logger.info(f"🔔 ROLE PING FIX - original_ping_role_name: {original_ping_role_name}")
@@ -663,7 +678,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             refreshed_ping_role_id = getattr(poll, "ping_role_id", None)
             refreshed_ping_role_name = getattr(poll, "ping_role_name", None)
             
-            logger.info(f"🔔 ROLE PING FIX - Role ping data after refresh:")
+            logger.info("🔔 ROLE PING FIX - Role ping data after refresh:")
             logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_enabled: {refreshed_ping_role_enabled}")
             logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_id: {refreshed_ping_role_id}")
             logger.info(f"🔔 ROLE PING FIX - refreshed_ping_role_name: {refreshed_ping_role_name}")
@@ -671,7 +686,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             # CRITICAL FIX: The issue is that the original poll object being passed to this function
             # already has False/None values, which means the problem is earlier in the chain.
             # Let's force a direct database query to get the actual stored values
-            logger.info(f"🔔 ROLE PING FIX - Performing direct database query to verify stored values")
+            logger.info("🔔 ROLE PING FIX - Performing direct database query to verify stored values")
             
             # Query the database directly to see what's actually stored
             from sqlalchemy import text
@@ -682,22 +697,22 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             
             if db_poll_data:
                 db_ping_role_enabled, db_ping_role_id, db_ping_role_name = db_poll_data
-                logger.info(f"🔔 ROLE PING FIX - Direct DB query results:")
+                logger.info("🔔 ROLE PING FIX - Direct DB query results:")
                 logger.info(f"🔔 ROLE PING FIX - db_ping_role_enabled: {db_ping_role_enabled}")
                 logger.info(f"🔔 ROLE PING FIX - db_ping_role_id: {db_ping_role_id}")
                 logger.info(f"🔔 ROLE PING FIX - db_ping_role_name: {db_ping_role_name}")
                 
                 # Use the direct database values if they exist
                 if db_ping_role_enabled and db_ping_role_id:
-                    logger.info(f"🔔 ROLE PING FIX - Using direct database values for role ping")
+                    logger.info("🔔 ROLE PING FIX - Using direct database values for role ping")
                     setattr(poll, "ping_role_enabled", bool(db_ping_role_enabled))
                     setattr(poll, "ping_role_id", db_ping_role_id)
                     setattr(poll, "ping_role_name", db_ping_role_name)
                     
-                    logger.info(f"🔔 ROLE PING FIX - ✅ Successfully restored role ping data from direct DB query")
+                    logger.info("🔔 ROLE PING FIX - ✅ Successfully restored role ping data from direct DB query")
                     logger.info(f"🔔 ROLE PING FIX - Final values: enabled={bool(db_ping_role_enabled)}, id={db_ping_role_id}, name={db_ping_role_name}")
                 else:
-                    logger.info(f"🔔 ROLE PING FIX - Direct DB query shows no role ping data stored")
+                    logger.info("🔔 ROLE PING FIX - Direct DB query shows no role ping data stored")
             else:
                 logger.error(f"🔔 ROLE PING FIX - Direct DB query returned no results for poll {original_poll_id}")
             
@@ -790,7 +805,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             role_id = str(getattr(poll, "ping_role_id"))
             role_name = str(getattr(poll, "ping_role_name", "Unknown Role"))
             message_content = (
-                f"<@&{role_id}> 📊 **Vote now!**"
+                f"<@&{role_id}>\n📊 **Vote now!**"
             )
             role_ping_attempted = True
             logger.info(
@@ -801,7 +816,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
             )
         else:
             logger.info(
-                f"🔔 ROLE PING DEBUG - ❌ Role ping disabled or missing data"
+                "🔔 ROLE PING DEBUG - ❌ Role ping disabled or missing data"
             )
             logger.info(
                 f"🔔 ROLE PING DEBUG - ❌ ping_role_enabled check: {getattr(poll, 'ping_role_enabled', False)}"
@@ -1250,6 +1265,7 @@ async def send_vote_confirmation_dm(
 ) -> bool:
     """
     Send a DM to the user confirming their vote with poll information.
+    Checks previous vote status and customizes message accordingly.
 
     Args:
         bot: Discord bot instance
@@ -1277,7 +1293,7 @@ async def send_vote_confirmation_dm(
             logger.warning(f"User {user_id} not found for vote confirmation DM")
             return False
 
-        # Create confirmation embed
+        # Get poll information
         poll_name = str(getattr(poll, "name", ""))
         poll_question = str(getattr(poll, "question", ""))
         selected_option = (
@@ -1291,54 +1307,137 @@ async def send_vote_confirmation_dm(
             else POLL_EMOJIS[option_index]
         )
 
-        # Determine action message
+        # Check user's voting history for this poll to provide context
+        db = get_db_session()
+        previous_votes = []
+        try:
+            from .database import Vote
+            user_votes = (
+                db.query(Vote)
+                .filter(Vote.poll_id == getattr(poll, "id"), Vote.user_id == user_id)
+                .all()
+            )
+            previous_votes = [vote.option_index for vote in user_votes]
+        except Exception as e:
+            logger.warning(f"Could not fetch previous votes for user {user_id}: {e}")
+        finally:
+            db.close()
+
+        # Determine action message based on vote action and previous votes
+        poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+        
         if vote_action == "added":
-            action_description = (
-                f"You voted for: {selected_emoji} **{selected_option}**"
-            )
+            if poll_multiple_choice:
+                action_description = f"✅ You added a vote for: {selected_emoji} **{selected_option}**"
+                if len(previous_votes) > 1:
+                    action_description += f"\n💡 You now have {len(previous_votes)} selections in this poll"
+            else:
+                action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
+                
         elif vote_action == "removed":
-            action_description = (
-                f"You removed your vote for: {selected_emoji} **{selected_option}**"
-            )
+            action_description = f"❌ You removed your vote for: {selected_emoji} **{selected_option}**"
+            if poll_multiple_choice and len(previous_votes) > 0:
+                action_description += f"\n💡 You still have {len(previous_votes)} other selection(s) in this poll"
+            elif poll_multiple_choice and len(previous_votes) == 0:
+                action_description += "\n💡 You have no selections remaining in this poll"
+                
         elif vote_action == "updated":
-            action_description = (
-                f"You changed your vote to: {selected_emoji} **{selected_option}**"
-            )
+            action_description = f"🔄 You changed your vote to: {selected_emoji} **{selected_option}**"
+            # For single-choice polls, this means they had a different previous vote
+            if not poll_multiple_choice:
+                action_description += "\n💡 Your previous vote has been replaced"
+                
         elif vote_action == "created":
-            action_description = (
-                f"You voted for: {selected_emoji} **{selected_option}**"
-            )
+            action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
+            
         else:
-            action_description = f"Your vote: {selected_emoji} **{selected_option}**"
+            # Fallback for unknown actions
+            action_description = f"🗳️ Your vote: {selected_emoji} **{selected_option}**"
+
+        # Check if user already had this exact vote (for better messaging)
+        had_this_vote_before = option_index in [v.option_index for v in (
+            db.query(Vote).filter(
+                Vote.poll_id == getattr(poll, "id"), 
+                Vote.user_id == user_id,
+                Vote.option_index == option_index
+            ).all() if 'db' in locals() else []
+        )]
+
+        # Add contextual information for repeated votes
+        if vote_action == "added" and not poll_multiple_choice:
+            # For single choice, "added" usually means first vote, but let's be explicit
+            if len(previous_votes) == 1:  # This is their first and only vote
+                action_description += "\n💡 This is your only vote in this poll"
+        elif vote_action == "created" and not poll_multiple_choice:
+            # For single choice polls, clarify it's their only vote
+            action_description += "\n💡 This is your only vote in this poll"
 
         # Create embed with poll information
+        embed_color = 0x00FF00  # Green for confirmation
+        if vote_action == "removed":
+            embed_color = 0xFFA500  # Orange for removal
+        elif vote_action == "updated":
+            embed_color = 0x0099FF  # Blue for change
+
         embed = discord.Embed(
             title="🗳️ Vote Confirmation",
             description=action_description,
-            color=0x00FF00,  # Green for confirmation
+            color=embed_color,
             timestamp=datetime.now(pytz.UTC),
         )
 
-        # Add poll details
+        # Add poll details with choice limit information
+        poll_info_text = f"**{poll_name}**\n{poll_question}\n\n"
+        
+        # Add choice limit information
+        if poll_multiple_choice:
+            poll_info_text += "🔢 You may make **multiple choices** in this poll"
+        else:
+            poll_info_text += "🔢 You may make **1 choice** in this poll"
+        
         embed.add_field(
-            name="📊 Poll", value=f"**{poll_name}**\n{poll_question}", inline=False
+            name="📊 Poll", value=poll_info_text, inline=False
         )
 
-        # Add all poll options for reference
+        # Add all poll options for reference, highlighting current selections
         options_text = ""
+        current_user_votes = []
+        
+        # Get current votes after the action
+        db = get_db_session()
+        try:
+            from .database import Vote
+            current_votes = (
+                db.query(Vote)
+                .filter(Vote.poll_id == getattr(poll, "id"), Vote.user_id == user_id)
+                .all()
+            )
+            current_user_votes = [vote.option_index for vote in current_votes]
+        except Exception as e:
+            logger.warning(f"Could not fetch current votes for user {user_id}: {e}")
+        finally:
+            db.close()
+
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-            if i == option_index:
-                # Highlight the selected option
-                options_text += f"{emoji} **{option}** ← Your choice\n"
+            if i in current_user_votes:
+                # Highlight all current selections
+                if i == option_index and vote_action in ["added", "updated", "created"]:
+                    options_text += f"{emoji} **{option}** ← Your current choice ✅\n"
+                else:
+                    options_text += f"{emoji} **{option}** ← Selected ✅\n"
             else:
                 options_text += f"{emoji} {option}\n"
 
         embed.add_field(name="📝 All Options", value=options_text, inline=False)
 
+        # Add voting summary for multiple choice polls
+        if poll_multiple_choice and len(current_user_votes) > 0:
+            summary_text = f"You have selected {len(current_user_votes)} option(s) in this poll"
+            embed.add_field(name="📊 Your Selections", value=summary_text, inline=True)
+
         # Add poll type information
         poll_anonymous = bool(getattr(poll, "anonymous", False))
-        poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
 
         poll_info = []
         if poll_anonymous:
@@ -1366,7 +1465,7 @@ async def send_vote_confirmation_dm(
         await user.send(embed=embed)
 
         logger.info(
-            f"✅ Sent vote confirmation DM to user {user_id} for poll {getattr(poll, 'id')}"
+            f"✅ Sent enhanced vote confirmation DM to user {user_id} for poll {getattr(poll, 'id')} (action: {vote_action})"
         )
         return True
 
