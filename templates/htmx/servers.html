@@ -18,7 +18,7 @@
                     {% for channel in guild.channels[:3] %}
                     <span class="badge bg-light text-dark me-1">#{{ channel.name|e }}</span>
                     {% endfor %}
-                    {% if guild.channels|length > 3 %}
+                    {% if guild.channels|length &gt; 3 %}
                     <span class="text-muted">+{{ guild.channels|length - 3 }} more</span>
                     {% endif %}
                 </div>

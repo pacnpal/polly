@@ -5,13 +5,13 @@
             <i class="fas fa-chart-bar me-2"></i>Live Results Dashboard
         </h6>
         <div class="btn-group" role="group">
-            <button type="button" class="btn btn-sm btn-outline-success" 
-                    hx-get="/htmx/poll/{{ poll.id }}/export-csv" 
+            <button type="button" class="btn btn-sm btn-outline-success"
+                    hx-get="/htmx/poll/{{ poll.id }}/export-csv"
                     hx-trigger="click"
                     title="Export to CSV">
                 <i class="fas fa-download me-1"></i>Export CSV
             </button>
-            <button type="button" class="btn btn-sm btn-outline-primary" 
+            <button type="button" class="btn btn-sm btn-outline-primary"
                     onclick="document.getElementById('poll-dashboard-table').scrollIntoView({behavior: 'smooth'})"
                     title="Scroll to table">
                 <i class="fas fa-table me-1"></i>View Table
@@ -42,10 +42,10 @@
             <div class="col-md-3">
                 <div class="text-center">
                     {% if is_anonymous %}
-                    <h4 class="text-warning mb-1"><i class="fas fa-user-secret"></i></h4>
+                    <h4 class="text-warning mb-1"><i class="fas fa-user-secret" aria-label="Anonymous poll"></i></h4>
                     <small class="text-muted">Anonymous</small>
                     {% else %}
-                    <h4 class="text-secondary mb-1"><i class="fas fa-users"></i></h4>
+                    <h4 class="text-secondary mb-1"><i class="fas fa-users" aria-label="Public poll"></i></h4>
                     <small class="text-muted">Public</small>
                     {% endif %}
                 </div>
@@ -56,17 +56,15 @@
         <div class="row mb-4">
             {% for i in range(options|length) %}
             {% set option_votes = results.get(i, 0) %}
-            {% set percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0 %}
-            {% set emoji = emojis[i] if i < emojis|length else "🇦" %}
+            {% set percentage = (option_votes / total_votes * 100) if total_votes &gt; 0 else 0 %}
+            {% set emoji = emojis[i] if i &lt; emojis|length else "🇦" %}
             <div class="col-md-6 mb-3">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <span><strong>{{ emoji }} {{ options[i]|e }}</strong></span>
                     <span class="badge bg-primary">{{ option_votes }} votes</span>
                 </div>
-                <div class="progress" style="height: 8px;">
-                    <div class="progress-bar" role="progressbar" style="width: {{ percentage }}%;" 
-                         aria-valuenow="{{ percentage }}" aria-valuemin="0" aria-valuemax="100">
-                    </div>
+                <div class="progress progress-bar-small" role="progressbar" aria-valuenow="{{ percentage }}" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar" data-width="{{ percentage }}"></div>
                 </div>
                 <small class="text-muted">{{ "%.1f"|format(percentage) }}%</small>
             </div>
@@ -74,16 +72,16 @@
         </div>
 
         <!-- Live Vote Table -->
-        <div class="table-responsive" style="max-height: 500px; overflow-y: auto;" id="poll-dashboard-table">
+        <div class="table-responsive table-scroll-container" id="poll-dashboard-table">
             <table class="table table-striped table-hover table-sm">
                 <thead class="table-dark sticky-top">
                     <tr>
-                        <th style="width: 50px;">#</th>
-                        <th style="width: 200px;">Voter</th>
-                        <th style="width: 300px;">Option Selected</th>
-                        <th style="width: 150px;">Vote Time</th>
+                        <th scope="col" class="table-col-narrow">#</th>
+                        <th scope="col" class="table-col-wider">Voter</th>
+                        <th scope="col" class="table-col-widest">Option Selected</th>
+                        <th scope="col" class="table-col-wide">Vote Time</th>
                         {% if not is_anonymous %}
-                        <th style="width: 100px;">Status</th>
+                        <th scope="col" class="table-col-medium">Status</th>
                         {% endif %}
                     </tr>
                 </thead>
@@ -95,15 +93,14 @@
                             <td>
                                 <div class="d-flex align-items-center">
                                     {% if vote.avatar_url and show_usernames_to_creator %}
-                                    <img src="{{ vote.avatar_url }}" alt="Avatar" 
-                                         class="rounded-circle me-2" style="width: 24px; height: 24px;">
+                                    <img src="{{ vote.avatar_url }}" alt="Avatar"
+                                         class="rounded-circle me-2 avatar-small">
                                     {% else %}
-                                    <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center me-2" 
-                                         style="width: 24px; height: 24px; font-size: 12px;">
+                                    <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center me-2 avatar-placeholder">
                                         <i class="fas fa-user text-white"></i>
                                     </div>
                                     {% endif %}
-                                    <span class="text-truncate" style="max-width: 150px;" title="{{ vote.username|e }}">
+                                    <span class="text-truncate text-truncate-150" title="{{ vote.username|e }}">
                                         {% if show_usernames_to_creator %}
                                         {{ vote.username|e }}
                                         {% else %}
@@ -139,7 +136,7 @@
                         {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="{% if is_anonymous %}4{% else %}5{% endif %}" class="text-center text-muted py-4">
+                        <td colspan="4" class="text-center text-muted py-4">
                             <i class="fas fa-vote-yea fa-2x mb-2"></i><br>
                             No votes yet. Results will appear here as people vote!
                         </td>
@@ -154,7 +151,7 @@
             <small class="text-muted">
                 <i class="fas fa-sync-alt me-1"></i>
                 {% if poll.status == 'active' %}
-                Updates automatically every 5 seconds
+                Updates automatically every 10 seconds
                 {% else %}
                 Realtime updates stopped (poll is {{ poll.status }})
                 {% endif %}
@@ -167,9 +164,20 @@
 <!-- Auto-refresh the dashboard every 5 seconds (only for active polls) -->
 {% if poll.status == 'active' %}
 <div hx-get="/htmx/poll/{{ poll.id }}/dashboard"
-     hx-trigger="every 5s"
+     hx-trigger="every 10s"
      hx-swap="innerHTML"
      hx-target="#poll-dashboard-container"
-     style="display: none;">
+     class="auto-refresh-trigger">
 </div>
+
+<!-- JavaScript to handle progress bar widths from data attributes -->
+<script>
+    // Set progress bar widths from data-width attributes
+    document.querySelectorAll('.progress-bar[data-width]').forEach(function(bar) {
+        const width = bar.getAttribute('data-width');
+        if (width !== null) {
+            bar.style.width = width + '%';
+        }
+    });
+</script>
 {% endif %}

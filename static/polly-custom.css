@@ -1,0 +1,166 @@
+/* Custom CSS classes to replace inline styles for html-validate compliance */
+
+/* Logo/favicon styling */
+.navbar-logo-icon {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.footer-logo-icon {
+    width: 12px;
+    height: 12px;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+.menu-bar-logo-icon {
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+/* System info positioning */
+.system-version-info {
+    float: right;
+    font-size: 10px;
+}
+
+/* Alert and content styling */
+.alert-icon-background {
+    background-image: url('/static/polly_icon_64.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-color: transparent;
+    border: none;
+}
+
+.tech-badge-container {
+    margin: 16px 0;
+}
+
+.system-info-margin {
+    margin-top: 12px;
+}
+
+.text-center-inline {
+    text-align: center;
+}
+
+.section-margin {
+    margin: 16px 0;
+}
+
+/* Hidden elements positioning */
+.turnstile-hidden {
+    position: fixed;
+    top: -1000px;
+    left: -1000px;
+    visibility: hidden;
+}
+
+.loading-overlay-hidden {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+}
+
+/* White-space handling */
+.preserve-whitespace {
+    white-space: pre-line;
+}
+
+/* Image preview styling */
+.image-preview-hidden {
+    display: none;
+}
+
+.image-preview-card {
+    max-width: 300px;
+}
+
+.image-preview-img {
+    max-height: 200px;
+    object-fit: cover;
+}
+
+.image-message-section-hidden {
+    display: none;
+}
+
+/* Poll image sizing */
+.poll-image-display {
+    max-height: 300px;
+}
+
+/* Progress bar sizing */
+.progress-bar-height {
+    height: 20px;
+}
+
+.progress-bar-small {
+    height: 8px;
+}
+
+/* Table styling */
+.table-scroll-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.table-col-narrow {
+    width: 50px;
+}
+
+.table-col-medium {
+    width: 100px;
+}
+
+.table-col-wide {
+    width: 150px;
+}
+
+.table-col-wider {
+    width: 200px;
+}
+
+.table-col-widest {
+    width: 300px;
+}
+
+/* Avatar styling */
+.avatar-small {
+    width: 24px;
+    height: 24px;
+}
+
+.avatar-placeholder {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+}
+
+.text-truncate-150 {
+    max-width: 150px;
+}
+
+/* Auto-refresh hidden trigger */
+.auto-refresh-trigger {
+    display: none;
+}
+
+/* Emoji picker positioning */
+.emoji-picker-absolute {
+    position: absolute;
+    z-index: 1060;
+}
+
+/* Progress bars with data-width attributes will be handled by JavaScript */
+.progress-bar[data-width] {
+    transition: width 0.3s ease-in-out;
+}

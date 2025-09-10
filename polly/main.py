@@ -11,17 +11,23 @@ from dotenv import load_dotenv
 # Load environment variables first
 load_dotenv()
 
-# Import modular components
+# Import debug configuration and initialize it early
+from .debug_config import init_debug_config, get_debug_logger
 
-# Setup logging
+# Setup logging directories
 os.makedirs("logs", exist_ok=True)
+
+# Configure basic logging structure (level will be set by debug config)
 logging.basicConfig(
-    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.FileHandler("logs/polly.log"), logging.StreamHandler()],
 )
 
-logger = logging.getLogger(__name__)
+# Initialize debug configuration (this will set appropriate log levels)
+init_debug_config()
+
+# Get debug-aware logger
+logger = get_debug_logger(__name__)
 
 # Create the FastAPI app using the modular web_app component
 app = create_app()

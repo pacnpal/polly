@@ -18,10 +18,40 @@ class EnhancedCacheService(CacheService):
         super().__init__()
         # Extended TTLs for Discord API rate limiting prevention
         self.guild_emojis_ttl = 3600  # 1 hour for guild emojis (rarely change)
-        self.live_results_ttl = 30  # 30 seconds for live poll results
-        self.poll_dashboard_ttl = 15  # 15 seconds for poll dashboard data
+        self.live_results_ttl = (
+            10  # 10 seconds for live poll results (matches polling interval)
+        )
+        self.poll_dashboard_ttl = (
+            10  # 10 seconds for poll dashboard data (matches polling interval)
+        )
+        # Maximum TTL for static/closed poll data that never changes
+        self.static_poll_results_ttl = 86400 * 7  # 7 days for closed/inactive polls
+        self.static_poll_dashboard_ttl = 86400 * 7  # 7 days for closed poll dashboards
         self.discord_user_ttl = 1800  # 30 minutes for Discord user data
         self.guild_info_ttl = 1800  # 30 minutes for guild information
+
+    def _get_poll_cache_ttl(self, poll_status: str, cache_type: str = "results") -> int:
+        """Get appropriate cache TTL based on poll status
+        
+        Args:
+            poll_status: Poll status ('scheduled', 'active', 'closed')
+            cache_type: Type of cache ('results' or 'dashboard')
+            
+        Returns:
+            TTL in seconds
+        """
+        if poll_status == "closed":
+            # Closed polls are static - use maximum TTL
+            if cache_type == "dashboard":
+                return self.static_poll_dashboard_ttl
+            else:
+                return self.static_poll_results_ttl
+        else:
+            # Active or scheduled polls need frequent updates
+            if cache_type == "dashboard":
+                return self.poll_dashboard_ttl
+            else:
+                return self.live_results_ttl
 
     # Guild Emojis Caching (Extended TTL)
     async def cache_guild_emojis_extended(
@@ -62,17 +92,25 @@ class EnhancedCacheService(CacheService):
 
     # Live Poll Results Caching
     async def cache_live_poll_results(
-        self, poll_id: int, results_data: Dict[str, Any]
+        self, poll_id: int, results_data: Dict[str, Any], poll_status: str = "active"
     ) -> bool:
-        """Cache live poll results with short TTL for real-time updates"""
+        """Cache live poll results with status-aware TTL (short for active, long for closed)"""
         redis_client = await self._get_redis()
         if not redis_client:
             return False
 
+        # Use status-aware TTL
+        ttl = self._get_poll_cache_ttl(poll_status, "results")
         cache_key = f"live_poll_results:{poll_id}"
-        return await redis_client.cache_set(
-            cache_key, results_data, self.live_results_ttl
-        )
+        
+        success = await redis_client.cache_set(cache_key, results_data, ttl)
+        
+        if success:
+            logger.info(
+                f"Cached poll results for poll {poll_id} (status: {poll_status}) with {ttl}s TTL"
+            )
+        
+        return success
 
     async def get_cached_live_poll_results(
         self, poll_id: int
@@ -87,11 +125,11 @@ class EnhancedCacheService(CacheService):
 
     # Poll Dashboard Caching
     async def cache_poll_dashboard(
-        self, poll_id: int, dashboard_data: Dict[str, Any]
+        self, poll_id: int, dashboard_data: Dict[str, Any], poll_status: str = "active"
     ) -> bool:
-        """Cache poll dashboard data with moderate TTL"""
+        """Cache poll dashboard data with status-aware TTL (short for active, long for closed)"""
         logger.info(
-            f"🔍 CACHE DEBUG - Attempting to cache dashboard for poll {poll_id}"
+            f"🔍 CACHE DEBUG - Attempting to cache dashboard for poll {poll_id} (status: {poll_status})"
         )
         logger.info(
             f"🔍 CACHE DEBUG - Dashboard data keys: {list(dashboard_data.keys())}"
@@ -116,13 +154,13 @@ class EnhancedCacheService(CacheService):
             )
             return False
 
+        # Use status-aware TTL
+        ttl = self._get_poll_cache_ttl(poll_status, "dashboard")
         cache_key = f"poll_dashboard:{poll_id}"
         logger.info(f"🔍 CACHE DEBUG - Using cache key: {cache_key}")
-        logger.info(f"🔍 CACHE DEBUG - Cache TTL: {self.poll_dashboard_ttl} seconds")
+        logger.info(f"🔍 CACHE DEBUG - Cache TTL: {ttl} seconds (status: {poll_status})")
 
-        result = await redis_client.cache_set(
-            cache_key, dashboard_data, self.poll_dashboard_ttl
-        )
+        result = await redis_client.cache_set(cache_key, dashboard_data, ttl)
         logger.info(f"🔍 CACHE DEBUG - Cache set result for poll {poll_id}: {result}")
 
         return result
@@ -285,7 +323,9 @@ class EnhancedCacheService(CacheService):
             return False
 
         cache_key = f"guild_roles_ping:{guild_id}"
-        success = await redis_client.cache_set(cache_key, roles, self.guild_info_ttl)  # 30 minutes
+        success = await redis_client.cache_set(
+            cache_key, roles, self.guild_info_ttl
+        )  # 30 minutes
 
         if success:
             logger.info(
@@ -313,7 +353,11 @@ class EnhancedCacheService(CacheService):
         return cached_roles
 
     async def cache_role_validation(
-        self, guild_id: str, role_id: str, can_ping: bool, role_name: Optional[str] = None
+        self,
+        guild_id: str,
+        role_id: str,
+        can_ping: bool,
+        role_name: Optional[str] = None,
     ) -> bool:
         """Cache role ping validation results"""
         redis_client = await self._get_redis()
@@ -326,8 +370,10 @@ class EnhancedCacheService(CacheService):
             "role_name": role_name or "",
             "cached_at": datetime.now().isoformat(),
         }
-        
-        return await redis_client.cache_set(cache_key, validation_data, self.guild_info_ttl)  # 30 minutes
+
+        return await redis_client.cache_set(
+            cache_key, validation_data, self.guild_info_ttl
+        )  # 30 minutes
 
     async def get_cached_role_validation(
         self, guild_id: str, role_id: str
@@ -365,7 +411,9 @@ class EnhancedCacheService(CacheService):
                     if await redis_client._client.delete(key):
                         count += 1
         except Exception as e:
-            logger.warning(f"Error invalidating role validation cache for guild {guild_id}: {e}")
+            logger.warning(
+                f"Error invalidating role validation cache for guild {guild_id}: {e}"
+            )
 
         logger.info(f"Invalidated {count} role cache entries for guild {guild_id}")
         return count
@@ -423,6 +471,7 @@ class EnhancedCacheService(CacheService):
             if not cached_roles:
                 # Import here to avoid circular imports
                 from .discord_utils import get_guild_roles
+
                 roles = await get_guild_roles(bot, guild_id)
                 if roles:
                     await self.cache_guild_roles_for_ping(guild_id, roles)

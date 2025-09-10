@@ -11,8 +11,9 @@ import logging
 import pytz
 
 from .database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
+from .debug_config import get_debug_logger
 
-logger = logging.getLogger(__name__)
+logger = get_debug_logger(__name__)
 
 
 async def update_guild_cache(bot: commands.Bot, guild: discord.Guild):

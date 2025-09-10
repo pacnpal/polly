@@ -86,24 +86,26 @@ async def test_cache_operations_docker():
     try:
         cache_service = get_cache_service()
 
-        # Test with Docker-specific data
+        # Test with Docker-specific user preferences data
         docker_test_data = {
             "environment": "docker",
             "container": "polly-app",
             "redis_container": "polly-redis",
             "timestamp": datetime.now().isoformat(),
+            "last_server_id": "1234567890123456789",
+            "default_timezone": "UTC"
         }
 
-        # Test caching
-        cache_key = "docker_integration_test"
-        cache_result = await cache_service.cache_set(cache_key, docker_test_data, 60)
+        # Test caching using user preferences (actual CacheService API)
+        test_user_id = "docker_test_user"
+        cache_result = await cache_service.cache_user_preferences(test_user_id, docker_test_data)
         if not cache_result:
             print("❌ Failed to cache Docker test data")
             return False
         print("✅ Docker test data cached successfully")
 
         # Test retrieval
-        cached_data = await cache_service.cache_get(cache_key)
+        cached_data = await cache_service.get_cached_user_preferences(test_user_id)
         if cached_data != docker_test_data:
             print(
                 f"❌ Failed to retrieve Docker test data. Expected: {docker_test_data}, Got: {cached_data}"
@@ -112,7 +114,7 @@ async def test_cache_operations_docker():
         print("✅ Docker test data retrieved successfully")
 
         # Test cleanup
-        cleanup_result = await cache_service.cache_delete(cache_key)
+        cleanup_result = await cache_service.invalidate_user_preferences(test_user_id)
         if not cleanup_result:
             print("❌ Failed to cleanup Docker test data")
             return False

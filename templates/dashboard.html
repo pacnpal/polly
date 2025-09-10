@@ -11,6 +11,7 @@
     <link rel="apple-touch-icon" href="/static/polly_icon_128.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/polly-custom.css" rel="stylesheet">
     <style>
         .poll-card {
             transition: transform 0.2s;
@@ -31,7 +32,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">
-                <img src="/static/polly_favicon.png" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;" alt="Polly">Polly
+                <img src="/static/polly_favicon.png" class="navbar-logo-icon" alt="Polly">Polly
             </a>
             <div class="navbar-nav ms-auto">
                 <span class="navbar-text me-3">
@@ -59,13 +60,13 @@
                         </h5>
                     </div>
                     <div class="list-group list-group-flush">
-                        <button class="list-group-item list-group-item-action active" onclick="showSection('polls')">
+                        <button type="button" class="list-group-item list-group-item-action active" onclick="showSection('polls')">
                             <i class="fas fa-poll me-2"></i>My Polls
                         </button>
-                        <button class="list-group-item list-group-item-action" onclick="showSection('create')">
+                        <button type="button" class="list-group-item list-group-item-action" onclick="showSection('create')">
                             <i class="fas fa-plus me-2"></i>Create Poll
                         </button>
-                        <button class="list-group-item list-group-item-action" onclick="showSection('servers')">
+                        <button type="button" class="list-group-item list-group-item-action" onclick="showSection('servers')">
                             <i class="fas fa-server me-2"></i>Servers
                         </button>
                     </div>
@@ -100,7 +101,7 @@
                 <div id="polls-section" class="section active">
                     <div class="d-flex justify-content-between align-items-center mb-4">
                         <h2><i class="fas fa-poll me-2"></i>My Polls</h2>
-                        <button class="btn btn-primary" onclick="showSection('create')">
+                        <button type="button" class="btn btn-primary" onclick="showSection('create')">
                             <i class="fas fa-plus me-1"></i>Create New Poll
                         </button>
                     </div>
@@ -118,7 +119,6 @@
                 <!-- Create Poll Section -->
                 <div id="create-section" class="section" style="display: none;">
                     <h2><i class="fas fa-plus me-2"></i>Create New Poll</h2>
-                    
                     <form id="create-poll-form">
                         <div class="card">
                             <div class="card-header">
@@ -238,7 +238,7 @@
                                         {% for channel in guild.channels[:3] %}
                                         <span class="badge bg-light text-dark me-1">#{{ channel.name }}</span>
                                         {% endfor %}
-                                        {% if guild.channels|length > 3 %}
+                                        {% if guild.channels|length &gt; 3 %}
                                         <span class="text-muted">+{{ guild.channels|length - 3 }} more</span>
                                         {% endif %}
                                     </div>
@@ -258,7 +258,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="alertModalTitle">Alert</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" id="alertModalBody">
                     <!-- Dynamic content -->

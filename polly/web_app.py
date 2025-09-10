@@ -10,6 +10,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import pytz
 
+# Import debug configuration
+from .debug_config import get_debug_logger, get_debug_context
+
 from fastapi import FastAPI, Request, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -33,7 +36,7 @@ from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .admin_endpoints import add_admin_routes
 
-logger = logging.getLogger(__name__)
+logger = get_debug_logger(__name__)
 
 # Create directories
 os.makedirs("static/uploads", exist_ok=True)
@@ -41,6 +44,9 @@ os.makedirs("templates", exist_ok=True)
 
 # Templates setup
 templates = Jinja2Templates(directory="templates")
+# Add global template variable for debug
+_debug_ctx = get_debug_context()
+templates.env.globals["POLLY_DEBUG"] = _debug_ctx.get("debug_mode", False)
 
 
 async def get_user_preferences(user_id: str) -> dict:
@@ -343,7 +349,7 @@ def add_core_routes(app: FastAPI):
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request):
         """Home page"""
-        return templates.TemplateResponse("index.html", {"request": request})
+return templates.TemplateResponse("index.html", {"request": request, "POLLY_DEBUG": _debug_ctx.get("debug_mode", False)})
 
     @app.get("/health")
     async def health_check():
@@ -434,7 +440,7 @@ def add_core_routes(app: FastAPI):
             "TURNSTILE_SITE_KEY", default="1x00000000000000000000AA"
         )
 
-        return templates.TemplateResponse(
+return templates.TemplateResponse(
             "dashboard_htmx.html",
             {
                 "request": request,
@@ -444,6 +450,7 @@ def add_core_routes(app: FastAPI):
                 and not user_prefs.get("timezone_explicitly_set", False),
                 "turnstile_enabled": turnstile_enabled,
                 "turnstile_site_key": turnstile_site_key,
+                "POLLY_DEBUG": _debug_ctx.get("debug_mode", False),
             },
         )
 

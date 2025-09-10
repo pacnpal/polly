@@ -133,7 +133,7 @@
     function validateOptions() {
         const optionInputs = document.querySelectorAll('input[name^="option"]');
         const validOptions = [];
-        
+
         optionInputs.forEach(input => {
             const value = input.value.trim();
             if (value) {
@@ -142,11 +142,11 @@
         });
 
         const isValid = validOptions.length >= 2;
-        
+
         // Show validation on the options container
         const optionsContainer = document.getElementById('options-container');
         if (optionsContainer) {
-            const errorElement = optionsContainer.parentNode.querySelector('.options-error') || 
+            const errorElement = optionsContainer.parentNode.querySelector('.options-error') ||
                                (() => {
                                    const el = document.createElement('div');
                                    el.className = 'invalid-feedback options-error';
@@ -171,7 +171,7 @@
     function validateTimes() {
         const openTimeInput = document.getElementById('open-time');
         const closeTimeInput = document.getElementById('close-time');
-        
+
         if (!openTimeInput || !closeTimeInput) return true;
 
         const openTime = openTimeInput.value;
@@ -244,7 +244,7 @@
     function validateOptionsQuiet() {
         const optionInputs = document.querySelectorAll('input[name^="option"]');
         const validOptions = [];
-        
+
         optionInputs.forEach(input => {
             const value = input.value.trim();
             if (value) {
@@ -260,7 +260,7 @@
     function validateTimesQuiet() {
         const openTimeInput = document.getElementById('open-time');
         const closeTimeInput = document.getElementById('close-time');
-        
+
         if (!openTimeInput || !closeTimeInput) return true;
 
         const openTime = openTimeInput.value;
@@ -372,7 +372,7 @@
                 if (!formIsValid) {
                     e.preventDefault();
                     e.stopPropagation();
-                    
+
                     // Scroll to first error
                     const firstError = form.querySelector('.is-invalid');
                     if (firstError) {
@@ -407,13 +407,13 @@
         document.addEventListener('htmx:responseError', function(e) {
             try {
                 isSubmitting = false;
-                
+
                 // If we get a 400 status code, it means validation failed
                 // Run client-side validation to show the errors
                 if (e.detail.xhr && e.detail.xhr.status === 400) {
                     setTimeout(() => {
                         validateForm(true); // Show all validation errors
-                        
+
                         // Scroll to first error
                         const firstError = document.querySelector('.is-invalid');
                         if (firstError) {
@@ -455,7 +455,7 @@
     // Re-initialize when HTMX loads new content
     document.addEventListener('htmx:afterSwap', function(event) {
         // Only re-initialize if this content contains forms
-        if (event.detail.target.querySelector('form[hx-post]') || 
+        if (event.detail.target.querySelector('form[hx-post]') ||
             event.detail.target.closest('form[hx-post]')) {
             setTimeout(initializeValidation, 100); // Small delay to ensure DOM is ready
         }

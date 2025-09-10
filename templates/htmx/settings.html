@@ -13,7 +13,7 @@
                             <h6 class="text-muted mb-3">
                                 <i class="fas fa-clock me-2"></i>Timezone Preferences
                             </h6>
-                            
+
                             <div class="mb-3">
                                 <label for="timezone" class="form-label">
                                     Default Timezone
@@ -21,9 +21,7 @@
                                 </label>
                                 <select class="form-select" id="timezone" name="timezone" required>
                                     {% for tz in timezones %}
-                                    <option value="{{ tz.name }}" {% if tz.name == user_prefs.default_timezone %}selected{% endif %}>
-                                        {{ tz.display }}
-                                    </option>
+                                    <option value="{{ tz.name }}" {% if tz.name == user_prefs.default_timezone %}selected{% endif %}>{{ tz.display|e }}</option>
                                     {% endfor %}
                                 </select>
                                 <div class="form-text">
@@ -50,7 +48,7 @@
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save me-1"></i>Save Settings
                             </button>
-                            <button type="button" class="btn btn-secondary" 
+                            <button type="button" class="btn btn-secondary"
                                     hx-get="/htmx/polls" hx-target="#main-content">
                                 <i class="fas fa-arrow-left me-1"></i>Back to Polls
                             </button>

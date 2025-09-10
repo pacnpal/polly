@@ -18,6 +18,7 @@ from polly.validators import PollValidator
 from polly.poll_operations import BulletproofPollOperations
 from polly.json_import import PollJSONImporter, PollJSONExporter
 from polly.enhanced_cache_service import get_enhanced_cache_service
+from sqlalchemy import text
 
 def test_database_schema():
     """Test that the database has the open_immediately column"""
@@ -26,7 +27,7 @@ def test_database_schema():
     db = get_db_session()
     try:
         # Check if the column exists
-        cursor = db.execute("PRAGMA table_info(polls)")
+        cursor = db.execute(text("PRAGMA table_info(polls)"))
         columns = [row[1] for row in cursor.fetchall()]
         
         if "open_immediately" in columns:

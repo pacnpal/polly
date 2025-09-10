@@ -31,8 +31,9 @@ from .timezone_scheduler_fix import TimezoneAwareScheduler
 from .discord_emoji_handler import DiscordEmojiHandler
 from .emoji_pipeline_fix import get_unified_emoji_processor
 from .json_import import PollJSONImporter, PollJSONExporter
+from .debug_config import get_debug_logger
 
-logger = logging.getLogger(__name__)
+logger = get_debug_logger(__name__)
 
 # Templates setup
 templates = Jinja2Templates(directory="templates")
@@ -407,7 +408,10 @@ def get_user_preferences(user_id: str) -> dict:
 
 
 async def close_poll_htmx(
-    poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)
+    poll_id: int,
+    request: Request,
+    bot,
+    current_user: DiscordUser = Depends(require_auth),
 ):
     """Close an active poll via HTMX"""
     logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
@@ -434,9 +438,7 @@ async def close_poll_htmx(
         poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
         ping_role_enabled = TypeSafeColumn.get_bool(poll, "ping_role_enabled", False)
         ping_role_id = TypeSafeColumn.get_string(poll, "ping_role_id")
-        ping_role_name = TypeSafeColumn.get_string(poll, "ping_role_name", "Unknown Role")
         channel_id = TypeSafeColumn.get_string(poll, "channel_id")
-        ping_role_on_update = TypeSafeColumn.get_bool(poll, "ping_role_on_update", False)
         ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
 
         # Update poll status to closed
@@ -447,29 +449,50 @@ async def close_poll_htmx(
         logger.info(f"Poll {poll_id} closed by user {current_user.id}")
 
         # Send role ping notification if enabled
-        if ping_role_enabled and ping_role_id and bot and channel_id and ping_role_on_close:
+        if (
+            ping_role_enabled
+            and ping_role_id
+            and bot
+            and channel_id
+            and ping_role_on_close
+        ):
             try:
                 import discord
+
                 channel = bot.get_channel(int(channel_id))
                 if channel and isinstance(channel, discord.TextChannel):
-                    logger.info(f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure")
-                    
+                    logger.info(
+                        f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure"
+                    )
+
                     # Send role ping notification for manual poll closure
                     try:
                         message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has been manually closed!**"
                         await channel.send(content=message_content)
-                        logger.info(f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure")
+                        logger.info(
+                            f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure"
+                        )
                     except discord.Forbidden:
                         # Role ping failed due to permissions, send without role ping
-                        logger.warning(f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}")
+                        logger.warning(
+                            f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}"
+                        )
                         try:
-                            fallback_content = f"📊 **Poll '{poll_name}' has been manually closed!**"
+                            fallback_content = (
+                                f"📊 **Poll '{poll_name}' has been manually closed!**"
+                            )
                             await channel.send(content=fallback_content)
-                            logger.info(f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}")
+                            logger.info(
+                                f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}"
+                            )
                         except Exception as fallback_error:
-                            logger.error(f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}")
+                            logger.error(
+                                f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}"
+                            )
             except Exception as ping_error:
-                logger.error(f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}")
+                logger.error(
+                    f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}"
+                )
 
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
@@ -492,7 +515,11 @@ async def close_poll_htmx(
 
 
 async def open_poll_now_htmx(
-    poll_id: int, request: Request, bot, scheduler, current_user: DiscordUser = Depends(require_auth)
+    poll_id: int,
+    request: Request,
+    bot,
+    scheduler,
+    current_user: DiscordUser = Depends(require_auth),
 ):
     """Open a scheduled poll immediately via HTMX"""
     logger.info(f"User {current_user.id} requesting to open poll {poll_id} immediately")
@@ -512,7 +539,10 @@ async def open_poll_now_htmx(
         if TypeSafeColumn.get_string(poll, "status") != "scheduled":
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
-                {"request": request, "message": "Only scheduled polls can be opened immediately"},
+                {
+                    "request": request,
+                    "message": "Only scheduled polls can be opened immediately",
+                },
             )
 
         # Update poll status to active and set open time to now
@@ -531,6 +561,7 @@ async def open_poll_now_htmx(
         # Post the poll to Discord immediately
         try:
             from .discord_utils import post_poll_to_channel
+
             await post_poll_to_channel(bot, poll_id)
             logger.info(f"Poll {poll_id} opened immediately by user {current_user.id}")
         except Exception as e:
@@ -704,7 +735,7 @@ def format_datetime_for_user(dt, user_timezone: str) -> str:
                 return dt.strftime("%b %d, %I:%M %p UTC")
             else:
                 return str(dt) if dt else "Unknown time"
-        except:
+        except Exception:
             return "Unknown time"
 
 
@@ -997,9 +1028,7 @@ async def import_json_htmx(
         logger.info(
             "🔍 JSON IMPORT BACKEND - STEP 5: json_file object exists, checking type"
         )
-        print(
-            "🔍 JSON IMPORT BACKEND - STEP 5: json_file object exists, checking type"
-        )
+        print("🔍 JSON IMPORT BACKEND - STEP 5: json_file object exists, checking type")
 
         # Check if it's a proper file upload object (Starlette UploadFile)
         from starlette.datastructures import UploadFile
@@ -1143,9 +1172,7 @@ async def import_json_htmx(
         logger.info(
             "🔍 JSON IMPORT BACKEND - STEP 7: File read capability validation PASSED"
         )
-        print(
-            "🔍 JSON IMPORT BACKEND - STEP 7: File read capability validation PASSED"
-        )
+        print("🔍 JSON IMPORT BACKEND - STEP 7: File read capability validation PASSED")
 
         # Read file content with better error handling
         logger.info("🔍 JSON IMPORT BACKEND - STEP 8: Reading file content")
@@ -2955,10 +2982,12 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
                 now = datetime.now(pytz.UTC)
                 open_dt = now
                 close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-                
+
                 # Validate close time is in the future
                 if close_dt <= now:
-                    user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                    user_tz = pytz.timezone(
+                        validate_and_normalize_timezone(timezone_str)
+                    )
                     next_minute_local = (now + timedelta(minutes=1)).astimezone(user_tz)
                     suggested_time = next_minute_local.strftime("%I:%M %p")
                     validation_errors.append(
@@ -2997,10 +3026,14 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
 
                 # Validate times
                 now = datetime.now(pytz.UTC)
-                next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+                next_minute = now.replace(second=0, microsecond=0) + timedelta(
+                    minutes=1
+                )
 
                 if open_dt < next_minute:
-                    user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                    user_tz = pytz.timezone(
+                        validate_and_normalize_timezone(timezone_str)
+                    )
                     next_minute_local = next_minute.astimezone(user_tz)
                     suggested_time = next_minute_local.strftime("%I:%M %p")
                     validation_errors.append(
@@ -3067,8 +3100,12 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
 
     validated_data["ping_role_enabled"] = ping_role_enabled
     validated_data["ping_role_id"] = ping_role_id if ping_role_enabled else None
-    validated_data["ping_role_on_close"] = ping_role_on_close if ping_role_enabled else False
-    validated_data["ping_role_on_update"] = ping_role_on_update if ping_role_enabled else False
+    validated_data["ping_role_on_close"] = (
+        ping_role_on_close if ping_role_enabled else False
+    )
+    validated_data["ping_role_on_update"] = (
+        ping_role_on_update if ping_role_enabled else False
+    )
 
     # Add other validated data
     validated_data["timezone"] = validate_and_normalize_timezone(timezone_str)
@@ -3192,28 +3229,44 @@ async def create_poll_htmx(
         logger.info(f"🔔 ROLE PING DEBUG - ping_role_enabled: {ping_role_enabled}")
         logger.info(f"🔔 ROLE PING DEBUG - ping_role_id: {ping_role_id}")
         logger.info(f"🔔 ROLE PING DEBUG - server_id: {server_id}")
-        
+
         if ping_role_enabled and ping_role_id:
-            logger.info(f"🔔 ROLE PING DEBUG - Role ping is enabled, fetching role name...")
+            logger.info(
+                "🔔 ROLE PING DEBUG - Role ping is enabled, fetching role name..."
+            )
             try:
                 guild = bot.get_guild(int(server_id))
-                logger.info(f"🔔 ROLE PING DEBUG - Guild lookup result: {guild.name if guild else 'None'}")
-                
+                logger.info(
+                    f"🔔 ROLE PING DEBUG - Guild lookup result: {guild.name if guild else 'None'}"
+                )
+
                 if guild:
                     role = guild.get_role(int(ping_role_id))
-                    logger.info(f"🔔 ROLE PING DEBUG - Role lookup result: {role.name if role else 'None'}")
-                    
+                    logger.info(
+                        f"🔔 ROLE PING DEBUG - Role lookup result: {role.name if role else 'None'}"
+                    )
+
                     if role:
                         ping_role_name = role.name
-                        logger.info(f"🔔 ROLE PING DEBUG - ✅ Successfully fetched role name '{ping_role_name}' for role ID {ping_role_id}")
+                        logger.info(
+                            f"🔔 ROLE PING DEBUG - ✅ Successfully fetched role name '{ping_role_name}' for role ID {ping_role_id}"
+                        )
                     else:
-                        logger.warning(f"🔔 ROLE PING DEBUG - ❌ Role {ping_role_id} not found in guild {server_id}")
+                        logger.warning(
+                            f"🔔 ROLE PING DEBUG - ❌ Role {ping_role_id} not found in guild {server_id}"
+                        )
                 else:
-                    logger.warning(f"🔔 ROLE PING DEBUG - ❌ Guild {server_id} not found")
+                    logger.warning(
+                        f"🔔 ROLE PING DEBUG - ❌ Guild {server_id} not found"
+                    )
             except Exception as e:
-                logger.error(f"🔔 ROLE PING DEBUG - ❌ Error fetching role name for role {ping_role_id}: {e}")
+                logger.error(
+                    f"🔔 ROLE PING DEBUG - ❌ Error fetching role name for role {ping_role_id}: {e}"
+                )
         else:
-            logger.info(f"🔔 ROLE PING DEBUG - Role ping is disabled or no role ID provided")
+            logger.info(
+                "🔔 ROLE PING DEBUG - Role ping is disabled or no role ID provided"
+            )
 
         # Extract open_immediately flag
         open_immediately = validated_data["open_immediately"]
@@ -3412,30 +3465,42 @@ async def get_poll_details_htmx(
 async def get_poll_results_realtime_htmx(
     poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
-    """Get real-time poll results as HTML for HTMX with aggressive caching and status-based streaming control"""
+    """Get real-time poll results as HTML for HTMX with caching optimized for 10-second polling intervals"""
     from .enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
-    
-    logger.debug(f"🔍 RESULTS REALTIME DEBUG - Starting realtime results request for poll {poll_id} by user {current_user.id}")
 
-    # Check cache first (30 second TTL for results data to prevent rate limiting)
+    logger.debug(
+        f"🔍 RESULTS REALTIME DEBUG - Starting realtime results request for poll {poll_id} by user {current_user.id}"
+    )
+
+    # Check cache first (10 second TTL for results data to match polling interval)
     cached_results = await enhanced_cache.get_cached_live_poll_results(poll_id)
     if cached_results:
-        logger.debug(f"🚀 RESULTS CACHE HIT - Retrieved cached results for poll {poll_id}")
+        logger.debug(
+            f"🚀 RESULTS CACHE HIT - Retrieved cached results for poll {poll_id}"
+        )
         poll_status = cached_results.get("poll_status", "active")
-        
+
         # If poll is closed, return cached static results without realtime polling
         if poll_status == "closed":
-            logger.debug(f"📊 POLL CLOSED - Returning static cached results for poll {poll_id}")
-            return cached_results.get("html_content", '<div class="alert alert-info">Poll results are no longer updating</div>')
-        
+            logger.debug(
+                f"📊 POLL CLOSED - Returning static cached results for poll {poll_id}"
+            )
+            return cached_results.get(
+                "html_content",
+                '<div class="alert alert-info">Poll results are no longer updating</div>',
+            )
+
         # If poll is active, return cached results (will continue polling)
-        return cached_results.get("html_content", '<div class="alert alert-danger">Error loading poll results</div>')
+        return cached_results.get(
+            "html_content",
+            '<div class="alert alert-danger">Error loading poll results</div>',
+        )
 
     # Cache miss - generate results data
     logger.debug(f"🔍 RESULTS CACHE MISS - Generating results for poll {poll_id}")
-    
+
     db = get_db_session()
     try:
         poll = (
@@ -3451,7 +3516,7 @@ async def get_poll_results_realtime_htmx(
         # Get poll status - CRITICAL: Check if poll is closed to disable streaming
         poll_status = TypeSafeColumn.get_string(poll, "status", "active")
         logger.debug(f"📊 POLL STATUS - Poll {poll_id} status is '{poll_status}'")
-        
+
         # Get poll results
         total_votes = poll.get_total_votes()
         results = poll.get_results()
@@ -3474,7 +3539,8 @@ async def get_poll_results_realtime_htmx(
             )
             option_text = options[i]
 
-            html_parts.append(f'''
+            html_parts.append(
+                f"""
             <div class="mb-3">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <span>{emoji} {escape(option_text)}</span>
@@ -3486,29 +3552,32 @@ async def get_poll_results_realtime_htmx(
                     </div>
                 </div>
             </div>
-            ''')
+            """
+            )
 
         # Add total votes and anonymous badge
         anonymous_badge = (
             '<span class="badge bg-info ms-2">Anonymous</span>' if is_anonymous else ""
         )
-        
+
         # Add status indicator for closed polls
         status_indicator = ""
         if poll_status == "closed":
             status_indicator = '<div class="alert alert-info mt-2"><i class="fas fa-info-circle me-1"></i>This poll is closed. Results are final.</div>'
-        
-        html_parts.append(f"""
+
+        html_parts.append(
+            f"""
         <div class="mt-3">
             <strong>Total Votes: {total_votes}</strong>
             {anonymous_badge}
         </div>
         {status_indicator}
-        """)
+        """
+        )
 
         html_content = "".join(html_parts)
 
-        # Cache the results aggressively (30 seconds TTL) to prevent rate limiting
+        # Cache the results with status-aware TTL (10s for active, 7 days for closed)
         cacheable_data = {
             "html_content": html_content,
             "poll_status": poll_status,
@@ -3516,9 +3585,12 @@ async def get_poll_results_realtime_htmx(
             "results": results,
             "cached_at": datetime.now().isoformat(),
         }
-        
-        await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data)
-        logger.debug(f"💾 RESULTS CACHED - Stored results for poll {poll_id} with 30s TTL")
+
+        await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data, poll_status)
+        ttl_description = "7 days" if poll_status == "closed" else "10s"
+        logger.debug(
+            f"💾 RESULTS CACHED - Stored results for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"
+        )
 
         return html_content
 
@@ -3535,7 +3607,7 @@ async def get_poll_dashboard_htmx(
     bot,
     current_user: DiscordUser = Depends(require_auth),
 ):
-    """Get poll dashboard with spreadsheet-style live results for HTMX with enhanced caching"""
+    """Get poll dashboard with spreadsheet-style live results for HTMX with caching optimized for 10-second polling"""
     from .enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
@@ -3544,7 +3616,7 @@ async def get_poll_dashboard_htmx(
         f"🔍 DASHBOARD DEBUG - Starting dashboard request for poll {poll_id} by user {current_user.id}"
     )
 
-    # Check cache first (15 second TTL for dashboard data)
+    # Check cache first (10 second TTL for dashboard data to match polling interval)
     cached_dashboard = await enhanced_cache.get_cached_poll_dashboard(poll_id)
     if cached_dashboard:
         logger.info(
@@ -3785,9 +3857,11 @@ async def get_poll_dashboard_htmx(
                         "option_index": option_index,
                         "option_text": option_text,
                         "emoji": emoji,
-                        "voted_at": voted_at.isoformat()
-                        if voted_at and isinstance(voted_at, datetime)
-                        else None,  # Convert datetime to ISO string for JSON serialization
+                        "voted_at": (
+                            voted_at.isoformat()
+                            if voted_at and isinstance(voted_at, datetime)
+                            else None
+                        ),  # Convert datetime to ISO string for JSON serialization
                         "voted_at_datetime": voted_at,  # Keep original datetime for template use
                         "is_unique": user_id not in unique_users,
                     }
@@ -3825,10 +3899,13 @@ async def get_poll_dashboard_htmx(
             "show_usernames_to_creator": show_usernames_to_creator,
         }
 
-        # Cache only the serializable data for 15 seconds
-        await enhanced_cache.cache_poll_dashboard(poll_id, cacheable_data)
+        # Determine poll status for TTL selection
+        poll_status = TypeSafeColumn.get_string(poll, "status", "active")
+        # Cache with status-aware TTL (10s for active, 7 days for closed)
+        await enhanced_cache.cache_poll_dashboard(poll_id, cacheable_data, poll_status)
+        ttl_description = "7 days" if poll_status == "closed" else "10s"
         logger.debug(
-            f"💾 DASHBOARD CACHED - Stored dashboard for poll {poll_id} with 15s TTL"
+            f"💾 DASHBOARD CACHED - Stored dashboard for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"
         )
 
         # Prepare full template data (including non-cacheable objects)
@@ -3866,45 +3943,63 @@ async def export_poll_csv(
     current_user: DiscordUser = Depends(require_auth),
 ):
     """Export poll results as CSV - Poll creators always see usernames, even for anonymous polls"""
-    from fastapi.responses import StreamingResponse
     import csv
     import io
 
     # Add comprehensive debugging
-    logger.info(f"🔍 CSV EXPORT DEBUG - Function called! Starting CSV export for poll {poll_id} by user {current_user.id}")
-    print(f"🔍 CSV EXPORT DEBUG - Function called! Starting CSV export for poll {poll_id} by user {current_user.id}")
-    
+    logger.info(
+        f"🔍 CSV EXPORT DEBUG - Function called! Starting CSV export for poll {poll_id} by user {current_user.id}"
+    )
+    print(
+        f"🔍 CSV EXPORT DEBUG - Function called! Starting CSV export for poll {poll_id} by user {current_user.id}"
+    )
+
     # Log request details
     logger.info(f"🔍 CSV EXPORT DEBUG - Request method: {request.method}")
     logger.info(f"🔍 CSV EXPORT DEBUG - Request URL: {request.url}")
     logger.info(f"🔍 CSV EXPORT DEBUG - Request headers: {dict(request.headers)}")
     print(f"🔍 CSV EXPORT DEBUG - Request method: {request.method}")
     print(f"🔍 CSV EXPORT DEBUG - Request URL: {request.url}")
-    print(f"🔍 CSV EXPORT DEBUG - User agent: {request.headers.get('user-agent', 'Not provided')}")
-    
+    print(
+        f"🔍 CSV EXPORT DEBUG - User agent: {request.headers.get('user-agent', 'Not provided')}"
+    )
+
     # Add function entry confirmation
-    logger.info(f"🔍 CSV EXPORT DEBUG - ✅ Function execution confirmed - we are inside export_poll_csv")
-    print(f"🔍 CSV EXPORT DEBUG - ✅ Function execution confirmed - we are inside export_poll_csv")
+    logger.info(
+        "🔍 CSV EXPORT DEBUG - ✅ Function execution confirmed - we are inside export_poll_csv"
+    )
+    print(
+        "🔍 CSV EXPORT DEBUG - ✅ Function execution confirmed - we are inside export_poll_csv"
+    )
 
     db = get_db_session()
     try:
-        logger.info(f"🔍 CSV EXPORT DEBUG - Database session created successfully")
-        print(f"🔍 CSV EXPORT DEBUG - Database session created successfully")
-        
+        logger.info("🔍 CSV EXPORT DEBUG - Database session created successfully")
+        print("🔍 CSV EXPORT DEBUG - Database session created successfully")
+
         # Query for poll with detailed logging
-        logger.info(f"🔍 CSV EXPORT DEBUG - Querying for poll {poll_id} owned by user {current_user.id}")
-        print(f"🔍 CSV EXPORT DEBUG - Querying for poll {poll_id} owned by user {current_user.id}")
-        
+        logger.info(
+            f"🔍 CSV EXPORT DEBUG - Querying for poll {poll_id} owned by user {current_user.id}"
+        )
+        print(
+            f"🔍 CSV EXPORT DEBUG - Querying for poll {poll_id} owned by user {current_user.id}"
+        )
+
         poll = (
             db.query(Poll)
             .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
             .first()
         )
-        
+
         if not poll:
-            logger.error(f"🔍 CSV EXPORT DEBUG - Poll {poll_id} not found or access denied for user {current_user.id}")
-            print(f"🔍 CSV EXPORT DEBUG - Poll {poll_id} not found or access denied for user {current_user.id}")
+            logger.error(
+                f"🔍 CSV EXPORT DEBUG - Poll {poll_id} not found or access denied for user {current_user.id}"
+            )
+            print(
+                f"🔍 CSV EXPORT DEBUG - Poll {poll_id} not found or access denied for user {current_user.id}"
+            )
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=404, detail="Poll not found or access denied"
             )
@@ -3915,28 +4010,38 @@ async def export_poll_csv(
         # Get poll basic info with debugging
         poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
         is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
-        logger.info(f"🔍 CSV EXPORT DEBUG - Poll name: '{poll_name}', anonymous: {is_anonymous}")
-        print(f"🔍 CSV EXPORT DEBUG - Poll name: '{poll_name}', anonymous: {is_anonymous}")
+        logger.info(
+            f"🔍 CSV EXPORT DEBUG - Poll name: '{poll_name}', anonymous: {is_anonymous}"
+        )
+        print(
+            f"🔍 CSV EXPORT DEBUG - Poll name: '{poll_name}', anonymous: {is_anonymous}"
+        )
 
         # Get all votes for this poll with detailed logging
         logger.info(f"🔍 CSV EXPORT DEBUG - Querying votes for poll {poll_id}")
         print(f"🔍 CSV EXPORT DEBUG - Querying votes for poll {poll_id}")
-        
+
         votes = (
             db.query(Vote)
             .filter(Vote.poll_id == poll_id)
             .order_by(Vote.voted_at.desc())
             .all()
         )
-        
-        logger.info(f"🔍 CSV EXPORT DEBUG - Found {len(votes)} votes for poll {poll_id}")
+
+        logger.info(
+            f"🔍 CSV EXPORT DEBUG - Found {len(votes)} votes for poll {poll_id}"
+        )
         print(f"🔍 CSV EXPORT DEBUG - Found {len(votes)} votes for poll {poll_id}")
 
         # Get poll data with debugging
         options = poll.options
         emojis = poll.emojis
-        logger.info(f"🔍 CSV EXPORT DEBUG - Poll has {len(options)} options and {len(emojis)} emojis")
-        print(f"🔍 CSV EXPORT DEBUG - Poll has {len(options)} options and {len(emojis)} emojis")
+        logger.info(
+            f"🔍 CSV EXPORT DEBUG - Poll has {len(options)} options and {len(emojis)} emojis"
+        )
+        print(
+            f"🔍 CSV EXPORT DEBUG - Poll has {len(options)} options and {len(emojis)} emojis"
+        )
 
         # Log first few options for debugging
         for i, option in enumerate(options[:3]):
@@ -3944,9 +4049,9 @@ async def export_poll_csv(
             print(f"🔍 CSV EXPORT DEBUG - Option {i}: '{option}'")
 
         # Create CSV content with debugging
-        logger.info(f"🔍 CSV EXPORT DEBUG - Creating CSV content")
-        print(f"🔍 CSV EXPORT DEBUG - Creating CSV content")
-        
+        logger.info("🔍 CSV EXPORT DEBUG - Creating CSV content")
+        print("🔍 CSV EXPORT DEBUG - Creating CSV content")
+
         output = io.StringIO()
         writer = csv.writer(output)
 
@@ -3964,12 +4069,12 @@ async def export_poll_csv(
         ]
         writer.writerow(header_row)
         logger.info(f"🔍 CSV EXPORT DEBUG - CSV header written: {header_row}")
-        print(f"🔍 CSV EXPORT DEBUG - CSV header written successfully")
+        print("🔍 CSV EXPORT DEBUG - CSV header written successfully")
 
         # Get user timezone for local time display
-        logger.info(f"🔍 CSV EXPORT DEBUG - Getting user preferences for timezone")
-        print(f"🔍 CSV EXPORT DEBUG - Getting user preferences for timezone")
-        
+        logger.info("🔍 CSV EXPORT DEBUG - Getting user preferences for timezone")
+        print("🔍 CSV EXPORT DEBUG - Getting user preferences for timezone")
+
         user_prefs = get_user_preferences(current_user.id)
         user_timezone = user_prefs.get("default_timezone", "US/Eastern")
         logger.info(f"🔍 CSV EXPORT DEBUG - User timezone: {user_timezone}")
@@ -3980,37 +4085,53 @@ async def export_poll_csv(
         print(f"🔍 CSV EXPORT DEBUG - Poll type: {poll_type}")
 
         # Write vote data - IMPORTANT: Poll creators always see usernames, even for anonymous polls
-        logger.info(f"🔍 CSV EXPORT DEBUG - Processing {len(votes)} votes for CSV export")
+        logger.info(
+            f"🔍 CSV EXPORT DEBUG - Processing {len(votes)} votes for CSV export"
+        )
         print(f"🔍 CSV EXPORT DEBUG - Processing {len(votes)} votes for CSV export")
-        
+
         processed_votes = 0
         failed_votes = 0
-        
+
         for i, vote in enumerate(votes):
             try:
-                logger.debug(f"🔍 CSV EXPORT DEBUG - Processing vote {i + 1}/{len(votes)}")
-                
+                logger.debug(
+                    f"🔍 CSV EXPORT DEBUG - Processing vote {i + 1}/{len(votes)}"
+                )
+
                 user_id = TypeSafeColumn.get_string(vote, "user_id")
                 option_index = TypeSafeColumn.get_int(vote, "option_index")
                 voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
 
                 if i < 3:  # Log details for first 3 votes
-                    logger.info(f"🔍 CSV EXPORT DEBUG - Vote {i + 1}: user_id={user_id}, option_index={option_index}, voted_at={voted_at}")
-                    print(f"🔍 CSV EXPORT DEBUG - Vote {i + 1}: user_id={user_id}, option_index={option_index}")
+                    logger.info(
+                        f"🔍 CSV EXPORT DEBUG - Vote {i + 1}: user_id={user_id}, option_index={option_index}, voted_at={voted_at}"
+                    )
+                    print(
+                        f"🔍 CSV EXPORT DEBUG - Vote {i + 1}: user_id={user_id}, option_index={option_index}"
+                    )
 
                 # Get Discord username - always fetch for poll creator
                 username = "Unknown User"
                 if bot and user_id:
                     try:
-                        logger.debug(f"🔍 CSV EXPORT DEBUG - Fetching Discord user {user_id}")
+                        logger.debug(
+                            f"🔍 CSV EXPORT DEBUG - Fetching Discord user {user_id}"
+                        )
                         discord_user = await bot.fetch_user(int(user_id))
                         if discord_user:
                             username = discord_user.display_name or discord_user.name
                             if i < 3:  # Log details for first 3 users
-                                logger.info(f"🔍 CSV EXPORT DEBUG - Fetched username for vote {i + 1}: '{username}'")
-                                print(f"🔍 CSV EXPORT DEBUG - Fetched username for vote {i + 1}: '{username}'")
+                                logger.info(
+                                    f"🔍 CSV EXPORT DEBUG - Fetched username for vote {i + 1}: '{username}'"
+                                )
+                                print(
+                                    f"🔍 CSV EXPORT DEBUG - Fetched username for vote {i + 1}: '{username}'"
+                                )
                     except Exception as e:
-                        logger.warning(f"🔍 CSV EXPORT DEBUG - Could not fetch Discord user {user_id}: {e}")
+                        logger.warning(
+                            f"🔍 CSV EXPORT DEBUG - Could not fetch Discord user {user_id}: {e}"
+                        )
                         username = f"User {user_id[:8]}..."
 
                 # Get option details
@@ -4048,26 +4169,34 @@ async def export_poll_csv(
                 processed_votes += 1
 
                 if i < 3:  # Log details for first 3 rows
-                    logger.info(f"🔍 CSV EXPORT DEBUG - Row {i + 1} written: {row_data[:4]}...")  # Log first 4 fields
+                    logger.info(
+                        f"🔍 CSV EXPORT DEBUG - Row {i + 1} written: {row_data[:4]}..."
+                    )  # Log first 4 fields
                     print(f"🔍 CSV EXPORT DEBUG - Row {i + 1} written successfully")
 
             except Exception as e:
                 failed_votes += 1
-                logger.error(f"🔍 CSV EXPORT DEBUG - Error processing vote {i + 1} for CSV export: {e}")
+                logger.error(
+                    f"🔍 CSV EXPORT DEBUG - Error processing vote {i + 1} for CSV export: {e}"
+                )
                 print(f"🔍 CSV EXPORT DEBUG - Error processing vote {i + 1}: {e}")
                 continue
 
-        logger.info(f"🔍 CSV EXPORT DEBUG - Vote processing complete: {processed_votes} successful, {failed_votes} failed")
-        print(f"🔍 CSV EXPORT DEBUG - Vote processing complete: {processed_votes} successful, {failed_votes} failed")
+        logger.info(
+            f"🔍 CSV EXPORT DEBUG - Vote processing complete: {processed_votes} successful, {failed_votes} failed"
+        )
+        print(
+            f"🔍 CSV EXPORT DEBUG - Vote processing complete: {processed_votes} successful, {failed_votes} failed"
+        )
 
         # Prepare response
-        logger.info(f"🔍 CSV EXPORT DEBUG - Preparing CSV response")
-        print(f"🔍 CSV EXPORT DEBUG - Preparing CSV response")
-        
+        logger.info("🔍 CSV EXPORT DEBUG - Preparing CSV response")
+        print("🔍 CSV EXPORT DEBUG - Preparing CSV response")
+
         output.seek(0)
         csv_content = output.getvalue()
         csv_size = len(csv_content)
-        
+
         logger.info(f"🔍 CSV EXPORT DEBUG - CSV content size: {csv_size} characters")
         print(f"🔍 CSV EXPORT DEBUG - CSV content size: {csv_size} characters")
 
@@ -4076,12 +4205,11 @@ async def export_poll_csv(
             c for c in poll_name if c.isalnum() or c in (" ", "-", "_")
         ).rstrip()
         filename = f"poll_results_{safe_poll_name}_{poll_id}.csv"
-        
+
         logger.info(f"🔍 CSV EXPORT DEBUG - Generated filename: '{filename}'")
         print(f"🔍 CSV EXPORT DEBUG - Generated filename: '{filename}'")
 
-        # Log first 200 characters of CSV content for debugging
-        csv_preview = csv_content[:200] + "..." if len(csv_content) > 200 else csv_content
+        # CSV content ready for response
         poll = (
             db.query(Poll)
             .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
@@ -4103,9 +4231,7 @@ async def export_poll_csv(
         poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
         ping_role_enabled = TypeSafeColumn.get_bool(poll, "ping_role_enabled", False)
         ping_role_id = TypeSafeColumn.get_string(poll, "ping_role_id")
-        ping_role_name = TypeSafeColumn.get_string(poll, "ping_role_name", "Unknown Role")
         channel_id = TypeSafeColumn.get_string(poll, "channel_id")
-        ping_role_on_update = TypeSafeColumn.get_bool(poll, "ping_role_on_update", False)
         ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
 
         # Update poll status to closed
@@ -4116,29 +4242,50 @@ async def export_poll_csv(
         logger.info(f"Poll {poll_id} closed by user {current_user.id}")
 
         # Send role ping notification if enabled
-        if ping_role_enabled and ping_role_id and bot and channel_id and ping_role_on_close:
+        if (
+            ping_role_enabled
+            and ping_role_id
+            and bot
+            and channel_id
+            and ping_role_on_close
+        ):
             try:
                 import discord
+
                 channel = bot.get_channel(int(channel_id))
                 if channel and isinstance(channel, discord.TextChannel):
-                    logger.info(f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure")
-                    
+                    logger.info(
+                        f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure"
+                    )
+
                     # Send role ping notification for manual poll closure
                     try:
                         message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has been manually closed!**"
                         await channel.send(content=message_content)
-                        logger.info(f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure")
+                        logger.info(
+                            f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure"
+                        )
                     except discord.Forbidden:
                         # Role ping failed due to permissions, send without role ping
-                        logger.warning(f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}")
+                        logger.warning(
+                            f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}"
+                        )
                         try:
-                            fallback_content = f"📊 **Poll '{poll_name}' has been manually closed!**"
+                            fallback_content = (
+                                f"📊 **Poll '{poll_name}' has been manually closed!**"
+                            )
                             await channel.send(content=fallback_content)
-                            logger.info(f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}")
+                            logger.info(
+                                f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}"
+                            )
                         except Exception as fallback_error:
-                            logger.error(f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}")
+                            logger.error(
+                                f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}"
+                            )
             except Exception as ping_error:
-                logger.error(f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}")
+                logger.error(
+                    f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}"
+                )
 
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
@@ -4625,9 +4772,13 @@ async def update_poll_htmx(
                 role = guild.get_role(int(ping_role_id))
                 if role:
                     ping_role_name = role.name
-                    logger.info(f"Fetched role name '{ping_role_name}' for role ID {ping_role_id}")
+                    logger.info(
+                        f"Fetched role name '{ping_role_name}' for role ID {ping_role_id}"
+                    )
                 else:
-                    logger.warning(f"Role {ping_role_id} not found in guild {server_id}")
+                    logger.warning(
+                        f"Role {ping_role_id} not found in guild {server_id}"
+                    )
             except Exception as e:
                 logger.error(f"Error fetching role name for role {ping_role_id}: {e}")
 

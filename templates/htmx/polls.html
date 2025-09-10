@@ -4,29 +4,29 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4><i class="fas fa-poll me-2"></i>My Polls</h4>
             <div class="btn-group">
-                <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
+                <button type="button" class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
                     <i class="fas fa-plus me-1"></i>Create Poll
                 </button>
                 <!-- JSON Import Button -->
-                <button class="btn btn-outline-primary" onclick="document.getElementById('json-import-file').click()">
+                <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('json-import-file').click()">
                     <i class="fas fa-upload me-1"></i>Import JSON
                 </button>
             </div>
         </div>
         <!-- Inline Error/Success Display Area -->
         <div id="inline-messages"></div>
-        
+
         <!-- Hidden file input for JSON import -->
-        <input type="file" id="json-import-file" accept=".json" style="display: none;" 
+        <input type="file" id="json-import-file" accept=".json" style="display: none;"
                onchange="importJsonFile(this)">
-        
+
         <script>
         function importJsonFile(input) {
             console.log('🔍 JSON IMPORT DEBUG - STEP 1: importJsonFile function called');
             console.log('🔍 JSON IMPORT DEBUG - STEP 1: input element:', input);
             console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files:', input.files);
             console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files length:', input.files ? input.files.length : 'null');
-            
+
             if (input.files && input.files[0]) {
                 const file = input.files[0];
                 console.log('🔍 JSON IMPORT DEBUG - STEP 2: File object created');
@@ -34,7 +34,7 @@
                 console.log('🔍 JSON IMPORT DEBUG - STEP 2: File size:', file.size, 'bytes');
                 console.log('🔍 JSON IMPORT DEBUG - STEP 2: File type:', file.type);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 2: File lastModified:', new Date(file.lastModified));
-                
+
                 // Get DOM elements with null checks
                 console.log('🔍 JSON IMPORT DEBUG - STEP 3: Checking DOM elements');
                 const inlineMessages = document.getElementById('inline-messages');
@@ -43,24 +43,24 @@
                 console.log('🔍 JSON IMPORT DEBUG - STEP 3: mainContent element:', mainContent);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 3: Current URL:', window.location.href);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 3: Document title:', document.title);
-                
+
                 // Log all elements with these IDs for debugging
                 const allElements = document.querySelectorAll('[id]');
                 const elementIds = Array.from(allElements).map(el => el.id).filter(id => id);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 3: All element IDs on page:', elementIds);
-                
+
                 // Validate file type
                 console.log('🔍 JSON IMPORT DEBUG - STEP 4: Validating file type');
                 const fileName = file.name.toLowerCase();
                 const isJsonFile = fileName.endsWith('.json');
                 console.log('🔍 JSON IMPORT DEBUG - STEP 4: File name (lowercase):', fileName);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 4: Is JSON file:', isJsonFile);
-                
+
                 if (!isJsonFile) {
                     console.log('🔍 JSON IMPORT DEBUG - STEP 4: File validation FAILED - not a JSON file');
                     if (inlineMessages) {
                         console.log('🔍 JSON IMPORT DEBUG - STEP 4: Showing error in inline-messages');
-                        inlineMessages.innerHTML = 
+                        inlineMessages.innerHTML =
                             '<div class="alert alert-danger">Please select a valid JSON file (.json extension required)</div>';
                     } else {
                         console.error('🔍 JSON IMPORT DEBUG - STEP 4: inline-messages element not found, using alert');
@@ -70,32 +70,32 @@
                     console.log('🔍 JSON IMPORT DEBUG - STEP 4: Input value cleared, returning');
                     return;
                 }
-                
+
                 console.log('🔍 JSON IMPORT DEBUG - STEP 4: File validation PASSED');
-                
+
                 // Show loading message
                 console.log('🔍 JSON IMPORT DEBUG - STEP 5: Showing loading message');
                 if (inlineMessages) {
                     console.log('🔍 JSON IMPORT DEBUG - STEP 5: Updating inline-messages with loading message');
-                    inlineMessages.innerHTML = 
+                    inlineMessages.innerHTML =
                         '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Importing JSON file...</div>';
                     console.log('🔍 JSON IMPORT DEBUG - STEP 5: Loading message displayed successfully');
                 } else {
                     console.error('🔍 JSON IMPORT DEBUG - STEP 5: inline-messages element not found for loading message');
                 }
-                
+
                 // Create FormData
                 console.log('🔍 JSON IMPORT DEBUG - STEP 6: Creating FormData');
                 const formData = new FormData();
                 formData.append('json_file', file);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 6: FormData created and file appended');
-                
+
                 // Log FormData contents (for debugging)
                 console.log('🔍 JSON IMPORT DEBUG - STEP 6: FormData entries:');
                 for (let [key, value] of formData.entries()) {
                     console.log('🔍 JSON IMPORT DEBUG - STEP 6: FormData key:', key, 'value type:', typeof value, 'value:', value instanceof File ? `File(${value.name}, ${value.size} bytes)` : value);
                 }
-                
+
                 // Prepare fetch request
                 console.log('🔍 JSON IMPORT DEBUG - STEP 7: Preparing fetch request');
                 const fetchUrl = '/htmx/import-json';
@@ -107,7 +107,7 @@
                 console.log('🔍 JSON IMPORT DEBUG - STEP 7: Fetch URL:', fetchUrl);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 7: Fetch options:', fetchOptions);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 7: Starting fetch request...');
-                
+
                 // Use fetch with proper error handling
                 fetch(fetchUrl, fetchOptions)
                 .then(response => {
@@ -119,12 +119,12 @@
                     for (let [key, value] of response.headers.entries()) {
                         console.log('🔍 JSON IMPORT DEBUG - STEP 8: Header:', key, '=', value);
                     }
-                    
+
                     if (!response.ok) {
                         console.error('🔍 JSON IMPORT DEBUG - STEP 8: Response not OK, throwing error');
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
-                    
+
                     console.log('🔍 JSON IMPORT DEBUG - STEP 8: Response OK, converting to text...');
                     return response.text();
                 })
@@ -133,24 +133,24 @@
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response length:', html.length, 'characters');
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response preview (first 200 chars):', html.substring(0, 200));
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response preview (last 200 chars):', html.substring(Math.max(0, html.length - 200)));
-                    
+
                     // Re-check DOM elements (they might have changed)
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Re-checking DOM elements');
                     const currentInlineMessages = document.getElementById('inline-messages');
                     const currentMainContent = document.getElementById('main-content');
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Current inlineMessages:', !!currentInlineMessages);
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Current mainContent:', !!currentMainContent);
-                    
+
                     // Check if the response contains the create form (successful import)
                     const isSuccessfulImport = html.includes('hx-post="/htmx/create-poll"');
                     const containsCreateForm = html.includes('Create Poll from Template') || html.includes('Create New Poll');
                     const containsErrorMessage = html.includes('alert-danger') || html.includes('error');
-                    
+
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Response analysis:');
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Contains hx-post="/htmx/create-poll":', isSuccessfulImport);
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Contains create form indicators:', containsCreateForm);
                     console.log('🔍 JSON IMPORT DEBUG - STEP 9: Contains error indicators:', containsErrorMessage);
-                    
+
                     if (isSuccessfulImport) {
                         console.log('🔍 JSON IMPORT DEBUG - STEP 10: Successful import detected - updating main content');
                         // Successful import - replace main content with the pre-filled form
@@ -160,17 +160,17 @@
                             currentMainContent.innerHTML = html;
                             console.log('🔍 JSON IMPORT DEBUG - STEP 10: New main-content innerHTML length:', currentMainContent.innerHTML.length);
                             console.log('🔍 JSON IMPORT DEBUG - STEP 10: Successfully updated main-content with form');
-                            
+
                             // Verify the update worked
                             const updatedContent = document.getElementById('main-content');
                             const hasForm = updatedContent && updatedContent.querySelector('form[hx-post="/htmx/create-poll"]');
                             console.log('🔍 JSON IMPORT DEBUG - STEP 10: Form verification - form exists:', !!hasForm);
-                            
+
                         } else {
                             console.error('🔍 JSON IMPORT DEBUG - STEP 10: main-content element not found, cannot show form');
                             alert('JSON imported successfully, but cannot display form. Please refresh the page.');
                         }
-                        
+
                         // Clear any inline messages since we're showing the form
                         if (currentInlineMessages) {
                             console.log('🔍 JSON IMPORT DEBUG - STEP 10: Clearing inline messages');
@@ -194,7 +194,7 @@
                             alert('Error importing JSON: ' + errorText);
                         }
                     }
-                    
+
                     console.log('🔍 JSON IMPORT DEBUG - STEP 12: Response processing completed successfully');
                 })
                 .catch(error => {
@@ -202,16 +202,16 @@
                     console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Error type:', typeof error);
                     console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Error message:', error.message);
                     console.error('🔍 JSON IMPORT DEBUG - STEP ERROR: Error stack:', error.stack);
-                    
+
                     const errorMessage = `<div class="alert alert-danger">
                         <i class="fas fa-exclamation-triangle me-2"></i>
                         Error uploading file: ${error.message}. Please try again.
                     </div>`;
-                    
+
                     // Re-check DOM elements for error display
                     const currentInlineMessages = document.getElementById('inline-messages');
                     console.log('🔍 JSON IMPORT DEBUG - STEP ERROR: Current inlineMessages for error:', !!currentInlineMessages);
-                    
+
                     if (currentInlineMessages) {
                         console.log('🔍 JSON IMPORT DEBUG - STEP ERROR: Displaying error in inline-messages');
                         currentInlineMessages.innerHTML = errorMessage;
@@ -220,47 +220,47 @@
                         alert('Error uploading file: ' + error.message + '. Please try again.');
                     }
                 });
-                
+
                 // Reset the input
                 console.log('🔍 JSON IMPORT DEBUG - STEP 13: Resetting file input');
                 input.value = '';
                 console.log('🔍 JSON IMPORT DEBUG - STEP 13: File input reset completed');
-                
+
             } else {
                 console.log('🔍 JSON IMPORT DEBUG - STEP 1: No file selected or input.files is null');
                 console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files:', input.files);
                 console.log('🔍 JSON IMPORT DEBUG - STEP 1: input.files[0]:', input.files ? input.files[0] : 'N/A');
             }
-            
+
             console.log('🔍 JSON IMPORT DEBUG - STEP FINAL: importJsonFile function completed');
         }
         </script>
-        
+
         <!-- Filter Tabs -->
         <ul class="nav nav-pills mb-3" id="poll-filter-tabs">
             <li class="nav-item">
-                <button class="nav-link {% if not current_filter or current_filter == 'all' %}active{% endif %}" 
+                <button type="button" class="nav-link {% if not current_filter or current_filter == 'all' %}active{% endif %}" 
                         hx-get="/htmx/polls" hx-target="#main-content">
                     <i class="fas fa-list me-1"></i>All Polls
                     <span class="badge bg-secondary ms-1">{{ polls|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link {% if current_filter == 'active' %}active{% endif %}" 
+                <button type="button" class="nav-link {% if current_filter == 'active' %}active{% endif %}" 
                         hx-get="/htmx/polls?filter=active" hx-target="#main-content">
                     <i class="fas fa-play-circle me-1"></i>Active
                     <span class="badge bg-success ms-1">{{ polls|selectattr("status", "equalto", "active")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link {% if current_filter == 'scheduled' %}active{% endif %}" 
+                <button type="button" class="nav-link {% if current_filter == 'scheduled' %}active{% endif %}" 
                         hx-get="/htmx/polls?filter=scheduled" hx-target="#main-content">
                     <i class="fas fa-clock me-1"></i>Scheduled
                     <span class="badge bg-warning ms-1">{{ polls|selectattr("status", "equalto", "scheduled")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link {% if current_filter == 'closed' %}active{% endif %}" 
+                <button type="button" class="nav-link {% if current_filter == 'closed' %}active{% endif %}" 
                         hx-get="/htmx/polls?filter=closed" hx-target="#main-content">
                     <i class="fas fa-stop-circle me-1"></i>Closed
                     <span class="badge bg-danger ms-1">{{ polls|selectattr("status", "equalto", "closed")|list|length }}</span>
@@ -271,19 +271,19 @@
 </div>
 
 <!-- Real-time Poll Updates Container -->
-<div id="polls-realtime-container" 
-     hx-get="/htmx/polls-realtime{% if current_filter %}?filter={{ current_filter }}{% endif %}" 
-     hx-trigger="load, every 5s" 
+<div id="polls-realtime-container"
+     hx-get="/htmx/polls-realtime{% if current_filter %}?filter={{ current_filter }}{% endif %}"
+     hx-trigger="load, every 5s"
      hx-swap="innerHTML">
     <!-- Real-time poll data will be loaded here -->
-    
+
     <!-- Fallback content for when no polls exist or there's an error -->
     {% if error %}
     <div class="col-12 text-center">
         <div class="alert alert-warning">
             <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
         </div>
-        <button class="btn btn-primary" hx-get="/htmx/polls" hx-target="#main-content">
+        <button type="button" class="btn btn-primary" hx-get="/htmx/polls" hx-target="#main-content">
             <i class="fas fa-refresh me-1"></i>Retry
         </button>
     </div>
@@ -292,7 +292,7 @@
         <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
         <h5 class="text-muted">No polls yet</h5>
         <p class="text-muted">Create your first poll to get started!</p>
-        <button class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
+        <button type="button" class="btn btn-primary" hx-get="/htmx/create-form" hx-target="#main-content">
             <i class="fas fa-plus me-1"></i>Create Poll
         </button>
     </div>

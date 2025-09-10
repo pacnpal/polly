@@ -1,6 +1,6 @@
 <h2><i class="fas fa-edit me-2"></i>Edit Poll</h2>
 
-<form hx-post="/htmx/poll/{{ poll.id }}/edit" hx-target="#main-content" hx-encoding="multipart/form-data" 
+<form hx-post="/htmx/poll/{{ poll.id }}/edit" hx-target="#main-content" hx-encoding="multipart/form-data"
       hx-indicator="#loading-indicator">
     <div class="card">
         <div class="card-header">
@@ -19,7 +19,7 @@
                         <label for="timezone" class="form-label">Timezone</label>
                         <select class="form-select" id="timezone" name="timezone">
                             {% for tz in timezones %}
-                            <option value="{{ tz.name }}" {% if tz.name == poll.timezone %}selected{% endif %}>{{ tz.display }}</option>
+                            <option value="{{ tz.name }}" {% if tz.name == poll.timezone %}selected{% endif %}>{{ tz.display|e }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -40,7 +40,7 @@
                                 hx-trigger="change, load">
                             <option value="">Select a server...</option>
                             {% for guild in guilds %}
-                            <option value="{{ guild.id }}" {% if guild.id|string == poll.server_id|string %}selected{% endif %}>{{ guild.name }}</option>
+                            <option value="{{ guild.id }}" {% if guild.id|string == poll.server_id|string %}selected{% endif %}>{{ guild.name|e }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -66,7 +66,7 @@
                     <div class="input-group mb-2">
                         <div class="btn-group">
                             <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ loop.index }}">{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}</button>
-                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn"
                                     data-bs-toggle="dropdown" data-option="{{ loop.index }}" aria-expanded="false">
                                 <span class="visually-hidden">Discord Emojis</span>
                             </button>
@@ -74,7 +74,7 @@
                                 <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
                             </ul>
                         </div>
-                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option }}" {% if loop.index <= 2 %}required{% endif %}>
+                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option|e }}" {% if loop.index &lt;= 2 %}required{% endif %}>
                         <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}">
                         {% if loop.index > 2 %}
                         <button type="button" class="btn btn-outline-danger"
@@ -131,7 +131,7 @@
                 <label for="poll-image" class="form-label">
                     <i class="fas fa-image me-1"></i>Poll Image (Optional)
                 </label>
-                
+
                 <!-- Show current image if exists -->
                 {% if poll.image_path %}
                 <div class="current-image mb-3" id="current-image">
@@ -146,7 +146,7 @@
                     </div>
                 </div>
                 {% endif %}
-                
+
                 <div class="image-upload-container">
                     <div class="image-drop-zone" id="image-drop-zone">
                         <div class="drop-zone-content">
@@ -154,9 +154,9 @@
                             <p class="mb-2">Drag & drop a new image here or click to browse</p>
                             <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
                         </div>
-                        <input type="file" 
-                               class="form-control d-none" 
-                               name="image" 
+                        <input type="file"
+                               class="form-control d-none"
+                               name="image"
                                id="poll-image"
                                accept="image/jpeg,image/png,image/gif,image/webp">
                     </div>
@@ -172,16 +172,16 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Optional: Image Message Text -->
                 <div id="image-message-section" class="mt-3" style="display: {% if poll.image_path or poll.image_message_text %}block{% else %}none{% endif %};">
                     <label for="image-message-text" class="form-label">
                         <i class="fas fa-comment me-1"></i>Message with Image (Optional)
                     </label>
-                    <textarea class="form-control" 
-                              id="image-message-text" 
-                              name="image_message_text" 
-                              rows="2" 
+                    <textarea class="form-control"
+                              id="image-message-text"
+                              name="image_message_text"
+                              rows="2"
                               placeholder="Add a message to display with your image...">{{ poll.image_message_text or '' }}</textarea>
                     <small class="text-muted">This text will appear with the image before the poll</small>
                 </div>
@@ -216,7 +216,7 @@
                         <small class="text-muted d-block">Allow notifications to be sent to a specific role</small>
                     </label>
                 </div>
-                
+
                 <!-- Role Selection and Notification Options (initially hidden) -->
                 <div id="role-selection-container" class="mt-3" style="display: {% if poll.ping_role_enabled %}block{% else %}none{% endif %};">
                     <label for="role-select" class="form-label">Select Role to Ping</label>
@@ -229,7 +229,7 @@
                         <option value="{{ poll.ping_role_id }}" selected>{{ poll.ping_role_name or 'Selected Role' }}</option>
                         {% endif %}
                     </select>
-                    
+
                     <!-- Notification Options -->
                     <div class="mt-3">
                         <label class="form-label">When to send role notifications:</label>
@@ -266,7 +266,7 @@
                     hx-get="/htmx/polls" hx-target="#main-content">
                 <i class="fas fa-arrow-left me-1"></i>Back to Polls
             </button>
-            
+
             <!-- Loading indicator for HTMX -->
             <div id="loading-indicator" class="htmx-indicator mt-3">
                 <div class="d-flex align-items-center">
@@ -321,7 +321,7 @@
             imageDropZone.addEventListener('drop', (e) => {
                 e.preventDefault();
                 imageDropZone.classList.remove('drag-over');
-                
+
                 const files = e.dataTransfer.files;
                 if (files.length > 0) {
                     handleImageFile(files[0]);
@@ -374,7 +374,7 @@
                     imagePreview.style.display = 'block';
                     imageDropZone.style.display = 'none';
                     imageMessageSection.style.display = 'block';
-                    
+
                     // Hide current image when new one is selected
                     if (currentImage) {
                         currentImage.style.display = 'none';
@@ -389,12 +389,12 @@
                 imageDropZone.style.display = 'block';
                 previewImg.src = '';
                 imageInfo.textContent = '';
-                
+
                 // Show current image again if it exists
                 if (currentImage) {
                     currentImage.style.display = 'block';
                 }
-                
+
                 // Hide image message section if no current image
                 if (!currentImage || currentImage.style.display === 'none') {
                     imageMessageSection.style.display = 'none';
@@ -439,9 +439,9 @@
                     imageDropZone.parentNode.appendChild(statusDiv);
                 }
 
-                const alertClass = type === 'success' ? 'alert-success' : 
+                const alertClass = type === 'success' ? 'alert-success' :
                                   type === 'error' ? 'alert-danger' : 'alert-info';
-                
+
                 statusDiv.innerHTML = `
                     <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
                         <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
@@ -472,7 +472,7 @@
         // Emoji picker functionality
         let currentEmojiButton = null;
         const emojiPickerContainer = document.getElementById('emoji-picker-container');
-        
+
         // Wait for emoji-picker element to be defined
         function waitForEmojiPicker(callback) {
             if (customElements.get('emoji-picker')) {
@@ -484,7 +484,7 @@
 
         waitForEmojiPicker(function() {
             const emojiPicker = document.querySelector('emoji-picker');
-            
+
             if (!emojiPicker) {
                 console.warn('Emoji picker element not found');
                 return;
@@ -495,32 +495,32 @@
                 if (e.target.classList.contains('emoji-picker-btn')) {
                     e.preventDefault();
                     currentEmojiButton = e.target;
-                    
+
                     // Position the emoji picker near the button
                     const rect = e.target.getBoundingClientRect();
                     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
                     const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-                    
+
                     // Calculate position, but ensure it stays within viewport
                     let left = rect.left + scrollLeft;
                     let top = rect.bottom + scrollTop + 5;
-                    
+
                     // Adjust if picker would go off-screen
                     const pickerWidth = 350; // Approximate width of emoji picker
                     const pickerHeight = 300; // Approximate height of emoji picker
                     const viewportWidth = window.innerWidth;
                     const viewportHeight = window.innerHeight;
-                    
+
                     // Adjust horizontal position if needed
                     if (left + pickerWidth > viewportWidth) {
                         left = rect.right + scrollLeft - pickerWidth;
                     }
-                    
+
                     // Adjust vertical position if needed (show above button if no space below)
                     if (top + pickerHeight > viewportHeight + scrollTop) {
                         top = rect.top + scrollTop - pickerHeight - 5;
                     }
-                    
+
                     emojiPickerContainer.style.display = 'block';
                     emojiPickerContainer.style.left = left + 'px';
                     emojiPickerContainer.style.top = top + 'px';
@@ -532,14 +532,14 @@
                 if (currentEmojiButton) {
                     const emoji = event.detail.emoji.unicode;
                     const optionNumber = currentEmojiButton.dataset.option;
-                    
+
                     // Update button text and hidden input
                     currentEmojiButton.textContent = emoji;
                     const hiddenInput = currentEmojiButton.parentElement.querySelector(`input[name="emoji${optionNumber}"]`);
                     if (hiddenInput) {
                         hiddenInput.value = emoji;
                     }
-                    
+
                     // Hide the picker
                     emojiPickerContainer.style.display = 'none';
                     currentEmojiButton = null;
@@ -559,7 +559,7 @@
         function loadDiscordEmojis() {
             const serverSelectElement = document.getElementById('server-select');
             const serverId = serverSelectElement ? serverSelectElement.value : null;
-            
+
             if (!serverId) {
                 // Clear all Discord emoji dropdowns if no server selected
                 document.querySelectorAll('.discord-emoji-dropdown').forEach(dropdown => {
@@ -590,11 +590,11 @@
             // Reset all emoji buttons that have custom Discord emojis back to default
             // Get default emojis from the backend-provided data
             const defaultEmojis = {{ default_emojis|tojson }};
-            
+
             document.querySelectorAll('.emoji-picker-btn').forEach((button, index) => {
                 const optionNumber = button.dataset.option;
                 const hiddenInput = document.querySelector(`input[name="emoji${optionNumber}"]`);
-                
+
                 // Only reset if it's currently a custom Discord emoji (contains < and >)
                 if (hiddenInput && hiddenInput.value.includes('<') && hiddenInput.value.includes('>')) {
                     const defaultEmoji = defaultEmojis[index] || defaultEmojis[0];
@@ -617,25 +617,25 @@
                 html += '<li><hr class="dropdown-divider"></li>';
                 html += '<li class="px-3 py-2">';
                 html += '<div class="discord-emoji-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 8px; max-height: 200px; overflow-y: auto; padding: 8px;">';
-                
+
                 emojis.forEach(emoji => {
                     // Handle both animated and static emojis using the URL from the backend
                     const emojiFormat = emoji.format; // Use the format from backend: <:name:id> or <a:name:id>
                     const displayUrl = emoji.url; // Use the URL from backend
-                    
+
                     html += `
-                        <div class="discord-emoji-item" 
+                        <div class="discord-emoji-item"
                              style="cursor: pointer; padding: 4px; border-radius: 4px; transition: background-color 0.2s; display: flex; align-items: center; justify-content: center;"
-                             data-emoji="${emojiFormat}" 
-                             data-option="${dropdown.dataset.option}" 
-                             data-emoji-url="${displayUrl}" 
+                             data-emoji="${emojiFormat}"
+                             data-option="${dropdown.dataset.option}"
+                             data-emoji-url="${displayUrl}"
                              data-emoji-name="${emoji.name}"
                              title=":${emoji.name}:"
                              onmouseover="this.style.backgroundColor='#f8f9fa'"
                              onmouseout="this.style.backgroundColor='transparent'">
-                            <img src="${displayUrl}?size=32" 
-                                 alt="${emoji.name}" 
-                                 style="width: 32px; height: 32px; object-fit: contain;" 
+                            <img src="${displayUrl}?size=32"
+                                 alt="${emoji.name}"
+                                 style="width: 32px; height: 32px; object-fit: contain;"
                                  onerror="this.style.display='none';">
                         </div>
                     `;
@@ -654,17 +654,17 @@
                     const emojiUrl = this.dataset.emojiUrl;
                     const emojiName = this.dataset.emojiName;
                     const optionNumber = this.dataset.option;
-                    
+
                     // Find the corresponding emoji button and hidden input
                     const emojiButton = document.querySelector(`.emoji-picker-btn[data-option="${optionNumber}"]`);
                     const hiddenInput = document.querySelector(`input[name="emoji${optionNumber}"]`);
-                    
+
                     if (emojiButton && hiddenInput) {
                         // Display the custom emoji using an img element in the button
                         emojiButton.innerHTML = `<img src="${emojiUrl}?size=24" alt="${emojiName}" style="width: 20px; height: 20px; object-fit: contain;" title=":${emojiName}:">`;
                         emojiButton.title = emoji; // Store full emoji format in title for reference
                         hiddenInput.value = emoji;
-                        
+
                         // Close the dropdown
                         const dropdown = this.closest('.dropdown-menu');
                         if (dropdown) {
@@ -687,7 +687,7 @@
                 // Then load new server's emojis
                 loadDiscordEmojis();
             });
-            
+
             // Load emojis on initial page load if server is already selected
             if (serverSelectElement.value) {
                 loadDiscordEmojis();
@@ -706,7 +706,7 @@
         const pingRoleCheckbox = document.getElementById('ping-role-enabled');
         const roleSelectionContainer = document.getElementById('role-selection-container');
         const roleSelect = document.getElementById('role-select');
-        
+
         if (pingRoleCheckbox && roleSelectionContainer) {
             // Show/hide role selection when checkbox is toggled
             pingRoleCheckbox.addEventListener('change', function() {
@@ -726,7 +726,7 @@
         const openImmediatelyCheckbox = document.getElementById('open-immediately');
         const openTimeContainer = document.getElementById('open-time-container');
         const openTimeInput = document.getElementById('open-time');
-        
+
         if (openImmediatelyCheckbox && openTimeContainer && openTimeInput) {
             // Show/hide open time field based on checkbox state
             openImmediatelyCheckbox.addEventListener('change', function() {
@@ -739,7 +739,7 @@
                     openTimeInput.setAttribute('required', 'required');
                 }
             });
-            
+
             // Initialize visibility based on current checkbox state
             if (openImmediatelyCheckbox.checked) {
                 openTimeContainer.style.display = 'none';
@@ -764,7 +764,7 @@
 
         // Handle intelligent channel pre-selection for edit form
         let isInitialLoad = true;
-        
+
         if (serverSelectElement) {
             // Intercept HTMX requests to add the preselect_last_channel parameter
             document.addEventListener('htmx:configRequest', function(event) {
@@ -773,7 +773,7 @@
                     const url = new URL(event.detail.path, window.location.origin);
                     url.searchParams.set('preselect_last_channel', isInitialLoad ? 'true' : 'false');
                     event.detail.path = url.pathname + url.search;
-                    
+
                     // After the first request, all subsequent requests are server switches
                     isInitialLoad = false;
                 }
@@ -800,7 +800,7 @@
             if (openTimeInput.value && closeTimeInput.value) {
                 const openTime = new Date(openTimeInput.value);
                 const closeTime = new Date(closeTimeInput.value);
-                
+
                 // Check if close time is after open time (basic validation)
                 if (closeTime <= openTime) {
                     closeTimeInput.classList.add('is-invalid');
@@ -839,7 +839,7 @@
                     submitText.classList.add('d-none');
                     loadingText.classList.remove('d-none');
                 }
-                
+
                 // Disable form elements to prevent multiple submissions
                 const formElements = form.querySelectorAll('input, select, textarea, button');
                 formElements.forEach(el => {
@@ -857,7 +857,7 @@
                     submitText.classList.remove('d-none');
                     loadingText.classList.add('d-none');
                 }
-                
+
                 // Re-enable form elements
                 const formElements = form.querySelectorAll('input, select, textarea, button');
                 formElements.forEach(el => {
@@ -874,7 +874,7 @@
                     submitText.classList.remove('d-none');
                     loadingText.classList.add('d-none');
                 }
-                
+
                 // Re-enable form elements
                 const formElements = form.querySelectorAll('input, select, textarea, button');
                 formElements.forEach(el => {
@@ -883,7 +883,7 @@
             }
         });
     }
-    
+
     // Initialize on DOM ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initializeEditForm);
@@ -1025,11 +1025,11 @@
         padding: 1.5rem 1rem;
         min-height: 100px;
     }
-    
+
     .drop-zone-content i {
         font-size: 1.5rem;
     }
-    
+
     #image-preview .card,
     .current-image .card {
         max-width: 100% !important;

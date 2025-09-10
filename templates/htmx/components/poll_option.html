@@ -1,7 +1,7 @@
 <div class="input-group mb-2">
     <div class="btn-group">
         <button type="button" class="btn btn-outline-secondary emoji-picker-btn" data-option="{{ option_num }}">{{ emoji }}</button>
-        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn" 
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split discord-emoji-btn"
                 data-bs-toggle="dropdown" data-option="{{ option_num }}" aria-expanded="false">
             <span class="visually-hidden">Discord Emojis</span>
         </button>
@@ -12,7 +12,7 @@
     <input type="text" class="form-control" name="option{{ option_num }}" placeholder="Option {{ option_num }}">
     <input type="hidden" name="emoji{{ option_num }}" value="{{ emoji }}">
     <button type="button" class="btn btn-outline-danger"
-            hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML">
+            hx-delete="/htmx/remove-option" hx-target="closest .input-group" hx-swap="outerHTML" aria-label="Remove option">
         <i class="fas fa-times"></i>
     </button>
 </div>

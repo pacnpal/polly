@@ -11,9 +11,16 @@
     <link rel="apple-touch-icon" href="/static/polly_icon_128.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/polly-custom.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"></script>
     <!-- Cloudflare Turnstile for passive bot detection -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <!-- Pass debug mode to JavaScript -->
+    <script>
+        const POLLY_DEBUG = {{ POLLY_DEBUG|lower }};
+    </script>
+    <!-- Debug utilities -->
+    <script src="/static/polly-debug.js"></script>
     <style>
         .poll-card {
             transition: transform 0.2s;
@@ -122,7 +129,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">
-                <img src="/static/polly_favicon.png" style="width: 20px; height: 20px; vertical-align: middle; margin-right: 8px;" alt="Polly">Polly
+                <img src="/static/polly_favicon.png" class="navbar-logo-icon" alt="Polly">Polly
             </a>
             <div class="navbar-nav ms-auto">
                 <span class="navbar-text me-3">
@@ -150,19 +157,19 @@
                         </h5>
                     </div>
                     <div class="list-group list-group-flush">
-                        <button class="list-group-item list-group-item-action active" 
+                        <button type="button" class="list-group-item list-group-item-action active" 
                                 hx-get="/htmx/polls" hx-target="#main-content">
                             <i class="fas fa-poll me-2"></i>My Polls
                         </button>
-                        <button class="list-group-item list-group-item-action" 
+                        <button type="button" class="list-group-item list-group-item-action" 
                                 hx-get="/htmx/create-form" hx-target="#main-content">
                             <i class="fas fa-plus me-2"></i>Create Poll
                         </button>
-                        <button class="list-group-item list-group-item-action" 
+                        <button type="button" class="list-group-item list-group-item-action" 
                                 hx-get="/htmx/servers" hx-target="#main-content">
                             <i class="fas fa-server me-2"></i>Servers
                         </button>
-                        <button class="list-group-item list-group-item-action" 
+                        <button type="button" class="list-group-item list-group-item-action" 
                                 hx-get="/htmx/settings" hx-target="#main-content">
                             <i class="fas fa-cog me-2"></i>Settings
                         </button>
@@ -223,7 +230,7 @@
 
     <!-- First Login Timezone Prompt Modal -->
     {% if show_timezone_prompt %}
-    <div class="modal fade" id="timezonePromptModal" tabindex="-1" aria-labelledby="timezonePromptModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal fade" id="timezonePromptModal" tabindex="-1" aria-labelledby="timezonePromptModalLabel" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-primary text-white">
@@ -237,7 +244,7 @@
                         <h6>Set Your Timezone</h6>
                         <p class="text-muted">To display poll times correctly, please select your timezone. You can change this later in Settings.</p>
                     </div>
-                    
+
                     <form hx-post="/htmx/settings" hx-target="#timezone-prompt-result" hx-indicator="#timezone-saving">
                         <div class="mb-3">
                             <label for="timezone" class="form-label">Your Timezone</label>
@@ -256,9 +263,8 @@
                                 <option value="Australia/Sydney">Australia/Sydney (UTC+10:00/+11:00)</option>
                             </select>
                         </div>
-                        
+
                         <div id="timezone-prompt-result"></div>
-                        
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary">
                                 <span id="timezone-saving" class="htmx-indicator spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -276,7 +282,6 @@
             </div>
         </div>
     </div>
-    
     <script>
         // Show timezone prompt modal on page load for first-time users
         document.addEventListener('DOMContentLoaded', function() {
@@ -312,7 +317,7 @@
 
     <!-- Non-interactive Turnstile for passive bot detection -->
     {% if turnstile_enabled %}
-    <div style="position: fixed; top: -1000px; left: -1000px; visibility: hidden;">
+    <div class="turnstile-hidden">
         <div class="cf-turnstile" 
              data-sitekey="{{ turnstile_site_key }}" 
              data-appearance="interaction-only"
@@ -333,7 +338,7 @@
 
     <!-- Bootstrap JavaScript Bundle (required for dropdowns) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
+
     <!-- Handle authentication redirects -->
     <script>
         // Handle HTMX redirects for expired sessions

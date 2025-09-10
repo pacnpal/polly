@@ -4,7 +4,7 @@
 {% if is_json_import and success_message %}
 <div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
     <i class="fas fa-check-circle me-2"></i>
-    <div style="white-space: pre-line;">{{ success_message }}</div>
+    <div class="preserve-whitespace">{{ success_message }}</div>
     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
 </div>
 {% endif %}
@@ -28,7 +28,7 @@
                         <label for="timezone" class="form-label">Timezone</label>
                         <select class="form-select" id="timezone" name="timezone">
                             {% for tz in timezones %}
-                            <option value="{{ tz.name }}" {% if tz.name == (priority_timezone if priority_timezone else "US/Eastern") %}selected{% endif %}>{{ tz.display|e }}</option>
+                            <option value="{{ tz.name }}" {% if tz.name == (priority_timezone if priority_timezone else 'US/Eastern') %}selected{% endif %}>{{ tz.display|e }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -110,7 +110,7 @@
             </div>
 
             <!-- Emoji Picker (hidden by default) -->
-            <div id="emoji-picker-container" style="display: none; position: absolute; z-index: 1060;">
+            <div id="emoji-picker-container" class="image-preview-hidden emoji-picker-absolute">
                 <emoji-picker></emoji-picker>
             </div>
 
@@ -160,9 +160,9 @@
                                id="poll-image"
                                accept="image/jpeg,image/png,image/gif,image/webp">
                     </div>
-                    <div id="image-preview" class="mt-3" style="display: none;">
-                        <div class="card" style="max-width: 300px;">
-                            <img id="preview-img" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Image preview">
+                    <div id="image-preview" class="mt-3 image-preview-hidden">
+                        <div class="card image-preview-card">
+                            <img id="preview-img" class="card-img-top image-preview-img" alt="Image preview">
                             <div class="card-body p-2 d-flex justify-content-between align-items-center">
                                 <small class="text-muted" id="image-info">Image Preview</small>
                                 <button type="button" class="btn btn-sm btn-outline-danger" id="remove-image">
@@ -174,7 +174,7 @@
                 </div>
                 
                 <!-- Optional: Image Message Text -->
-                <div id="image-message-section" class="mt-3" style="display: none;">
+                <div id="image-message-section" class="mt-3 image-message-section-hidden">
                     <label for="image-message-text" class="form-label">
                         <i class="fas fa-comment me-1"></i>Message with Image (Optional)
                     </label>
@@ -483,9 +483,9 @@
                     const hiddenInput = currentEmojiButton.closest('.input-group').querySelector(`input[name="emoji${optionNumber}"]`);
                     if (hiddenInput) {
                         hiddenInput.value = emoji;
-                        logger.debug && logger.debug(`✅ EMOJI PICKER - Updated emoji${optionNumber} to: ${emoji}`);
+                        PollyDebug.debug(`✅ Emoji picker - Updated emoji${optionNumber} to: ${emoji}`);
                     } else {
-                        console.warn(`⚠️ EMOJI PICKER - Could not find hidden input for emoji${optionNumber}`);
+                        PollyDebug.warn(`Emoji picker - Could not find hidden input for emoji${optionNumber}`);
                     }
                     
                     // Hide the picker
@@ -529,7 +529,7 @@
                     }
                 })
                 .catch(error => {
-                    console.error('Error loading Discord emojis:', error);
+                    PollyDebug.error('Error loading Discord emojis:', error);
                     updateDiscordEmojiDropdowns([]);
                 });
         }
