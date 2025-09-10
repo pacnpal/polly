@@ -25,7 +25,13 @@
                     {% if poll.image_path %}
                     <div class="mb-4">
                         <h6 class="text-muted">Image</h6>
-                        <img src="/{{ poll.image_path }}" alt="Poll image" class="img-fluid rounded poll-image-display poll-image-compressed">
+                        {% set image_url = "/" + poll.image_path %}
+                        {% if image_mappings and image_url in image_mappings %}
+                            {% set compressed_url = image_mappings[image_url] %}
+                            <img src="{{ compressed_url }}" alt="Poll image" class="img-fluid rounded poll-image-display poll-image-compressed">
+                        {% else %}
+                            <img src="/{{ poll.image_path }}" alt="Poll image" class="img-fluid rounded poll-image-display poll-image-compressed">
+                        {% endif %}
                     </div>
                     {% endif %}
 

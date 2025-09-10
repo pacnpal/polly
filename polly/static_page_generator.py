@@ -729,6 +729,10 @@ class StaticPageGenerator:
                         image_mappings[original_url] = static_url
                         logger.info(f"📷 IMAGE PROCESS - Mapped {original_url} -> {static_url}")
                 
+                # Update database with compressed image paths
+                if image_mappings:
+                    await self._update_database_image_paths(poll_id, image_mappings)
+                
             finally:
                 db.close()
                 
@@ -755,6 +759,64 @@ class StaticPageGenerator:
             updated_content = updated_content.replace(original_url, static_url)
         
         return updated_content
+
+    async def _update_database_image_paths(self, poll_id: int, image_mappings: Dict[str, str]) -> bool:
+        """Update database with compressed image paths"""
+        try:
+            db = get_db_session()
+            try:
+                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                if not poll:
+                    logger.error(f"❌ DB UPDATE - Poll {poll_id} not found for image path update")
+                    return False
+                
+                updated_fields = []
+                
+                # Update image_path field if it was compressed
+                current_image_path = TypeSafeColumn.get_string(poll, "image_path")
+                if current_image_path:
+                    # Convert to URL format for mapping lookup
+                    if current_image_path.startswith('static/uploads/'):
+                        current_url = f"/{current_image_path}"
+                    elif current_image_path.startswith('/static/uploads/'):
+                        current_url = current_image_path
+                    else:
+                        current_url = current_image_path
+                    
+                    if current_url in image_mappings:
+                        # Update to compressed image path (remove leading slash for database storage)
+                        new_path = image_mappings[current_url]
+                        if new_path.startswith('/'):
+                            new_path = new_path[1:]  # Remove leading slash
+                        
+                        poll.image_path = new_path
+                        updated_fields.append(f"image_path: {current_image_path} -> {new_path}")
+                
+                # Update question field if it contains image references
+                question = TypeSafeColumn.get_string(poll, "question", "")
+                if question:
+                    updated_question = question
+                    for original_url, compressed_url in image_mappings.items():
+                        updated_question = updated_question.replace(original_url, compressed_url)
+                    
+                    if updated_question != question:
+                        poll.question = updated_question
+                        updated_fields.append("question field image references")
+                
+                if updated_fields:
+                    db.commit()
+                    logger.info(f"✅ DB UPDATE - Updated poll {poll_id} database fields: {', '.join(updated_fields)}")
+                    return True
+                else:
+                    logger.info(f"📷 DB UPDATE - No database updates needed for poll {poll_id}")
+                    return True
+                    
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"❌ DB UPDATE - Error updating database image paths for poll {poll_id}: {e}")
+            return False
 
     async def _cleanup_poll_images(self, poll_id: int) -> int:
         """Clean up images for a specific poll (non-shared images only)"""
