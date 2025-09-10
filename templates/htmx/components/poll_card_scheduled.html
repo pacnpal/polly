@@ -2,7 +2,10 @@
     <div class="card poll-card h-100 border-warning">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-2">
-                <h6 class="card-title mb-0">{{ poll_name }}</h6>
+                <h6 class="card-title mb-0">
+                    <a href="#" hx-get="/htmx/poll/{{ poll_id }}/details" hx-target="#main-content" 
+                       class="text-decoration-none text-dark">{{ poll_name }}</a>
+                </h6>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-label="Poll options">
                         <i class="fas fa-ellipsis-v"></i>
