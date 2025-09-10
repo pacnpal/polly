@@ -6,6 +6,8 @@ Updates the database schema to match the current models.
 
 import sqlite3
 import os
+import shutil
+from pathlib import Path
 from decouple import config
 
 
@@ -19,6 +21,15 @@ def migrate_database():
     if not os.path.exists(db_path):
         print("Database file not found. Please run the application first to create it.")
         return
+
+    # Clean up cache directory before migration
+    cache_dir = Path(".cache")
+    if cache_dir.exists() and cache_dir.is_dir():
+        try:
+            shutil.rmtree(cache_dir)
+            print("🗑️ Removed .cache directory before migration")
+        except Exception as e:
+            print(f"⚠️ Failed to remove .cache directory: {e}")
 
     print(f"Migrating database: {db_path}")
 

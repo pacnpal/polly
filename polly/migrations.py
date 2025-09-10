@@ -8,6 +8,7 @@ import sqlite3
 import os
 import json
 import logging
+import shutil
 from datetime import datetime
 from decouple import config
 from typing import List, Dict, Any
@@ -344,6 +345,9 @@ class DatabaseMigrator:
     def run_migrations(self) -> bool:
         """Run all necessary migrations"""
         try:
+            # Delete .cache directory if it exists before running migrations
+            self._cleanup_cache_directory()
+            
             current_version = self.get_current_schema_version()
             latest_version = max(migration["version"] for migration in self.migrations)
 
@@ -445,10 +449,23 @@ class DatabaseMigrator:
             logger.error(f"Migration failed: {e}")
             return False
 
+    def _cleanup_cache_directory(self) -> None:
+        """Delete .cache directory if it exists to ensure fresh cache after migrations"""
+        cache_dir = Path(".cache")
+        if cache_dir.exists() and cache_dir.is_dir():
+            try:
+                shutil.rmtree(cache_dir)
+                logger.info("Removed .cache directory before database migration")
+            except Exception as e:
+                logger.warning(f"Failed to remove .cache directory: {e}")
+
     def initialize_database(self) -> bool:
         """Initialize database from scratch"""
         try:
             logger.info(f"Initializing database: {self.db_path}")
+
+            # Delete .cache directory if it exists before initialization
+            self._cleanup_cache_directory()
 
             # Remove existing database if it exists
             if self.database_exists():
