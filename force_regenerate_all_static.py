@@ -7,19 +7,26 @@ import asyncio
 import sys
 import os
 from datetime import datetime
+from decouple import config
 
 # Add the project directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from polly.database import get_db_session, Poll, TypeSafeColumn
 from polly.static_page_generator import get_static_page_generator
-from polly.discord_bot import get_bot_instance
+from polly.discord_bot import get_bot_instance, start_bot, shutdown_bot
 
 async def force_regenerate_all_static():
     """Force regenerate static components for all closed polls"""
     print("🔧 FORCE REGENERATE - Starting regeneration of all static poll components...")
     
+    # Check if Discord token is available
+    discord_token = config("DISCORD_TOKEN", default=None)
+    if not discord_token:
+        print("⚠️ FORCE REGENERATE - No DISCORD_TOKEN found in environment, usernames will be generic")
+    
     db = get_db_session()
+    bot = None
     try:
         # Find all closed polls
         closed_polls = db.query(Poll).filter(Poll.status == "closed").all()
@@ -29,12 +36,21 @@ async def force_regenerate_all_static():
             print("⚠️ FORCE REGENERATE - No closed polls found")
             return
         
-        # Get Discord bot for username fetching and avatar caching
-        bot = get_bot_instance()
-        bot_status = "ready" if bot and hasattr(bot, "is_ready") and bot.is_ready() else "not ready"
-        print(f"🤖 DEBUG - Bot status: {bot_status}")
-        if bot:
-            print("🤖 FORCE REGENERATE - Discord bot available for real username fetching and avatar caching")
+        # Start Discord bot if token is available
+        if discord_token:
+            print("🤖 FORCE REGENERATE - Starting Discord bot for real username fetching...")
+            bot = get_bot_instance()
+            
+            # Start the bot in the background
+            bot_task = asyncio.create_task(bot.start(discord_token))
+            
+            # Wait for bot to be ready (with timeout)
+            try:
+                await asyncio.wait_for(bot.wait_until_ready(), timeout=30.0)
+                print("✅ FORCE REGENERATE - Discord bot is ready for real username fetching and avatar caching")
+            except asyncio.TimeoutError:
+                print("⚠️ FORCE REGENERATE - Discord bot startup timed out, using fallback usernames")
+                bot = None
         else:
             print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic and no avatars cached")
         
@@ -133,6 +149,11 @@ async def force_regenerate_all_static():
             print(f"\n⚠️ FORCE REGENERATE - {error_count} polls had errors during regeneration")
             
     finally:
+        # Clean up Discord bot
+        if bot and not bot.is_closed():
+            print("🤖 FORCE REGENERATE - Shutting down Discord bot...")
+            await bot.close()
+        
         db.close()
 
 async def test_component_loading():
