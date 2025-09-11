@@ -282,21 +282,22 @@ class PandasLogAnalyzer:
         log_entries = []
         
         for _, row in limited_df.iterrows():
+            # Safe access to row data with proper type checking
             log_entries.append({
-                'timestamp': row['timestamp'].isoformat(),
-                'level': row['level'],
-                'message': row['message'],
-                'file': row['file'],
-                'line_number': row['line_number'],
+                'timestamp': row['timestamp'].isoformat() if hasattr(row['timestamp'], 'isoformat') else str(row['timestamp']),
+                'level': str(row['level']) if row['level'] is not None else 'INFO',
+                'message': str(row['message']) if row['message'] is not None else '',
+                'file': str(row['file']) if row['file'] is not None else '',
+                'line_number': int(row['line_number']) if row['line_number'] is not None else 0,
                 'metadata': {
-                    'is_error': row['is_error'],
-                    'has_poll_id': row['has_poll_id'],
-                    'poll_id': row['poll_id'],
-                    'has_user_id': row['has_user_id'],
-                    'user_id': row['user_id'],
-                    'endpoint': row['endpoint'],
-                    'status_code': row['status_code'],
-                    'response_time': row['response_time']
+                    'is_error': bool(row.get('is_error', False)),
+                    'has_poll_id': bool(row.get('has_poll_id', False)),
+                    'poll_id': int(row['poll_id']) if row.get('poll_id') is not None and not pd.isna(row['poll_id']) else None,
+                    'has_user_id': bool(row.get('has_user_id', False)),
+                    'user_id': str(row['user_id']) if row.get('user_id') is not None and not pd.isna(row['user_id']) else None,
+                    'endpoint': str(row['endpoint']) if row.get('endpoint') is not None and not pd.isna(row['endpoint']) else None,
+                    'status_code': int(row['status_code']) if row.get('status_code') is not None and not pd.isna(row['status_code']) else None,
+                    'response_time': float(row['response_time']) if row.get('response_time') is not None and not pd.isna(row['response_time']) else None
                 }
             })
         
