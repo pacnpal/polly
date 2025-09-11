@@ -1369,8 +1369,8 @@ async def send_vote_confirmation_dm(
             action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
             
         elif vote_action == "already_recorded":
-            action_description = f"🧹 **Vote Confirmation**\n\nYour vote for {selected_emoji} **{selected_option}** was previously recorded.\n\n💡 Your vote already counted and this is just confirmation of your vote."
-            
+            action_description = f"🗳️ **Vote Confirmation**\n\nYour vote for {selected_emoji} **{selected_option}** was previously recorded.\n\n💡 Your vote already counted and this is just confirmation of your vote."
+
         else:
             # Fallback for unknown actions
             action_description = f"🗳️ Your vote: {selected_emoji} **{selected_option}**"
