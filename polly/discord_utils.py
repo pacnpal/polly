@@ -1289,11 +1289,12 @@ async def send_vote_confirmation_dm(
         poll: Poll object
         user_id: Discord user ID who voted
         option_index: Index of the option they voted for
-        vote_action: Action taken ("added", "removed", "updated", "created")
+        vote_action: Action taken ("added", "removed", "updated", "created", "already_recorded")
 
     Returns:
         bool: True if DM was sent successfully, False otherwise
     """
+    logger.info(f"🔔 DM FUNCTION DEBUG - Starting send_vote_confirmation_dm for user {user_id}, action: {vote_action}")
     try:
         # Get the user object
         user = bot.get_user(int(user_id))

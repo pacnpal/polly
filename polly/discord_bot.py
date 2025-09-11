@@ -206,20 +206,21 @@ async def on_reaction_add(reaction, user):
             try:
                 from .discord_utils import send_vote_confirmation_dm
 
+                logger.info(f"🔔 DM DEBUG - Attempting to send DM for vote_action: {vote_action} to user {user.id}")
                 dm_sent = await send_vote_confirmation_dm(
                     bot, poll, str(user.id), option_index, vote_action
                 )
                 if dm_sent:
-                    logger.debug(
-                        f"✅ Vote confirmation DM sent to user {user.id} for poll {poll_id}"
+                    logger.info(
+                        f"✅ Vote confirmation DM sent to user {user.id} for poll {poll_id} (action: {vote_action})"
                     )
                 else:
-                    logger.debug(
-                        f"⚠️ Vote confirmation DM not sent to user {user.id} (DMs disabled or error)"
+                    logger.warning(
+                        f"⚠️ Vote confirmation DM not sent to user {user.id} (DMs disabled or error) (action: {vote_action})"
                     )
             except Exception as dm_error:
-                logger.warning(
-                    f"⚠️ Failed to send vote confirmation DM to user {user.id}: {dm_error}"
+                logger.error(
+                    f"❌ Failed to send vote confirmation DM to user {user.id}: {dm_error} (action: {vote_action})"
                 )
                 # Don't fail the vote process if DM fails
 
