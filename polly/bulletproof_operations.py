@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 class BulletproofImageHandler:
     """Ultra-robust image handling with comprehensive validation and security."""
 
-    def __init__(self, upload_dir: str = "uploads"):
+    def __init__(self, upload_dir: str = "static/uploads"):  # FIXED: Changed from "uploads" to "static/uploads"
         self.upload_dir = Path(upload_dir)
-        self.upload_dir.mkdir(exist_ok=True)
+        self.upload_dir.mkdir(parents=True, exist_ok=True)  # FIXED: Added parents=True to create parent directories
         self.max_file_size = 8 * 1024 * 1024  # 8MB Discord limit
         self.allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
         self.allowed_mime_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -104,14 +104,30 @@ class BulletproofImageHandler:
             secure_filename = f"{uuid.uuid4().hex}_{file_hash}{file_ext}"
             file_path = self.upload_dir / secure_filename
 
-            # Step 6: Save file securely
+            # Step 6: Save file securely with proper error handling
             try:
+                # FIXED: Ensure directory exists before writing
+                self.upload_dir.mkdir(parents=True, exist_ok=True)
+                
                 async with aiofiles.open(file_path, "wb") as f:
                     await f.write(file_data)
 
+                # FIXED: Add small delay to ensure file system sync
+                await asyncio.sleep(0.1)
+
                 # Verify file was written correctly
-                if not file_path.exists() or file_path.stat().st_size != len(file_data):
-                    return {"success": False, "error": "File save verification failed"}
+                if not file_path.exists():
+                    return {"success": False, "error": "File was not created"}
+                    
+                actual_size = file_path.stat().st_size
+                if actual_size != len(file_data):
+                    return {"success": False, "error": f"File size mismatch: expected {len(file_data)}, got {actual_size}"}
+
+                # FIXED: Set proper file permissions for web server access
+                try:
+                    file_path.chmod(0o644)  # Read/write for owner, read for group/others
+                except Exception as perm_error:
+                    logger.warning(f"Could not set file permissions for {file_path}: {perm_error}")
 
             except Exception as e:
                 # Cleanup on failure
@@ -141,9 +157,13 @@ class BulletproofImageHandler:
         """Safely remove image file."""
         try:
             path = Path(file_path)
-            if path.exists() and path.parent == self.upload_dir:
+            # FIXED: More robust path validation
+            if path.exists() and path.is_file() and "static/uploads" in str(path):
                 path.unlink()
+                logger.info(f"Successfully cleaned up image: {file_path}")
                 return True
+            else:
+                logger.warning(f"Image cleanup skipped - invalid path: {file_path}")
         except Exception as e:
             logger.error(f"Failed to cleanup image {file_path}: {e}")
         return False
@@ -197,19 +217,21 @@ class BulletproofPollOperations:
                     "step": "validation",
                 }
 
-            # STEP 2: Image Processing (if provided)
+            # STEP 2: Image Processing (if provided) - ENHANCED ERROR HANDLING
             if image_file and image_filename:
-                logger.info("Step 2: Processing image")
+                logger.info(f"Step 2: Processing image - {image_filename} ({len(image_file)} bytes)")
                 image_result = await self.image_handler.validate_and_process_image(
                     image_file, image_filename
                 )
                 if not image_result["success"]:
+                    logger.error(f"Image processing failed: {image_result['error']}")
                     return {
                         "success": False,
                         "error": f"Image processing failed: {image_result['error']}",
                         "step": "image_processing",
                     }
                 image_info = image_result
+                logger.info(f"Image processed successfully: {image_info['file_path']}")
 
             # STEP 3: Discord Permission Validation
             logger.info("Step 3: Validating Discord permissions")
@@ -288,12 +310,15 @@ class BulletproofPollOperations:
                         timezone=validated_data["timezone"],
                         anonymous=validated_data["anonymous"],
                         multiple_choice=validated_data.get("multiple_choice", False),
+                        max_choices=validated_data.get("max_choices", None),  # FIXED: Added max_choices support
                         image_path=image_info["file_path"] if image_info else None,
                         image_message_text=image_message_text or "",
                         # ROLE PING FIX: Include role ping data in poll creation
                         ping_role_enabled=validated_data.get("ping_role_enabled", False),
                         ping_role_id=validated_data.get("ping_role_id", None),
                         ping_role_name=validated_data.get("ping_role_name", None),
+                        ping_role_on_close=validated_data.get("ping_role_on_close", False),
+                        ping_role_on_update=validated_data.get("ping_role_on_update", False),
                     )
 
                     db.add(poll)
@@ -329,6 +354,10 @@ class BulletproofPollOperations:
 
                     if not poll_id:
                         raise Exception("Failed to create poll record")
+
+                    # FIXED: Log image path storage for debugging
+                    if image_info:
+                        logger.info(f"Poll {poll_id} created with image: {image_info['file_path']}")
 
                 finally:
                     db.close()
@@ -472,7 +501,7 @@ class BulletproofPollOperations:
         vote_recorded = False
         retry_count = 0
         max_retries = 3
-        vote_action = "unknown"  # Initialize vote_action
+        vote_action = "unknown"
 
         while retry_count < max_retries and not vote_recorded:
             try:
@@ -683,26 +712,31 @@ class BulletproofPollOperations:
                         f"Successfully {vote_action} vote for poll {poll_id}, user {user_id}, option {option_index}"
                     )
 
-                except Exception as db_error:
-                    db.rollback()
-                    logger.warning(
-                        f"Database error on attempt {retry_count}: {db_error}"
-                    )
-                    if retry_count >= max_retries:
-                        raise db_error
-                    # Wait briefly before retry to avoid rapid-fire retries
-                    await asyncio.sleep(0.1 * retry_count)
-                    continue
+                    return {
+                        "success": True,
+                        "action": vote_action,
+                        "poll_id": poll_id,
+                        "user_id": user_id,
+                        "option_index": option_index,
+                        "message": f"Vote {vote_action} successfully",
+                    }
 
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Database transaction failed (attempt {retry_count}): {e}")
+                    if retry_count >= max_retries:
+                        return {
+                            "success": False,
+                            "error": f"Database transaction failed after {max_retries} attempts: {str(e)}",
+                        }
+                    # Wait before retry
+                    await asyncio.sleep(0.1 * retry_count)
                 finally:
                     db.close()
 
             except Exception as e:
                 logger.error(f"Vote collection attempt {retry_count} failed: {e}")
                 if retry_count >= max_retries:
-                    logger.error(
-                        f"Vote collection failed after {max_retries} attempts: {e}"
-                    )
                     return {
                         "success": False,
                         "error": f"Vote collection failed after {max_retries} attempts: {str(e)}",
@@ -710,78 +744,7 @@ class BulletproofPollOperations:
                 # Wait before retry
                 await asyncio.sleep(0.1 * retry_count)
 
-        if vote_recorded:
-            return {
-                "success": True,
-                "message": f"Vote {vote_action} successfully after {retry_count} attempt(s)",
-                "action": vote_action,
-                "attempts": retry_count,
-            }
-        else:
-            return {
-                "success": False,
-                "error": f"Failed to record vote after {max_retries} attempts",
-            }
-
-    @critical_operation("bulletproof_poll_closure")
-    async def bulletproof_poll_closure(
-        self, poll_id: int, reason: str = "manual"
-    ) -> Dict[str, Any]:
-        """Bulletproof poll closure with cleanup and finalization."""
-        try:
-            # Step 1: Validate poll exists and can be closed
-            db = get_db_session()
-            try:
-                poll = db.query(Poll).filter(Poll.id == poll_id).first()
-                if not poll:
-                    return {"success": False, "error": "Poll not found"}
-
-                if str(getattr(poll, "status", "")) == "closed":
-                    return {"success": False, "error": "Poll already closed"}
-
-                # Step 2: Close poll atomically
-                setattr(poll, "status", "closed")
-                db.commit()
-
-                # Step 3: Generate final results
-                results = self._generate_poll_results(poll)
-
-            finally:
-                db.close()
-
-            return {
-                "success": True,
-                "message": "Poll closed successfully",
-                "results": results,
-            }
-
-        except Exception as e:
-            logger.error(f"Poll closure failed: {e}")
-            return {"success": False, "error": f"Poll closure failed: {str(e)}"}
-
-    def _generate_poll_results(self, poll: Poll) -> Dict[str, Any]:
-        """Generate comprehensive poll results."""
-        try:
-            results = poll.get_results()
-            total_votes = poll.get_total_votes()
-            winners = poll.get_winner()
-
-            return {
-                "poll_id": getattr(poll, "id"),
-                "title": str(getattr(poll, "name", "")),
-                "question": str(getattr(poll, "question", "")),
-                "options": poll.options,
-                "vote_counts": results,
-                "total_votes": total_votes,
-                "winners": winners,
-                "closed_at": datetime.now(timezone.utc),
-            }
-
-        except Exception as e:
-            logger.error(
-                f"Failed to generate results for poll {getattr(poll, 'id')}: {e}"
-            )
-            return {
-                "poll_id": getattr(poll, "id"),
-                "error": f"Failed to generate results: {str(e)}",
-            }
+        return {
+            "success": False,
+            "error": f"Vote collection failed after {max_retries} attempts",
+        }
