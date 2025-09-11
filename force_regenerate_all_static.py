@@ -31,6 +31,8 @@ async def force_regenerate_all_static():
         
         # Get Discord bot for username fetching
         bot = get_bot_instance()
+        bot_status = "ready" if bot and hasattr(bot, "is_ready") and bot.is_ready() else "not ready"
+        print(f"🤖 DEBUG - Bot status: {bot_status}")
         if bot:
             print("🤖 FORCE REGENERATE - Discord bot available for username fetching")
         else:
@@ -52,6 +54,7 @@ async def force_regenerate_all_static():
             try:
                 # Force regenerate all static content with image compression and real usernames
                 results = await generator.generate_all_static_content(poll_id, bot)
+                print(f"🔧 DEBUG - About to generate static content for poll {poll_id} with bot: {bool(bot)}")
                 
                 if all(results.values()):
                     print(f"✅ FORCE REGENERATE - Successfully generated all static content for poll {poll_id}")

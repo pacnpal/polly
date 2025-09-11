@@ -3,7 +3,6 @@ Polly Discord Bot
 Discord bot setup and event handling functionality.
 """
 
-from decouple import config
 import os
 import logging
 import discord
@@ -22,7 +21,7 @@ from .error_handler import (
 logger = logging.getLogger(__name__)
 
 # Configuration
-DISCORD_TOKEN = config("DISCORD_TOKEN")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN environment variable is required")
 

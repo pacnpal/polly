@@ -10,6 +10,7 @@ import hashlib
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
+from .htmx_endpoints import format_datetime_for_user
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .database import get_db_session, Poll, Vote, TypeSafeColumn
@@ -35,6 +36,7 @@ except ImportError:
     logger.warning("Playwright not available - dashboard screenshot capture disabled")
 
 
+print(f"📸 PLAYWRIGHT DEBUG - PLAYWRIGHT_AVAILABLE: {PLAYWRIGHT_AVAILABLE}")
 class StaticPageGenerator:
     """Generates static HTML pages for closed polls"""
     
@@ -130,7 +132,7 @@ class StaticPageGenerator:
                         
                         # Always fetch real Discord username for static pages (never anonymize)
                         username = "Unknown User"
-                        if bot and user_id:
+                        if bot and bot.is_ready() and user_id:
                             try:
                                 discord_user = await bot.fetch_user(int(user_id))
                                 if discord_user:
@@ -170,7 +172,9 @@ class StaticPageGenerator:
                 screenshot_path = self._get_dashboard_screenshot_path(poll_id)
                 if screenshot_path.exists():
                     dashboard_screenshot_url = f"/static/images/shared/{screenshot_path.name}"
-                
+                    print(f"✅ SCREENSHOT DETECTED - Found existing screenshot for poll {poll_id}: {screenshot_path.name}")
+                else:
+                    print(f"⚠️ NO SCREENSHOT - No screenshot found for poll {poll_id}, using HTML fallback")
                 # Generate static HTML using the component template
                 template = self.jinja_env.get_template("static/poll_details_static_component.html")
                 html_content = template.render(
@@ -185,7 +189,8 @@ class StaticPageGenerator:
                     generated_at=datetime.now(),
                     is_static=True,
                     image_mappings=image_mappings,  # Pass image mappings to template
-                    dashboard_screenshot_url=dashboard_screenshot_url  # Pass screenshot URL to template
+                    dashboard_screenshot_url=dashboard_screenshot_url,  # Pass screenshot URL to template
+                    format_datetime_for_user=format_datetime_for_user,
                 )
                 
                 # Update HTML content to use static image URLs
@@ -246,7 +251,7 @@ class StaticPageGenerator:
                         
                         # Always fetch real Discord username for static pages (never anonymize)
                         username = "Unknown User"
-                        if bot and user_id:
+                        if bot and bot.is_ready() and user_id:
                             try:
                                 discord_user = await bot.fetch_user(int(user_id))
                                 if discord_user:
@@ -293,7 +298,8 @@ class StaticPageGenerator:
                     emojis=emojis,
                     is_anonymous=is_anonymous,
                     generated_at=datetime.now(),
-                    is_static=True
+                    is_static=True,
+                    format_datetime_for_user=format_datetime_for_user,
                 )
                 
                 # Save static HTML file
@@ -369,17 +375,29 @@ class StaticPageGenerator:
             return False
             
     async def generate_all_static_content(self, poll_id: int, bot=None) -> Dict[str, bool]:
-        """Generate all static content for a closed poll with dashboard screenshot"""
-        logger.info(f"🔧 STATIC GEN - Generating all static content with screenshot for poll {poll_id}")
+        """Generate all static content for a closed poll - SCREENSHOTS FIRST, then HTML"""
+        logger.info(f"🔧 STATIC GEN - Generating all static content with SCREENSHOT-FIRST approach for poll {poll_id}")
+        
+        # PHASE 1: Generate screenshot FIRST
+        print(f"📸 PHASE 1 - Generating screenshot for poll {poll_id} (before HTML)")
+        screenshot_success = await self.generate_dashboard_with_screenshot(poll_id, bot)
+        
+        # PHASE 2: Generate HTML details page AFTER screenshot (so it can reference it)
+        print(f"📄 PHASE 2 - Generating HTML details page for poll {poll_id} (after screenshot)")
+        details_success = await self.generate_static_poll_details(poll_id, bot)
+        
+        # PHASE 3: Generate JSON data file
+        print(f"📊 PHASE 3 - Generating JSON data for poll {poll_id}")
+        data_success = await self.generate_static_poll_data(poll_id)
         
         results = {
-            "details_page": await self.generate_static_poll_details(poll_id, bot),
-            "dashboard_screenshot": await self.generate_dashboard_with_screenshot(poll_id, bot),
-            "data_file": await self.generate_static_poll_data(poll_id)
+            "details_page": details_success,
+            "dashboard_screenshot": screenshot_success,
+            "data_file": data_success
         }
         
         success_count = sum(1 for success in results.values() if success)
-        logger.info(f"✅ STATIC GEN - Generated {success_count}/3 static files for poll {poll_id}")
+        logger.info(f"✅ STATIC GEN - Generated {success_count}/3 static files for poll {poll_id} using SCREENSHOT-FIRST approach")
         
         return results
         
@@ -876,7 +894,9 @@ class StaticPageGenerator:
         filename = f"poll_{poll_id}_dashboard_screenshot.jpg"
         return self.shared_images_dir / filename
         
-    async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "http://localhost:8000") -> Optional[str]:
+    async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "https://polly.pacnp.al") -> Optional[str]:
+        logger.info(f"📸 DEBUG - Starting capture_dashboard_screenshot for poll {poll_id}, creator_id: {creator_id}")
+        print(f"📸 PRINT DEBUG - Starting capture_dashboard_screenshot for poll {poll_id}")
         """
         Capture a screenshot of the complete dashboard using headless browser with secure one-time token
         
@@ -902,11 +922,16 @@ class StaticPageGenerator:
                 return f"/static/images/shared/{screenshot_path.name}"
             
             # Create secure one-time token for authentication
+            logger.info(f"📸 DEBUG - About to import create_screenshot_token and create token for poll {poll_id}")
             from .web_app import create_screenshot_token
+            print(f"📸 PRINT DEBUG - About to create token for poll {poll_id}")
             token = await create_screenshot_token(poll_id, creator_id)
+            logger.info(f"📸 DEBUG - Successfully imported create_screenshot_token, about to call it")
+            print(f"🔑 DEBUG - Generated screenshot token: {token}")
             
             # Construct secure dashboard URL with token
             secure_dashboard_url = f"{base_url}/screenshot/poll/{poll_id}/dashboard?token={token}"
+            print(f"🌐 DEBUG - Secure dashboard URL: {secure_dashboard_url}")
             
             logger.info(f"📸 SCREENSHOT - Using secure authenticated URL for poll {poll_id}")
             
@@ -941,11 +966,68 @@ class StaticPageGenerator:
                     
                     logger.info(f"📸 SCREENSHOT - Navigating to secure dashboard URL for poll {poll_id}")
                     
+                    # Enable JavaScript (should be enabled by default, but make sure)
+                    await page.add_init_script("console.log('JavaScript enabled for Polly screenshots');")
+                    print("📸 DEBUG - JavaScript initialization script added")
+
                     # Navigate to secure dashboard
                     await page.goto(secure_dashboard_url, wait_until='networkidle')
                     
+                    logger.info(f"📸 DEBUG - Page loaded successfully for poll {poll_id}, checking for dashboard content")
+                    # Debug: Save page content for debugging
+                    page_content = await page.content()
+                    logger.info(f"📸 DEBUG - Page title: {await page.title()}")
+                    logger.info(f"📸 DEBUG - Page content length: {len(page_content)} chars")
                     # Wait for dashboard content to load
-                    await page.wait_for_selector('#poll-dashboard-container', timeout=10000)
+                    # Wait for JavaScript to render dashboard content
+                    print("📸 DEBUG - Waiting for JavaScript to render dashboard content...")
+                    
+                    # Execute JavaScript to wait for content to be truly visible
+                    content_visible = await page.evaluate("""
+                    async () => {
+                        const maxWait = 20000; // 20 seconds max wait
+                        const startTime = Date.now();
+                        
+                        while (Date.now() - startTime < maxWait) {
+                            // Look for the dashboard content
+                            const chartIcon = document.querySelector(".fas.fa-chart-bar");
+                            if (chartIcon) {
+                                const style = window.getComputedStyle(chartIcon);
+                                const rect = chartIcon.getBoundingClientRect();
+                                
+                                // Check if element is truly visible (not hidden by CSS and has dimensions)
+                                if (style.display !== "none" && 
+                                    style.visibility !== "hidden" && 
+                                    style.opacity !== "0" &&
+                                    rect.width > 0 && 
+                                    rect.height > 0) {
+                                    return true;
+                                }
+                            }
+                            
+                            // Also check for any dashboard content cards
+                            const dashboardCards = document.querySelectorAll(".card, [class*=dashboard]");
+                            for (const card of dashboardCards) {
+                                const style = window.getComputedStyle(card);
+                                const rect = card.getBoundingClientRect();
+                                if (style.display !== "none" && 
+                                    style.visibility !== "hidden" && 
+                                    rect.width > 0 && rect.height > 0) {
+                                    return true;
+                                }
+                            }
+                            
+                            await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms
+                        }
+                        return false;
+                    }
+                    """)
+                    
+                    if not content_visible:
+                        print("⚠️  DEBUG - Dashboard content not visible after JavaScript wait, but continuing with screenshot")
+                    else:
+                        print("✅ DEBUG - Dashboard content is now visible!")
+
                     
                     # Wait for any images to load
                     await page.wait_for_load_state('networkidle')
@@ -976,7 +1058,8 @@ class StaticPageGenerator:
             logger.exception("Full traceback for screenshot error:")
             return None
             
-    async def generate_dashboard_with_screenshot(self, poll_id: int, bot=None, base_url: str = "http://localhost:8000") -> bool:
+    async def generate_dashboard_with_screenshot(self, poll_id: int, bot=None, base_url: str = "https://polly.pacnp.al") -> bool:
+        print(f"📸 PRINT DEBUG - Starting generate_dashboard_with_screenshot for poll {poll_id}")
         """
         Generate static dashboard with screenshot capture
         
@@ -1005,6 +1088,7 @@ class StaticPageGenerator:
                     return False
                 
                 creator_id = TypeSafeColumn.get_string(poll, "creator_id")
+                logger.info(f"🔍 DEBUG - Poll {poll_id} creator_id: {creator_id}")
                 if not creator_id:
                     logger.error(f"❌ SCREENSHOT GEN - No creator_id found for poll {poll_id}")
                     return False
@@ -1014,6 +1098,7 @@ class StaticPageGenerator:
             
             # Capture dashboard screenshot with secure token
             screenshot_url = await self.capture_dashboard_screenshot(poll_id, creator_id, base_url)
+            print(f"📸 PRINT DEBUG - About to call capture_dashboard_screenshot for poll {poll_id}")
             
             if screenshot_url:
                 logger.info(f"✅ SCREENSHOT GEN - Successfully generated dashboard with screenshot for poll {poll_id}")
