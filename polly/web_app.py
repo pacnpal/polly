@@ -37,6 +37,7 @@ from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .admin_endpoints import add_admin_routes
 from .super_admin_endpoints import add_super_admin_routes
+from .enhanced_log_endpoints import add_enhanced_log_routes
 
 logger = get_debug_logger(__name__)
 
@@ -547,6 +548,9 @@ def create_app() -> FastAPI:
 
     # Add super admin routes
     add_super_admin_routes(app)
+    
+    # Add enhanced log routes
+    add_enhanced_log_routes(app)
 
     return app
 
