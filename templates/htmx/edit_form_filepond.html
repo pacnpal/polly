@@ -74,7 +74,7 @@
                                 <li><h6 class="dropdown-header">Loading Discord emojis...</h6></li>
                             </ul>
                         </div>
-                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option|e }}" {% if loop.index &lt;= 2 %}required{% endif %}>
+                        <input type="text" class="form-control" name="option{{ loop.index }}" placeholder="Option {{ loop.index }}" value="{{ option|e }}" {% if loop.index <= 2 %}required{% endif %}>
                         <input type="hidden" data-emoji-input="unicode" name="emoji{{ loop.index }}" value="{{ poll.emojis[loop.index0] if poll.emojis and loop.index0 < poll.emojis|length else default_emojis[loop.index0] }}">
                         {% if loop.index > 2 %}
                         <button type="button" class="btn btn-outline-danger"

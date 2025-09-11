@@ -332,12 +332,12 @@ async def get_system_logs_htmx(
     time_range: str = Query("24h"),
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
-    """HTMX endpoint for system logs using pandas analyzer"""
+    """HTMX endpoint for system logs using pandas analyzer (async to prevent Discord bot blocking)"""
     try:
         from .pandas_log_analyzer import pandas_log_analyzer
         
-        # Use pandas analyzer for advanced log parsing
-        log_entries, analytics = pandas_log_analyzer.get_filtered_logs(
+        # Use async pandas analyzer to prevent blocking Discord bot heartbeat
+        log_entries, analytics = await pandas_log_analyzer.get_filtered_logs_async(
             level_filter=level,
             search_filter=search,
             time_range=time_range,
@@ -373,12 +373,12 @@ async def download_logs_api(
     time_range: str = Query("24h"),
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> StreamingResponse:
-    """Download filtered logs as text file using pandas analyzer"""
+    """Download filtered logs as text file using pandas analyzer (async to prevent Discord bot blocking)"""
     try:
         from .pandas_log_analyzer import pandas_log_analyzer
         
-        # Use pandas analyzer for log parsing
-        log_entries, analytics = pandas_log_analyzer.get_filtered_logs(
+        # Use async pandas analyzer to prevent blocking Discord bot heartbeat
+        log_entries, analytics = await pandas_log_analyzer.get_filtered_logs_async(
             level_filter=level,
             search_filter=search,
             time_range=time_range,

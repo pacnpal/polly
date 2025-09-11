@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import functools
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,7 @@ class PandasLogAnalyzer:
         self.log_pattern = re.compile(
             r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - (\w+) - (.+)$'
         )
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="log_parser")
     
     def parse_logs_to_dataframe(
         self, 
@@ -331,6 +335,61 @@ class PandasLogAnalyzer:
             })
         
         return log_entries, analytics
+    
+    async def get_filtered_logs_async(
+        self,
+        level_filter: Optional[str] = None,
+        search_filter: Optional[str] = None,
+        time_range: str = "24h",
+        limit: int = 500
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Async version of get_filtered_logs - runs in thread pool to prevent blocking"""
+        
+        loop = asyncio.get_event_loop()
+        
+        # Run the blocking operation in a thread pool
+        return await loop.run_in_executor(
+            self._executor,
+            functools.partial(
+                self.get_filtered_logs,
+                level_filter=level_filter,
+                search_filter=search_filter,
+                time_range=time_range,
+                limit=limit
+            )
+        )
+    
+    async def parse_logs_to_dataframe_async(
+        self, 
+        time_cutoff: Optional[datetime] = None,
+        level_filter: Optional[str] = None,
+        search_filter: Optional[str] = None
+    ) -> pd.DataFrame:
+        """Async version of parse_logs_to_dataframe - runs in thread pool to prevent blocking"""
+        
+        loop = asyncio.get_event_loop()
+        
+        # Run the blocking operation in a thread pool
+        return await loop.run_in_executor(
+            self._executor,
+            functools.partial(
+                self.parse_logs_to_dataframe,
+                time_cutoff=time_cutoff,
+                level_filter=level_filter,
+                search_filter=search_filter
+            )
+        )
+    
+    async def get_error_trends_async(self, days: int = 7) -> Dict[str, Any]:
+        """Async version of get_error_trends - runs in thread pool to prevent blocking"""
+        
+        loop = asyncio.get_event_loop()
+        
+        # Run the blocking operation in a thread pool
+        return await loop.run_in_executor(
+            self._executor,
+            functools.partial(self.get_error_trends, days=days)
+        )
     
     def _parse_time_range(self, time_range: str) -> datetime:
         """Parse time range string and return cutoff datetime"""
