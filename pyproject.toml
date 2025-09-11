@@ -24,6 +24,7 @@ dependencies = [
     "psutil>=7.0.0",
     "redis>=5.0.0",
     "playwright>=1.55.0",
+    "pandas>=2.3.2",
 ]
 
 [build-system]
