@@ -352,56 +352,83 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
     try:
         with open(log_path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Parse log entry (assuming format: TIMESTAMP - LEVEL - MESSAGE)
-                log_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - (\w+) - (.+)$', line)
-                
-                if log_match:
-                    timestamp_str, level, message = log_match.groups()
-                    
-                    try:
-                        timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-                    except ValueError:
-                        timestamp = datetime.now()
-                    
-                    # Apply time filter
-                    if time_cutoff and timestamp < time_cutoff:
+                try:
+                    line = line.strip()
+                    if not line:
                         continue
                     
-                    # Apply level filter
-                    if level_filter and level != level_filter:
-                        continue
+                    # Parse log entry (assuming format: TIMESTAMP - LEVEL - MESSAGE)
+                    log_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - (\w+) - (.+)$', line)
                     
-                    # Apply search filter
-                    if search_filter and search_filter.lower() not in message.lower():
-                        continue
-                    
-                    entries.append({
-                        'timestamp': timestamp.isoformat(),
-                        'level': level,
-                        'message': message,
-                        'line_number': line_num
-                    })
-                else:
-                    # Handle multi-line entries or malformed entries
-                    if entries and len(entries) > 0:  # Safely append to last entry if it exists
-                        entries[-1]['message'] += '\n' + line
-                    else:
-                        # If no entries exist yet, create a basic entry for orphaned lines
+                    if log_match:
+                        timestamp_str, level, message = log_match.groups()
+                        
+                        try:
+                            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            timestamp = datetime.now()
+                        
+                        # Apply time filter
+                        if time_cutoff and timestamp < time_cutoff:
+                            continue
+                        
+                        # Apply level filter
+                        if level_filter and level != level_filter:
+                            continue
+                        
+                        # Apply search filter
+                        if search_filter and search_filter.lower() not in message.lower():
+                            continue
+                        
                         entries.append({
-                            'timestamp': datetime.now().isoformat(),
-                            'level': 'INFO',
-                            'message': line,
+                            'timestamp': timestamp.isoformat(),
+                            'level': level,
+                            'message': message,
                             'line_number': line_num
                         })
+                    else:
+                        # Handle multi-line entries or malformed entries - EXTRA SAFE VERSION
+                        try:
+                            if len(entries) > 0:  # Double check entries exist and has length
+                                entries[-1]['message'] += '\n' + line
+                            else:
+                                # If no entries exist yet, create a basic entry for orphaned lines
+                                entries.append({
+                                    'timestamp': datetime.now().isoformat(),
+                                    'level': 'INFO',
+                                    'message': line,
+                                    'line_number': line_num
+                                })
+                        except (IndexError, KeyError, TypeError) as inner_e:
+                            # If anything goes wrong with appending, just create a new entry
+                            logger.warning(f"Error appending to log entry, creating new entry: {inner_e}")
+                            entries.append({
+                                'timestamp': datetime.now().isoformat(),
+                                'level': 'INFO',
+                                'message': line,
+                                'line_number': line_num
+                            })
+                
+                except Exception as line_e:
+                    # Skip problematic lines entirely
+                    logger.warning(f"Skipping problematic log line {line_num}: {line_e}")
+                    continue
     
     except Exception as e:
         logger.error(f"Error parsing log file {log_path}: {e}")
+        # Return a safe fallback entry
+        return [{
+            'timestamp': datetime.now().isoformat(),
+            'level': 'ERROR',
+            'message': f'Error parsing log file {log_path}: {str(e)}',
+            'line_number': 1
+        }]
     
-    return sorted(entries, key=lambda x: x['timestamp'], reverse=True)
+    try:
+        return sorted(entries, key=lambda x: x.get('timestamp', ''), reverse=True)
+    except Exception as sort_e:
+        logger.error(f"Error sorting log entries: {sort_e}")
+        return entries  # Return unsorted if sorting fails
 
 
 async def get_system_logs_htmx(
