@@ -241,14 +241,35 @@ class PandasLogAnalyzer:
             }
         
         # Performance metrics
-        response_time_df = df[df['response_time'].notna()]
+        response_time_df = df[df['response_time'].notna() & (df['response_time'] != '')]
         if not response_time_df.empty:
-            analytics['performance_metrics'] = {
-                'avg_response_time': response_time_df['response_time'].mean(),
-                'median_response_time': response_time_df['response_time'].median(),
-                'max_response_time': response_time_df['response_time'].max(),
-                'slow_requests': len(response_time_df[response_time_df['response_time'] > 1000])
-            }
+            try:
+                # Convert to numeric, handling any string values
+                response_times = pd.to_numeric(response_time_df['response_time'], errors='coerce')
+                response_times = response_times.dropna()
+                
+                if not response_times.empty:
+                    analytics['performance_metrics'] = {
+                        'avg_response_time': float(response_times.mean()),
+                        'median_response_time': float(response_times.median()),
+                        'max_response_time': float(response_times.max()),
+                        'slow_requests': int(len(response_times[response_times > 1000]))
+                    }
+                else:
+                    analytics['performance_metrics'] = {
+                        'avg_response_time': 0,
+                        'median_response_time': 0,
+                        'max_response_time': 0,
+                        'slow_requests': 0
+                    }
+            except Exception as e:
+                logger.warning(f"Error calculating performance metrics: {e}")
+                analytics['performance_metrics'] = {
+                    'avg_response_time': 0,
+                    'median_response_time': 0,
+                    'max_response_time': 0,
+                    'slow_requests': 0
+                }
         else:
             analytics['performance_metrics'] = {
                 'avg_response_time': 0,
