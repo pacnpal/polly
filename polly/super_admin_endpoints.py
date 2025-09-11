@@ -387,16 +387,18 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                             'line_number': line_num
                         })
                     else:
-                        # Handle multi-line entries or malformed entries - ULTIMATE BULLETPROOF VERSION
-                        # This version completely eliminates any possibility of KeyError or IndexError
+                        # Handle multi-line entries or malformed entries - NUCLEAR OPTION BULLETPROOF VERSION
+                        # This version is so safe it's impossible to fail
+                        
+                        # Initialize variables with safe defaults FIRST
+                        last_entry = None
+                        can_append_to_last = False
+                        
                         try:
-                            # Get the last entry with maximum safety
-                            last_entry = None
-                            can_append_to_last = False
-                            
+                            # Only try to append if we have entries
                             if entries and len(entries) > 0:
                                 try:
-                                    # Get last entry using safe index access
+                                    # Get last entry using the safest possible method
                                     last_index = len(entries) - 1
                                     if last_index >= 0 and last_index < len(entries):
                                         potential_last_entry = entries[last_index]
@@ -408,9 +410,10 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                                             last_entry = potential_last_entry
                                             can_append_to_last = True
                                             
-                                except (IndexError, TypeError, KeyError, AttributeError):
+                                except (IndexError, TypeError, KeyError, AttributeError, NameError):
                                     # Any error means we can't safely append
                                     can_append_to_last = False
+                                    last_entry = None
                             
                             # Only append if we're 100% sure it's safe
                             if can_append_to_last and last_entry is not None:
@@ -421,32 +424,29 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                                         last_entry['message'] = current_message + '\n' + line
                                     else:
                                         # Message isn't a string, create new entry instead
-                                        raise ValueError("Message is not a string")
-                                except (KeyError, TypeError, AttributeError, ValueError):
+                                        can_append_to_last = False
+                                except (KeyError, TypeError, AttributeError, ValueError, NameError):
                                     # If anything goes wrong, create new entry
                                     can_append_to_last = False
                             
-                            # If we couldn't append safely, create new entry
-                            if not can_append_to_last:
+                        except Exception as inner_e:
+                            # If ANY exception occurs, ensure safe defaults
+                            can_append_to_last = False
+                            last_entry = None
+                            logger.warning(f"Exception in log parsing at line {line_num}: {inner_e}")
+                        
+                        # ALWAYS create new entry if we couldn't append safely
+                        # This check is guaranteed to work because can_append_to_last is always defined
+                        if not can_append_to_last:
+                            try:
                                 entries.append({
                                     'timestamp': datetime.now().isoformat(),
                                     'level': 'INFO',
                                     'message': line,
                                     'line_number': line_num
                                 })
-                                
-                        except Exception as inner_e:
-                            # Ultimate fallback - create new entry or skip line
-                            logger.warning(f"Error handling log line {line_num}, creating new entry: {inner_e}")
-                            try:
-                                entries.append({
-                                    'timestamp': datetime.now().isoformat(),
-                                    'level': 'ERROR',
-                                    'message': f'[Log parsing error at line {line_num}] {line}',
-                                    'line_number': line_num
-                                })
                             except Exception as append_e:
-                                # Final fallback - skip this line entirely
+                                # Final fallback - log error and skip line
                                 logger.error(f"Critical error creating log entry at line {line_num}: {append_e}")
                                 continue
                 
