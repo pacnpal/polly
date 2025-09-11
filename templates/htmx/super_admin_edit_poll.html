@@ -82,32 +82,64 @@
                             </div>
                         </div>
 
-                        <!-- Image Section -->
-                        <div class="mb-4">
-                            <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-image me-2"></i>Image Settings</h6>
-                            
+                        <!-- Image Upload Section -->
+                        <div class="mb-3">
+                            <label for="poll-image" class="form-label">
+                                <i class="fas fa-image me-1"></i>Poll Image (Optional)
+                            </label>
+
+                            <!-- Show current image if exists -->
                             {% if poll.image_path %}
-                            <div class="mb-3">
-                                <label class="form-label">Current Image</label>
+                            <div class="current-image mb-3" id="current-image">
                                 <div class="card" style="max-width: 300px;">
                                     <img src="/{{ poll.image_path }}" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Current poll image">
-                                    <div class="card-body p-2">
-                                        <small class="text-muted">{{ poll.image_path }}</small>
+                                    <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">Current Image</small>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" id="remove-current-image">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                             {% endif %}
 
-                            <div class="mb-3">
-                                <label for="image-path" class="form-label">Image Path</label>
-                                <input type="text" class="form-control" id="image-path" name="image_path" value="{{ poll.image_path or '' }}" placeholder="e.g., static/uploads/image.png">
-                                <div class="form-text">Enter the path to an image file, or leave blank to remove image</div>
+                            <div class="image-upload-container">
+                                <div class="image-drop-zone" id="image-drop-zone">
+                                    <div class="drop-zone-content">
+                                        <i class="fas fa-cloud-upload-alt fa-2x text-primary mb-2"></i>
+                                        <p class="mb-2">Drag & drop a new image here or click to browse</p>
+                                        <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
+                                    </div>
+                                    <input type="file"
+                                           class="form-control d-none"
+                                           name="image"
+                                           id="poll-image"
+                                           accept="image/jpeg,image/png,image/gif,image/webp">
+                                </div>
+                                <div id="image-preview" class="mt-3" style="display: none;">
+                                    <div class="card" style="max-width: 300px;">
+                                        <img id="preview-img" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="New image preview">
+                                        <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                                            <small class="text-muted" id="image-info">New Image Preview</small>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" id="remove-image">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="image-message-text" class="form-label">Image Message Text</label>
-                                <textarea class="form-control" id="image-message-text" name="image_message_text" rows="2" placeholder="Optional text to display with the image">{{ poll.image_message_text or '' }}</textarea>
-                                <div class="form-text">This text will be posted along with the image before the poll</div>
+                            <!-- Optional: Image Message Text -->
+                            <div id="image-message-section" class="mt-3" style="display: {% if poll.image_path or poll.image_message_text %}block{% else %}none{% endif %};">
+                                <label for="image-message-text" class="form-label">
+                                    <i class="fas fa-comment me-1"></i>Message with Image (Optional)
+                                </label>
+                                <textarea class="form-control"
+                                          id="image-message-text"
+                                          name="image_message_text"
+                                          rows="2"
+                                          placeholder="Add a message to display with your image...">{{ poll.image_message_text or '' }}</textarea>
+                                <small class="text-muted">This text will appear with the image before the poll</small>
                             </div>
                         </div>
 
@@ -345,6 +377,185 @@
             });
         }
 
+        // Image upload functionality
+        const imageDropZone = document.getElementById('image-drop-zone');
+        const imageInput = document.getElementById('poll-image');
+        const imagePreview = document.getElementById('image-preview');
+        const previewImg = document.getElementById('preview-img');
+        const imageInfo = document.getElementById('image-info');
+        const removeImageBtn = document.getElementById('remove-image');
+        const removeCurrentImageBtn = document.getElementById('remove-current-image');
+        const currentImage = document.getElementById('current-image');
+        const imageMessageSection = document.getElementById('image-message-section');
+
+        if (imageDropZone && imageInput) {
+            // Click to browse
+            imageDropZone.addEventListener('click', () => {
+                imageInput.click();
+            });
+
+            // Drag and drop functionality
+            imageDropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                imageDropZone.classList.add('drag-over');
+            });
+
+            imageDropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                imageDropZone.classList.remove('drag-over');
+            });
+
+            imageDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                imageDropZone.classList.remove('drag-over');
+
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleImageFile(files[0]);
+                }
+            });
+
+            // File input change
+            imageInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleImageFile(e.target.files[0]);
+                }
+            });
+
+            // Remove new image
+            if (removeImageBtn) {
+                removeImageBtn.addEventListener('click', () => {
+                    clearImagePreview();
+                });
+            }
+
+            // Remove current image
+            if (removeCurrentImageBtn) {
+                removeCurrentImageBtn.addEventListener('click', () => {
+                    if (currentImage) {
+                        currentImage.style.display = 'none';
+                        showImageUploadStatus('info', 'Current image will be removed when you save the poll');
+                    }
+                });
+            }
+
+            function handleImageFile(file) {
+                // Validate file type
+                const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    showImageError('Invalid file type. Please select a JPEG, PNG, GIF, or WebP image.');
+                    return;
+                }
+
+                // Validate file size (8MB)
+                if (file.size > 8 * 1024 * 1024) {
+                    showImageError('File too large. Maximum size is 8MB.');
+                    return;
+                }
+
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewImg.src = e.target.result;
+                    imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+                    imagePreview.style.display = 'block';
+                    imageDropZone.style.display = 'none';
+                    imageMessageSection.style.display = 'block';
+
+                    // Hide current image when new one is selected
+                    if (currentImage) {
+                        currentImage.style.display = 'none';
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+
+            function clearImagePreview() {
+                imageInput.value = '';
+                imagePreview.style.display = 'none';
+                imageDropZone.style.display = 'block';
+                previewImg.src = '';
+                imageInfo.textContent = '';
+
+                // Show current image again if it exists
+                if (currentImage) {
+                    currentImage.style.display = 'block';
+                }
+
+                // Hide image message section if no current image
+                if (!currentImage || currentImage.style.display === 'none') {
+                    imageMessageSection.style.display = 'none';
+                }
+            }
+
+            function showImageError(message) {
+                // Create or update error message
+                let errorDiv = document.getElementById('image-error');
+                if (!errorDiv) {
+                    errorDiv = document.createElement('div');
+                    errorDiv.id = 'image-error';
+                    errorDiv.className = 'mt-2';
+                    imageDropZone.parentNode.appendChild(errorDiv);
+                }
+
+                errorDiv.innerHTML = `
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        ${message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    const alert = errorDiv.querySelector('.alert');
+                    if (alert) {
+                        alert.classList.remove('show');
+                        setTimeout(() => errorDiv.innerHTML = '', 150);
+                    }
+                }, 5000);
+            }
+
+            function showImageUploadStatus(type, message) {
+                // Create or update status message
+                let statusDiv = document.getElementById('image-upload-status');
+                if (!statusDiv) {
+                    statusDiv = document.createElement('div');
+                    statusDiv.id = 'image-upload-status';
+                    statusDiv.className = 'mt-2';
+                    imageDropZone.parentNode.appendChild(statusDiv);
+                }
+
+                const alertClass = type === 'success' ? 'alert-success' :
+                                  type === 'error' ? 'alert-danger' : 'alert-info';
+
+                statusDiv.innerHTML = `
+                    <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                        ${message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+
+                // Auto-hide after 3 seconds
+                setTimeout(() => {
+                    const alert = statusDiv.querySelector('.alert');
+                    if (alert) {
+                        alert.classList.remove('show');
+                        setTimeout(() => statusDiv.innerHTML = '', 150);
+                    }
+                }, 3000);
+            }
+
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        }
+
         // HTMX event handlers
         document.addEventListener('htmx:beforeRequest', function(event) {
             if (event.detail.elt === form) {
@@ -469,5 +680,159 @@ form.htmx-request .submit-text {
 form.htmx-request .loading-text {
     display: inline-flex;
     align-items: center;
+}
+
+/* Image Upload Container */
+.image-upload-container {
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+/* Image Drop Zone */
+.image-drop-zone {
+    border: 2px dashed #dee2e6;
+    border-radius: 0.375rem;
+    background-color: #fff;
+    padding: 2rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-drop-zone:hover {
+    border-color: #0d6efd;
+    background-color: #f8f9fa;
+}
+
+.image-drop-zone.drag-over {
+    border-color: #0d6efd;
+    background-color: #e7f3ff;
+    transform: scale(1.02);
+}
+
+.drop-zone-content {
+    pointer-events: none;
+}
+
+.drop-zone-content i {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.drop-zone-content p {
+    margin: 0.5rem 0;
+    color: #6c757d;
+    font-size: 0.95rem;
+}
+
+.drop-zone-content small {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+/* Image Preview Card */
+#image-preview .card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+#image-preview .card-img-top {
+    border-top-left-radius: calc(0.375rem - 1px);
+    border-top-right-radius: calc(0.375rem - 1px);
+}
+
+/* Current Image Card */
+.current-image {
+    transition: opacity 0.3s ease;
+}
+
+.current-image .card {
+    border: 1px solid #dee2e6;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.current-image .card-img-top {
+    border-top-left-radius: calc(0.375rem - 1px);
+    border-top-right-radius: calc(0.375rem - 1px);
+}
+
+/* Image Message Section */
+#image-message-section {
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 0.375rem;
+    border: 1px solid #dee2e6;
+}
+
+#image-message-section .form-label {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+#image-message-section .form-control {
+    border: 1px solid #ced4da;
+    background-color: #fff;
+}
+
+#image-message-section .form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Error styling */
+.image-drop-zone.error {
+    border-color: #dc3545;
+    background-color: #f8d7da;
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+    .image-drop-zone {
+        padding: 1.5rem 1rem;
+        min-height: 100px;
+    }
+
+    .drop-zone-content i {
+        font-size: 1.5rem;
+    }
+
+    #image-preview .card,
+    .current-image .card {
+        max-width: 100% !important;
+    }
+}
+
+/* Form validation styling */
+.is-invalid ~ .invalid-feedback {
+    display: block;
+}
+
+/* Button hover effects */
+.emoji-picker-btn:hover {
+    background-color: #e9ecef;
+    border-color: #adb5bd;
+}
+
+/* Card styling improvements */
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.card-footer {
+    background-color: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+}
+
+/* Form disabled state during submission */
+form.htmx-request input:not([type="submit"]),
+form.htmx-request select,
+form.htmx-request textarea {
+    opacity: 0.6;
+    pointer-events: none;
 }
 </style>
