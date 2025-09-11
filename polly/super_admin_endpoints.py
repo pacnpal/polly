@@ -387,8 +387,16 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                     })
                 else:
                     # Handle multi-line entries or malformed entries
-                    if entries:  # Append to last entry if it exists
+                    if entries and len(entries) > 0:  # Safely append to last entry if it exists
                         entries[-1]['message'] += '\n' + line
+                    else:
+                        # If no entries exist yet, create a basic entry for orphaned lines
+                        entries.append({
+                            'timestamp': datetime.now().isoformat(),
+                            'level': 'INFO',
+                            'message': line,
+                            'line_number': line_num
+                        })
     
     except Exception as e:
         logger.error(f"Error parsing log file {log_path}: {e}")
