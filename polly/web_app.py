@@ -718,8 +718,7 @@ def add_core_routes(app: FastAPI):
                 "request": request,
                 "user": current_user,
                 "guilds": user_guilds,
-                "show_timezone_prompt": user_prefs.get("last_server_id") is None
-                and not user_prefs.get("timezone_explicitly_set", False),
+                "show_timezone_prompt": not user_prefs.get("timezone_explicitly_set", False),
                 "turnstile_enabled": turnstile_enabled,
                 "turnstile_site_key": turnstile_site_key,
                 "POLLY_DEBUG": _debug_ctx.get("debug_mode", False),
