@@ -78,6 +78,9 @@ async def force_regenerate_all_static():
                         }
                         
                         try:
+                            # Add rate limiting delay to avoid 429 errors
+                            await asyncio.sleep(0.1)  # 100ms delay between requests
+                            
                             async with self.session.get(
                                 f'https://discord.com/api/v10/users/{user_id}',
                                 headers=headers
@@ -109,6 +112,11 @@ async def force_regenerate_all_static():
                                             return f"https://cdn.discordapp.com/avatars/{self.user_id}/{self.hash}.png"
                                     
                                     return SimpleUser(data)
+                                elif response.status == 429:
+                                    # Rate limited - wait longer and return None
+                                    print(f"⚠️ Discord API rate limited for user {user_id}, skipping")
+                                    await asyncio.sleep(1.0)  # Wait 1 second on rate limit
+                                    return None
                                 else:
                                     print(f"⚠️ Discord API error for user {user_id}: {response.status}")
                                     return None
