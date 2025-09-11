@@ -40,36 +40,95 @@ async def force_regenerate_all_static():
         # Get static page generator
         generator = get_static_page_generator()
         
-        # Create and start Discord bot if token is available
+        # Create a simple Discord client for API calls if token is available
         if discord_token:
-            print("🤖 FORCE REGENERATE - Creating Discord bot for real username fetching...")
+            print("🤖 FORCE REGENERATE - Creating Discord client for real username fetching...")
             
-            # Create a fresh bot instance for this script
-            intents = discord.Intents.default()
-            intents.message_content = True
-            intents.guilds = True
-            bot = commands.Bot(command_prefix=lambda bot, message: None, intents=intents)
-            
-            # Start the bot and wait for it to be ready
+            # Create a simple HTTP-only Discord client
             try:
-                print("🤖 FORCE REGENERATE - Starting Discord bot connection...")
+                import aiohttp
                 
-                # Use async context manager to properly start and stop the bot
-                async with bot:
-                    await bot.start(discord_token)
-                    print("✅ FORCE REGENERATE - Discord bot is ready for real username fetching and avatar caching")
+                # Create a simple Discord API client
+                class SimpleDiscordClient:
+                    def __init__(self, token):
+                        self.token = token
+                        self.session = None
+                        self.ready = False
                     
-                    # Process polls with the ready bot
+                    async def __aenter__(self):
+                        self.session = aiohttp.ClientSession()
+                        self.ready = True
+                        return self
+                    
+                    async def __aexit__(self, exc_type, exc_val, exc_tb):
+                        if self.session:
+                            await self.session.close()
+                        self.ready = False
+                    
+                    def is_ready(self):
+                        return self.ready
+                    
+                    async def fetch_user(self, user_id):
+                        if not self.session or not self.ready:
+                            return None
+                        
+                        headers = {
+                            'Authorization': f'Bot {self.token}',
+                            'Content-Type': 'application/json'
+                        }
+                        
+                        try:
+                            async with self.session.get(
+                                f'https://discord.com/api/v10/users/{user_id}',
+                                headers=headers
+                            ) as response:
+                                if response.status == 200:
+                                    data = await response.json()
+                                    
+                                    # Create a simple user object
+                                    class SimpleUser:
+                                        def __init__(self, data):
+                                            self.id = data.get('id')
+                                            self.name = data.get('username', 'Unknown')
+                                            self.display_name = data.get('global_name') or self.name
+                                            self.avatar_hash = data.get('avatar')
+                                        
+                                        @property
+                                        def avatar(self):
+                                            if self.avatar_hash:
+                                                return SimpleAvatar(self.id, self.avatar_hash)
+                                            return None
+                                    
+                                    class SimpleAvatar:
+                                        def __init__(self, user_id, avatar_hash):
+                                            self.user_id = user_id
+                                            self.hash = avatar_hash
+                                        
+                                        @property
+                                        def url(self):
+                                            return f"https://cdn.discordapp.com/avatars/{self.user_id}/{self.hash}.png"
+                                    
+                                    return SimpleUser(data)
+                                else:
+                                    print(f"⚠️ Discord API error for user {user_id}: {response.status}")
+                                    return None
+                        except Exception as e:
+                            print(f"⚠️ Error fetching Discord user {user_id}: {e}")
+                            return None
+                
+                # Use the simple client
+                async with SimpleDiscordClient(discord_token) as bot:
+                    print("✅ FORCE REGENERATE - Discord API client ready for real username fetching")
                     await process_polls_with_bot(bot, closed_polls, generator)
                     
-                print("🤖 FORCE REGENERATE - Discord bot connection closed")
-                return  # Exit early since we processed everything inside the context manager
+                print("🤖 FORCE REGENERATE - Discord API client closed")
+                return  # Exit early since we processed everything
                 
             except Exception as e:
-                print(f"⚠️ FORCE REGENERATE - Discord bot startup failed: {e}, using fallback usernames")
+                print(f"⚠️ FORCE REGENERATE - Discord client creation failed: {e}, using fallback usernames")
                 bot = None
         else:
-            print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic and no avatars cached")
+            print("⚠️ FORCE REGENERATE - Discord token not available, usernames will be generic and no avatars cached")
             bot = None
         
         # Process polls without bot (fallback)
