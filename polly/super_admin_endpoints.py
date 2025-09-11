@@ -419,8 +419,7 @@ async def get_system_logs_htmx(
         log_files = [
             "polly.log",
             "logs/polly.log",
-            "logs/error.log",
-            "logs/access.log"
+            "logs/dev.log"
         ]
         
         all_entries = []
@@ -470,8 +469,7 @@ async def download_logs_api(
         log_files = [
             "polly.log",
             "logs/polly.log",
-            "logs/error.log",
-            "logs/access.log"
+            "logs/dev.log"
         ]
         
         all_entries = []
