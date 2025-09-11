@@ -78,21 +78,29 @@ class PandasLogAnalyzer:
                             all_log_data.append(log_entry)
                         else:
                             # Handle unstructured log lines
-                            all_log_data.append({
-                                'timestamp': pd.Timestamp.now(),
+                            timestamp = pd.Timestamp.now()
+                            unstructured_entry = {
+                                'timestamp': timestamp,
                                 'level': 'UNSTRUCTURED',
                                 'message': line,
                                 'file': log_file,
                                 'line_number': line_num,
                                 'message_length': len(line),
-                                'hour': pd.Timestamp.now().hour,
-                                'day_of_week': pd.Timestamp.now().day_name(),
-                                'date': pd.Timestamp.now().date(),
+                                'hour': timestamp.hour,
+                                'day_of_week': timestamp.day_name(),
+                                'date': timestamp.date(),
                                 'is_error': False,
                                 'has_poll_id': False,
                                 'has_user_id': False,
-                                'has_server_id': False
-                            })
+                                'has_server_id': False,
+                                'poll_id': None,
+                                'user_id': None,
+                                'server_id': None,
+                                'endpoint': None,
+                                'status_code': None,
+                                'response_time': None
+                            }
+                            all_log_data.append(unstructured_entry)
                             
             except Exception as e:
                 logger.error(f"Error parsing log file {log_file}: {e}")
