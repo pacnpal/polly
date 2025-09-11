@@ -205,6 +205,7 @@ class StaticPageGenerator:
                     is_anonymous=is_anonymous,
                     generated_at=datetime.now(),
                     is_static=True,
+                    show_usernames_to_creator=True,  # Always show real usernames in static pages
                     image_mappings=image_mappings,  # Pass image mappings to template
                     dashboard_screenshot_url=dashboard_screenshot_url,  # Pass screenshot URL to template
                     format_datetime_for_user=format_datetime_for_user,
@@ -332,6 +333,7 @@ class StaticPageGenerator:
                     is_anonymous=is_anonymous,
                     generated_at=datetime.now(),
                     is_static=True,
+                    show_usernames_to_creator=True,  # Always show real usernames in static pages
                     format_datetime_for_user=format_datetime_for_user,
                 )
                 
