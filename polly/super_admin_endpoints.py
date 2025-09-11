@@ -387,27 +387,36 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                             'line_number': line_num
                         })
                     else:
-                        # Handle multi-line entries or malformed entries - EXTRA SAFE VERSION
+                        # Handle multi-line entries or malformed entries - BULLETPROOF VERSION
                         try:
-                            if len(entries) > 0:  # Double check entries exist and has length
+                            # Triple check: entries exists, has length, and last entry has message key
+                            if (entries and 
+                                len(entries) > 0 and 
+                                isinstance(entries[-1], dict) and 
+                                'message' in entries[-1]):
                                 entries[-1]['message'] += '\n' + line
                             else:
-                                # If no entries exist yet, create a basic entry for orphaned lines
+                                # If no entries exist yet or last entry is malformed, create a basic entry
                                 entries.append({
                                     'timestamp': datetime.now().isoformat(),
                                     'level': 'INFO',
                                     'message': line,
                                     'line_number': line_num
                                 })
-                        except (IndexError, KeyError, TypeError) as inner_e:
+                        except (IndexError, KeyError, TypeError, AttributeError) as inner_e:
                             # If anything goes wrong with appending, just create a new entry
-                            logger.warning(f"Error appending to log entry, creating new entry: {inner_e}")
-                            entries.append({
-                                'timestamp': datetime.now().isoformat(),
-                                'level': 'INFO',
-                                'message': line,
-                                'line_number': line_num
-                            })
+                            logger.warning(f"Error appending to log entry at line {line_num}, creating new entry: {inner_e}")
+                            try:
+                                entries.append({
+                                    'timestamp': datetime.now().isoformat(),
+                                    'level': 'INFO',
+                                    'message': line,
+                                    'line_number': line_num
+                                })
+                            except Exception as append_e:
+                                # Ultimate fallback - skip this line entirely
+                                logger.error(f"Critical error creating log entry at line {line_num}: {append_e}")
+                                continue
                 
                 except Exception as line_e:
                     # Skip problematic lines entirely
