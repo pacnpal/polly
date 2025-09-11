@@ -62,7 +62,7 @@ async def get_super_admin_dashboard(
                         await redis_client.set(
                             "super_admin:dashboard_stats", 
                             json.dumps(stats, default=str), 
-                            ex=60
+                            ttl=60
                         )
                     except Exception as e:
                         logger.warning(f"Cache write failed: {e}")
