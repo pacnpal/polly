@@ -512,35 +512,38 @@ async def get_redis_status_htmx(
     try:
         from .redis_client import get_redis_client
         
-        redis_client = get_redis_client()
+        redis_client = await get_redis_client()
         status_data = {
             "connected": False,
             "info": {},
             "error": None
         }
         
-        if redis_client:
+        if redis_client and redis_client.is_connected:
             try:
-                # Test connection
-                redis_client.ping()
-                status_data["connected"] = True
-                
-                # Get Redis info
-                info = redis_client.info()
-                status_data["info"] = {
-                    "version": info.get("redis_version", "Unknown"),
-                    "uptime": info.get("uptime_in_seconds", 0),
-                    "connected_clients": info.get("connected_clients", 0),
-                    "used_memory": info.get("used_memory_human", "Unknown"),
-                    "total_commands_processed": info.get("total_commands_processed", 0),
-                    "keyspace_hits": info.get("keyspace_hits", 0),
-                    "keyspace_misses": info.get("keyspace_misses", 0)
-                }
+                # Test connection using the async client's internal client
+                if redis_client._client:
+                    await redis_client._client.ping()
+                    status_data["connected"] = True
+                    
+                    # Get Redis info
+                    info = await redis_client._client.info()
+                    status_data["info"] = {
+                        "version": info.get("redis_version", "Unknown"),
+                        "uptime": info.get("uptime_in_seconds", 0),
+                        "connected_clients": info.get("connected_clients", 0),
+                        "used_memory": info.get("used_memory_human", "Unknown"),
+                        "total_commands_processed": info.get("total_commands_processed", 0),
+                        "keyspace_hits": info.get("keyspace_hits", 0),
+                        "keyspace_misses": info.get("keyspace_misses", 0)
+                    }
+                else:
+                    status_data["error"] = "Redis client not connected"
                 
             except Exception as e:
                 status_data["error"] = str(e)
         else:
-            status_data["error"] = "Redis client not initialized"
+            status_data["error"] = "Redis client not initialized or not connected"
         
         return templates.TemplateResponse(
             "htmx/super_admin_redis_status.html",
@@ -566,7 +569,7 @@ async def get_redis_stats_htmx(
     try:
         from .redis_client import get_redis_client
         
-        redis_client = get_redis_client()
+        redis_client = await get_redis_client()
         stats_data = {
             "cache_keys": 0,
             "poll_cache_keys": 0,
@@ -577,28 +580,36 @@ async def get_redis_stats_htmx(
             "error": None
         }
         
-        if redis_client:
+        if redis_client and redis_client.is_connected and redis_client._client:
             try:
-                # Get all keys with patterns
-                all_keys = redis_client.keys("*")
+                # Get all keys with patterns using scan_iter for better performance
+                all_keys = []
+                poll_keys = []
+                user_keys = []
+                session_keys = []
+                
+                async for key in redis_client._client.scan_iter(match="*"):
+                    all_keys.append(key)
+                    if key.startswith("poll:"):
+                        poll_keys.append(key)
+                    elif key.startswith("user:"):
+                        user_keys.append(key)
+                    elif key.startswith("session:"):
+                        session_keys.append(key)
+                
                 stats_data["cache_keys"] = len(all_keys)
-                
-                # Count specific key types
-                poll_keys = redis_client.keys("poll:*")
-                user_keys = redis_client.keys("user:*")
-                session_keys = redis_client.keys("session:*")
-                
                 stats_data["poll_cache_keys"] = len(poll_keys)
                 stats_data["user_cache_keys"] = len(user_keys)
                 stats_data["session_keys"] = len(session_keys)
                 
                 # Get memory info
-                info = redis_client.info("memory")
-                stats_data["total_memory"] = info.get("used_memory_human", "0B")
+                memory_info = await redis_client._client.info("memory")
+                stats_data["total_memory"] = memory_info.get("used_memory_human", "0B")
                 
                 # Calculate hit rate
-                keyspace_hits = redis_client.info().get("keyspace_hits", 0)
-                keyspace_misses = redis_client.info().get("keyspace_misses", 0)
+                server_info = await redis_client._client.info()
+                keyspace_hits = server_info.get("keyspace_hits", 0)
+                keyspace_misses = server_info.get("keyspace_misses", 0)
                 total_requests = keyspace_hits + keyspace_misses
                 
                 if total_requests > 0:
@@ -607,7 +618,7 @@ async def get_redis_stats_htmx(
             except Exception as e:
                 stats_data["error"] = str(e)
         else:
-            stats_data["error"] = "Redis client not initialized"
+            stats_data["error"] = "Redis client not initialized or not connected"
         
         return templates.TemplateResponse(
             "htmx/super_admin_redis_stats.html",
