@@ -418,6 +418,8 @@ class PandasLogAnalyzer:
         level_filter: Optional[str] = None,
         search_filter: Optional[str] = None,
         time_range: str = "24h",
+        category_filter: Optional[str] = None,
+        severity_filter: Optional[str] = None,
         limit: int = 500
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Get filtered logs with analytics - main interface for super admin panel"""
@@ -427,6 +429,25 @@ class PandasLogAnalyzer:
         
         # Get DataFrame
         df = self.parse_logs_to_dataframe(time_cutoff, level_filter, search_filter)
+        
+        # Apply category and severity filters after initial parsing
+        if not df.empty:
+            # Add category and severity columns for filtering
+            df['category'] = df.apply(lambda row: self._categorize_log_entry(row), axis=1)
+            df['severity_score'] = df.apply(lambda row: self._calculate_severity_score(row), axis=1)
+            
+            # Apply category filter
+            if category_filter:
+                df = df[df['category'] == category_filter]
+            
+            # Apply severity filter
+            if severity_filter:
+                if severity_filter == 'high':
+                    df = df[df['severity_score'] >= 80]
+                elif severity_filter == 'medium':
+                    df = df[(df['severity_score'] >= 40) & (df['severity_score'] < 80)]
+                elif severity_filter == 'low':
+                    df = df[df['severity_score'] < 40]
         
         # Generate analytics
         analytics = self.get_log_analytics(df)
@@ -563,6 +584,8 @@ class PandasLogAnalyzer:
         level_filter: Optional[str] = None,
         search_filter: Optional[str] = None,
         time_range: str = "24h",
+        category_filter: Optional[str] = None,
+        severity_filter: Optional[str] = None,
         limit: int = 500
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Async version of get_filtered_logs - runs in thread pool to prevent blocking"""
@@ -577,6 +600,8 @@ class PandasLogAnalyzer:
                 level_filter=level_filter,
                 search_filter=search_filter,
                 time_range=time_range,
+                category_filter=category_filter,
+                severity_filter=severity_filter,
                 limit=limit
             )
         )
