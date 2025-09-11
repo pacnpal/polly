@@ -47,7 +47,17 @@ async def get_super_admin_dashboard(
                     cached_stats = await redis_client.get("super_admin:dashboard_stats")
                     if cached_stats:
                         import json
-                        stats = json.loads(cached_stats)
+                        # Handle both string and dict returns from Redis
+                        if isinstance(cached_stats, str):
+                            stats = json.loads(cached_stats)
+                        elif isinstance(cached_stats, dict):
+                            stats = cached_stats
+                        else:
+                            # Try to decode if it's bytes
+                            if isinstance(cached_stats, bytes):
+                                stats = json.loads(cached_stats.decode('utf-8'))
+                            else:
+                                logger.warning(f"Unexpected cache data type: {type(cached_stats)}")
                 except Exception as e:
                     logger.warning(f"Cache read failed: {e}")
             
