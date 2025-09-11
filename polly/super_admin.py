@@ -294,14 +294,14 @@ class SuperAdminService:
                 desc(Vote.voted_at)
             ).all()
             
-            # Get vote statistics
+            # Get vote statistics - accurate counts
             vote_count = len(votes)
             unique_voters = len(set(vote.user_id for vote in votes))
             
-            # Get results
+            # Get results - ensure accurate vote counting
             results = poll.get_results()
             
-            # Prepare vote data
+            # Prepare vote data - super admin sees everything, even on anonymous polls
             vote_data = []
             for vote in votes:
                 vote_info = {
@@ -315,26 +315,32 @@ class SuperAdminService:
             return {
                 "poll": {
                     "id": poll.id,
-                    "name": poll.name,
-                    "question": poll.question,
-                    "status": poll.status,
-                    "server_id": poll.server_id,
-                    "server_name": poll.server_name,
-                    "channel_id": poll.channel_id,
-                    "channel_name": poll.channel_name,
-                    "creator_id": poll.creator_id,
-                    "message_id": poll.message_id,
-                    "open_time": poll.open_time,
-                    "close_time": poll.close_time,
-                    "created_at": poll.created_at,
-                    "timezone": poll.timezone,
-                    "anonymous": poll.anonymous,
-                    "multiple_choice": poll.multiple_choice,
+                    "name": TypeSafeColumn.get_string(poll, "name"),
+                    "question": TypeSafeColumn.get_string(poll, "question"),
+                    "status": TypeSafeColumn.get_string(poll, "status"),
+                    "server_id": TypeSafeColumn.get_string(poll, "server_id"),
+                    "server_name": TypeSafeColumn.get_string(poll, "server_name"),
+                    "channel_id": TypeSafeColumn.get_string(poll, "channel_id"),
+                    "channel_name": TypeSafeColumn.get_string(poll, "channel_name"),
+                    "creator_id": TypeSafeColumn.get_string(poll, "creator_id"),
+                    "message_id": TypeSafeColumn.get_string(poll, "message_id"),
+                    "open_time": TypeSafeColumn.get_datetime(poll, "open_time"),
+                    "close_time": TypeSafeColumn.get_datetime(poll, "close_time"),
+                    "created_at": TypeSafeColumn.get_datetime(poll, "created_at"),
+                    "timezone": TypeSafeColumn.get_string(poll, "timezone", "UTC"),
+                    "anonymous": TypeSafeColumn.get_bool(poll, "anonymous"),
+                    "multiple_choice": TypeSafeColumn.get_bool(poll, "multiple_choice"),
+                    "max_choices": TypeSafeColumn.get_int(poll, "max_choices"),
                     "options": poll.options,
                     "emojis": poll.emojis,
-                    "image_path": poll.image_path,
-                    "ping_role_enabled": poll.ping_role_enabled,
-                    "ping_role_name": poll.ping_role_name,
+                    "image_path": TypeSafeColumn.get_string(poll, "image_path"),
+                    "image_message_text": TypeSafeColumn.get_string(poll, "image_message_text"),
+                    "ping_role_enabled": TypeSafeColumn.get_bool(poll, "ping_role_enabled"),
+                    "ping_role_name": TypeSafeColumn.get_string(poll, "ping_role_name"),
+                    "ping_role_id": TypeSafeColumn.get_string(poll, "ping_role_id"),
+                    "ping_role_on_close": TypeSafeColumn.get_bool(poll, "ping_role_on_close"),
+                    "ping_role_on_update": TypeSafeColumn.get_bool(poll, "ping_role_on_update"),
+                    "open_immediately": TypeSafeColumn.get_bool(poll, "open_immediately"),
                 },
                 "statistics": {
                     "vote_count": vote_count,
