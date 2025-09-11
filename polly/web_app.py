@@ -893,9 +893,13 @@ def add_static_poll_routes(app: FastAPI):
                 # Get votes for the poll
                 votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
                 
-                # Prepare vote data (anonymized for static pages)
+                # Prepare vote data with real Discord usernames (never anonymize for static pages)
                 vote_data = []
                 unique_users = set()
+                
+                # Get bot instance for fetching Discord usernames
+                from .discord_bot import get_bot_instance
+                bot = get_bot_instance()
                 
                 for vote in votes:
                     try:
@@ -903,11 +907,18 @@ def add_static_poll_routes(app: FastAPI):
                         option_index = TypeSafeColumn.get_int(vote, "option_index")
                         voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
                         
-                        # For static pages, always anonymize usernames for privacy
-                        if user_id not in unique_users:
-                            username = f"User {len(unique_users) + 1}"
-                        else:
-                            username = f"User {list(unique_users).index(user_id) + 1}"
+                        # Always fetch real Discord username for static pages (never anonymize)
+                        username = "Unknown User"
+                        if bot and user_id:
+                            try:
+                                discord_user = await bot.fetch_user(int(user_id))
+                                if discord_user:
+                                    username = discord_user.display_name or discord_user.name
+                            except Exception as e:
+                                logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
+                                username = f"User {user_id[:8]}..."
+                        elif user_id:
+                            username = f"User {user_id[:8]}..."
                         
                         # Get option details
                         options = poll.options

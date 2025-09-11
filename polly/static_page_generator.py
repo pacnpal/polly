@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .database import get_db_session, Poll, Vote, TypeSafeColumn
 from .enhanced_cache_service import get_enhanced_cache_service
+from .avatar_cache_service import get_avatar_cache_service
 from .data_utils import sanitize_data_for_json
 
 logger = logging.getLogger(__name__)
@@ -120,9 +121,10 @@ class StaticPageGenerator:
                 emojis = poll.emojis
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 
-                # Prepare vote data with real Discord usernames (never anonymize for static pages)
+                # Prepare vote data with real Discord usernames and cached avatars (never anonymize for static pages)
                 vote_data = []
                 unique_users = set()
+                avatar_cache = get_avatar_cache_service()
                 
                 for vote in votes:
                     try:
@@ -132,11 +134,20 @@ class StaticPageGenerator:
                         
                         # Always fetch real Discord username for static pages (never anonymize)
                         username = "Unknown User"
-                        if bot and bot.is_ready() and user_id:
+                        avatar_url = None
+                        
+                        if bot and user_id:
                             try:
                                 discord_user = await bot.fetch_user(int(user_id))
                                 if discord_user:
                                     username = discord_user.display_name or discord_user.name
+                                    # Get cached avatar URL
+                                    if discord_user.avatar:
+                                        original_avatar_url = discord_user.avatar.url
+                                        cached_avatar_url = await avatar_cache.cache_user_avatar(
+                                            user_id, original_avatar_url, username
+                                        )
+                                        avatar_url = cached_avatar_url or original_avatar_url
                             except Exception as e:
                                 logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
                                 username = f"User {user_id[:8]}..."
@@ -149,6 +160,7 @@ class StaticPageGenerator:
                         
                         vote_data.append({
                             "username": username,
+                            "avatar_url": avatar_url,
                             "option_index": option_index,
                             "option_text": option_text,
                             "emoji": emoji,
@@ -239,9 +251,10 @@ class StaticPageGenerator:
                 emojis = poll.emojis
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 
-                # Prepare vote data with real Discord usernames (never anonymize for static pages)
+                # Prepare vote data with real Discord usernames and cached avatars (never anonymize for static pages)
                 vote_data = []
                 unique_users = set()
+                avatar_cache = get_avatar_cache_service()
                 
                 for vote in votes:
                     try:
@@ -251,11 +264,20 @@ class StaticPageGenerator:
                         
                         # Always fetch real Discord username for static pages (never anonymize)
                         username = "Unknown User"
-                        if bot and bot.is_ready() and user_id:
+                        avatar_url = None
+                        
+                        if bot and user_id:
                             try:
                                 discord_user = await bot.fetch_user(int(user_id))
                                 if discord_user:
                                     username = discord_user.display_name or discord_user.name
+                                    # Get cached avatar URL
+                                    if discord_user.avatar:
+                                        original_avatar_url = discord_user.avatar.url
+                                        cached_avatar_url = await avatar_cache.cache_user_avatar(
+                                            user_id, original_avatar_url, username
+                                        )
+                                        avatar_url = cached_avatar_url or original_avatar_url
                             except Exception as e:
                                 logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
                                 username = f"User {user_id[:8]}..."
@@ -268,6 +290,7 @@ class StaticPageGenerator:
                         
                         vote_data.append({
                             "username": username,
+                            "avatar_url": avatar_url,
                             "option_index": option_index,
                             "option_text": option_text,
                             "emoji": emoji,

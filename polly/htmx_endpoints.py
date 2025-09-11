@@ -3455,7 +3455,7 @@ async def create_poll_htmx(
 
 
 async def get_poll_details_htmx(
-    poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
+    poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)
 ):
     """Get poll details view as HTML for HTMX - serves static component for closed polls with image compression"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
@@ -3488,7 +3488,7 @@ async def get_poll_details_htmx(
             
             # Generate static content with image compression if not already done
             try:
-                await static_generator.generate_static_poll_details(poll_id)
+                await static_generator.generate_static_poll_details(poll_id, bot)
                 logger.info(f"📷 IMAGE COMPRESSION - Generated static content with compressed images for poll {poll_id}")
             except Exception as e:
                 logger.warning(f"Static generation failed for poll {poll_id}: {e}, falling back to dynamic generation")
@@ -3496,7 +3496,7 @@ async def get_poll_details_htmx(
             # Get the data needed for the static component template (same as before)
             votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
             
-            # Prepare vote data (anonymized for static pages)
+            # Prepare vote data with real Discord usernames (never anonymize for static pages)
             vote_data = []
             unique_users = set()
             
@@ -3506,11 +3506,18 @@ async def get_poll_details_htmx(
                     option_index = TypeSafeColumn.get_int(vote, "option_index")
                     voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
                     
-                    # For static pages, always anonymize usernames for privacy
-                    if user_id not in unique_users:
-                        username = f"User {len(unique_users) + 1}"
-                    else:
-                        username = f"User {list(unique_users).index(user_id) + 1}"
+                    # Always fetch real Discord username for static pages (never anonymize)
+                    username = "Unknown User"
+                    if bot and user_id:
+                        try:
+                            discord_user = await bot.fetch_user(int(user_id))
+                            if discord_user:
+                                username = discord_user.display_name or discord_user.name
+                        except Exception as e:
+                            logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
+                            username = f"User {user_id[:8]}..."
+                    elif user_id:
+                        username = f"User {user_id[:8]}..."
                     
                     # Get option details
                     options = poll.options
@@ -3914,9 +3921,10 @@ async def get_poll_dashboard_htmx(
                 option_index = TypeSafeColumn.get_int(vote, "option_index")
                 voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
 
-                # Get Discord user information with caching
+                # Get Discord user information with caching and avatar optimization
                 username = "Unknown User"
                 avatar_url = None
+                cached_avatar_url = None
 
                 if bot and user_id:
                     # Check cache for Discord user data first
@@ -3953,6 +3961,17 @@ async def get_poll_dashboard_htmx(
                             )
                             username = f"User {user_id[:8]}..."
 
+                    # Cache user avatar with deduplication and optimization
+                    if avatar_url:
+                        try:
+                            from .avatar_cache_service import get_avatar_cache_service
+                            avatar_service = get_avatar_cache_service()
+                            cached_avatar_url = await avatar_service.cache_user_avatar(user_id, avatar_url, username)
+                            if cached_avatar_url:
+                                logger.debug(f"🖼️ AVATAR CACHED - User {user_id}: {cached_avatar_url}")
+                        except Exception as e:
+                            logger.warning(f"Error caching avatar for user {user_id}: {e}")
+
                 # Get option details
                 option_text = (
                     options[option_index]
@@ -3969,7 +3988,7 @@ async def get_poll_dashboard_htmx(
                     {
                         "user_id": user_id,
                         "username": username,
-                        "avatar_url": avatar_url,
+                        "avatar_url": cached_avatar_url or avatar_url,  # Use cached avatar if available
                         "option_index": option_index,
                         "option_text": option_text,
                         "emoji": emoji,

@@ -191,11 +191,28 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         color = 0xFF0000  # Red
         status_emoji = "🏁"
 
+    # Get the poll's opening time in the correct timezone
+    poll_open_time = getattr(poll, "open_time", datetime.now(pytz.UTC))
+    poll_timezone = str(getattr(poll, "timezone", "UTC"))
+    
+    # Convert opening time to poll's timezone if specified
+    if poll_timezone and poll_timezone != "UTC":
+        try:
+            # Validate and normalize timezone first
+            from .utils import validate_and_normalize_timezone
+            normalized_tz = validate_and_normalize_timezone(poll_timezone)
+            tz = pytz.timezone(normalized_tz)
+            # Convert to the poll's timezone for display
+            poll_open_time = poll_open_time.astimezone(tz)
+        except Exception as e:
+            logger.debug(f"Could not convert opening time to timezone {poll_timezone}: {e}")
+            # Keep original UTC time if timezone conversion fails
+
     embed = discord.Embed(
         title=f"{status_emoji} {str(getattr(poll, 'name', ''))}",
         description=str(getattr(poll, "question", "")),
         color=color,
-        timestamp=datetime.now(pytz.UTC),
+        timestamp=poll_open_time,
     )
 
     # Add poll options
@@ -295,7 +312,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         # Just show options without results
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-            option_text += f"{emoji} {option}\n"
+            option_text += f"{emoji} **{option}**\n"
 
         embed.add_field(name="📝 Options", value=option_text, inline=False)
 
@@ -344,7 +361,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                 bar = "█" * filled + "░" * (bar_length - filled)
 
                 live_results_text += (
-                    f"{emoji} `{bar}` **{votes}** ({percentage:.1f}%)\n"
+                    f"{emoji} **{option}** `{bar}` **{votes}** ({percentage:.1f}%)\n"
                 )
 
             embed.add_field(
@@ -360,7 +377,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             for i, option in enumerate(poll.options):
                 emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
                 bar = "░" * 10  # Empty bar
-                results_text += f"{emoji} `{bar}` **0** (0.0%)\n"
+                results_text += f"{emoji} **{option}** `{bar}` **0** (0.0%)\n"
 
             embed.add_field(
                 name="📈 Live Results", value=results_text, inline=False

@@ -262,9 +262,19 @@
                                 <td>{{ loop.index }}</td>
                                 <td>
                                     <div class="d-flex align-items-center">
+                                        {% if vote.avatar_url %}
+                                        <img src="{{ vote.avatar_url }}" 
+                                             alt="{{ vote.username|e }}'s avatar" 
+                                             class="rounded-circle me-2 user-avatar-small"
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                        <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center me-2 avatar-placeholder" style="display: none;">
+                                            <i class="fas fa-user text-white"></i>
+                                        </div>
+                                        {% else %}
                                         <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center me-2 avatar-placeholder">
                                             <i class="fas fa-user text-white"></i>
                                         </div>
+                                        {% endif %}
                                         <span class="text-truncate text-truncate-150" title="{{ vote.username|e }}">
                                             {{ vote.username|e }}
                                         </span>

@@ -5,7 +5,7 @@ Provides extended caching functionality with longer TTLs specifically for Discor
 
 import logging
 from typing import Any, Optional, Dict, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from .cache_service import CacheService
 
 logger = logging.getLogger(__name__)
@@ -260,6 +260,308 @@ class EnhancedCacheService(CacheService):
             # Clear corrupted cache entry
             await redis_client.cache_delete(f"discord_user:{user_id}")
             return None
+
+    # Avatar Caching with Deduplication and Space Optimization
+    async def cache_avatar_metadata(self, user_id: str, avatar_data: Dict[str, Any]) -> bool:
+        """
+        Cache avatar metadata with deduplication support
+        
+        Args:
+            user_id: Discord user ID
+            avatar_data: Dictionary containing:
+                - avatar_url: Original Discord avatar URL
+                - avatar_hash: Discord avatar hash for deduplication
+                - cached_path: Local cached file path (if downloaded)
+                - file_size: File size in bytes
+                - format: Image format (webp, png, jpg, gif)
+                - last_modified: Last modification timestamp
+        """
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"avatar_metadata:{user_id}"
+        
+        # Add caching timestamp
+        avatar_data["cached_at"] = datetime.now().isoformat()
+        
+        # Cache with extended TTL (avatars don't change frequently)
+        return await redis_client.cache_set(cache_key, avatar_data, self.discord_user_ttl)
+
+    async def get_cached_avatar_metadata(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get cached avatar metadata"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return None
+
+        cache_key = f"avatar_metadata:{user_id}"
+        try:
+            cached_data = await redis_client.cache_get(cache_key)
+            if cached_data:
+                from .data_utils import sanitize_data_for_json
+                return sanitize_data_for_json(cached_data)
+            return cached_data
+        except Exception as e:
+            logger.warning(f"Error retrieving cached avatar metadata for user {user_id}: {e}")
+            await redis_client.cache_delete(cache_key)
+            return None
+
+    async def cache_avatar_hash_mapping(self, avatar_hash: str, file_info: Dict[str, Any]) -> bool:
+        """
+        Cache avatar hash to file mapping for deduplication
+        
+        Args:
+            avatar_hash: Discord avatar hash (used for deduplication)
+            file_info: Dictionary containing:
+                - local_path: Local file path
+                - file_size: File size in bytes
+                - format: Image format
+                - users: List of user IDs using this avatar
+                - created_at: When this mapping was created
+        """
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        cache_key = f"avatar_hash:{avatar_hash}"
+        
+        # Add creation timestamp
+        file_info["created_at"] = datetime.now().isoformat()
+        
+        # Cache with longer TTL since hash mappings are more stable
+        return await redis_client.cache_set(cache_key, file_info, self.discord_user_ttl * 2)  # 1 hour
+
+    async def get_cached_avatar_hash_mapping(self, avatar_hash: str) -> Optional[Dict[str, Any]]:
+        """Get cached avatar hash mapping"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return None
+
+        cache_key = f"avatar_hash:{avatar_hash}"
+        try:
+            return await redis_client.cache_get(cache_key)
+        except Exception as e:
+            logger.warning(f"Error retrieving avatar hash mapping for {avatar_hash}: {e}")
+            await redis_client.cache_delete(cache_key)
+            return None
+
+    async def add_user_to_avatar_hash(self, avatar_hash: str, user_id: str) -> bool:
+        """Add a user ID to an existing avatar hash mapping"""
+        hash_mapping = await self.get_cached_avatar_hash_mapping(avatar_hash)
+        if not hash_mapping:
+            return False
+
+        users = hash_mapping.get("users", [])
+        if user_id not in users:
+            users.append(user_id)
+            hash_mapping["users"] = users
+            hash_mapping["updated_at"] = datetime.now().isoformat()
+            
+            return await self.cache_avatar_hash_mapping(avatar_hash, hash_mapping)
+        
+        return True  # User already in list
+
+    async def remove_user_from_avatar_hash(self, avatar_hash: str, user_id: str) -> bool:
+        """Remove a user ID from an avatar hash mapping"""
+        hash_mapping = await self.get_cached_avatar_hash_mapping(avatar_hash)
+        if not hash_mapping:
+            return False
+
+        users = hash_mapping.get("users", [])
+        if user_id in users:
+            users.remove(user_id)
+            hash_mapping["users"] = users
+            hash_mapping["updated_at"] = datetime.now().isoformat()
+            
+            # If no users left, we could delete the mapping, but keep it for a while
+            # in case the avatar is used again soon
+            return await self.cache_avatar_hash_mapping(avatar_hash, hash_mapping)
+        
+        return True  # User wasn't in list anyway
+
+    async def get_avatar_storage_stats(self) -> Dict[str, Any]:
+        """Get comprehensive avatar storage statistics"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return {"error": "Redis not available"}
+
+        stats = {
+            "total_cached_users": 0,
+            "total_unique_avatars": 0,
+            "total_storage_bytes": 0,
+            "deduplication_savings": 0,
+            "format_breakdown": {},
+            "cache_hit_potential": 0.0,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        try:
+            # Count cached avatar metadata
+            avatar_metadata_keys = []
+            if redis_client._client:
+                async for key in redis_client._client.scan_iter(match="cache:avatar_metadata:*"):
+                    avatar_metadata_keys.append(key)
+            
+            stats["total_cached_users"] = len(avatar_metadata_keys)
+
+            # Count unique avatar hashes
+            avatar_hash_keys = []
+            if redis_client._client:
+                async for key in redis_client._client.scan_iter(match="cache:avatar_hash:*"):
+                    avatar_hash_keys.append(key)
+            
+            stats["total_unique_avatars"] = len(avatar_hash_keys)
+
+            # Calculate storage and deduplication stats
+            total_file_size = 0
+            total_logical_size = 0  # What size would be without deduplication
+            format_counts = {}
+
+            for key in avatar_hash_keys:
+                try:
+                    hash_data = await redis_client._client.get(key)
+                    if hash_data:
+                        import json
+                        hash_info = json.loads(hash_data)
+                        
+                        file_size = hash_info.get("file_size", 0)
+                        users_count = len(hash_info.get("users", []))
+                        format_type = hash_info.get("format", "unknown")
+                        
+                        total_file_size += file_size
+                        total_logical_size += file_size * users_count  # Size if each user had separate file
+                        
+                        format_counts[format_type] = format_counts.get(format_type, 0) + 1
+                        
+                except Exception as e:
+                    logger.warning(f"Error processing avatar hash key {key}: {e}")
+                    continue
+
+            stats["total_storage_bytes"] = total_file_size
+            stats["deduplication_savings"] = total_logical_size - total_file_size
+            stats["format_breakdown"] = format_counts
+            
+            # Calculate cache hit potential (percentage of users with cached avatars)
+            if stats["total_cached_users"] > 0:
+                stats["cache_hit_potential"] = min(100.0, (stats["total_cached_users"] / max(1, stats["total_unique_avatars"])) * 100)
+
+            logger.info(f"📊 AVATAR STATS - Users: {stats['total_cached_users']}, Unique: {stats['total_unique_avatars']}, Storage: {stats['total_storage_bytes']/1024/1024:.1f}MB, Savings: {stats['deduplication_savings']/1024/1024:.1f}MB")
+
+        except Exception as e:
+            logger.error(f"Error gathering avatar storage stats: {e}")
+            stats["error"] = str(e)
+
+        return stats
+
+    async def cleanup_orphaned_avatars(self, max_age_hours: int = 24) -> Dict[str, int]:
+        """
+        Clean up avatar files that are no longer referenced by any users
+        
+        Args:
+            max_age_hours: Maximum age in hours for orphaned avatars before cleanup
+            
+        Returns:
+            Dictionary with cleanup statistics
+        """
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return {"error": "Redis not available"}
+
+        cleanup_stats = {
+            "orphaned_hashes_found": 0,
+            "orphaned_hashes_cleaned": 0,
+            "storage_freed_bytes": 0,
+            "errors": 0
+        }
+
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+            
+            # Get all avatar hash mappings
+            avatar_hash_keys = []
+            if redis_client._client:
+                async for key in redis_client._client.scan_iter(match="cache:avatar_hash:*"):
+                    avatar_hash_keys.append(key)
+
+            for key in avatar_hash_keys:
+                try:
+                    hash_data = await redis_client._client.get(key)
+                    if not hash_data:
+                        continue
+                        
+                    import json
+                    hash_info = json.loads(hash_data)
+                    
+                    users = hash_info.get("users", [])
+                    created_at_str = hash_info.get("created_at")
+                    updated_at_str = hash_info.get("updated_at", created_at_str)
+                    
+                    # Check if this hash has no users and is old enough
+                    if len(users) == 0 and updated_at_str:
+                        try:
+                            updated_at = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                            if updated_at < cutoff_time:
+                                cleanup_stats["orphaned_hashes_found"] += 1
+                                
+                                # Delete the hash mapping
+                                file_size = hash_info.get("file_size", 0)
+                                if await redis_client._client.delete(key):
+                                    cleanup_stats["orphaned_hashes_cleaned"] += 1
+                                    cleanup_stats["storage_freed_bytes"] += file_size
+                                    
+                                    # Also try to delete the actual file if path is provided
+                                    local_path = hash_info.get("local_path")
+                                    if local_path:
+                                        try:
+                                            from pathlib import Path
+                                            file_path = Path(local_path)
+                                            if file_path.exists():
+                                                file_path.unlink()
+                                                logger.info(f"🧹 AVATAR CLEANUP - Deleted orphaned avatar file: {local_path}")
+                                        except Exception as file_error:
+                                            logger.warning(f"Error deleting orphaned avatar file {local_path}: {file_error}")
+                                            cleanup_stats["errors"] += 1
+                        except ValueError as date_error:
+                            logger.warning(f"Error parsing date for avatar hash cleanup: {date_error}")
+                            cleanup_stats["errors"] += 1
+                            
+                except Exception as e:
+                    logger.warning(f"Error processing avatar hash for cleanup {key}: {e}")
+                    cleanup_stats["errors"] += 1
+                    continue
+
+            logger.info(f"🧹 AVATAR CLEANUP - Found {cleanup_stats['orphaned_hashes_found']} orphaned, cleaned {cleanup_stats['orphaned_hashes_cleaned']}, freed {cleanup_stats['storage_freed_bytes']/1024/1024:.1f}MB")
+
+        except Exception as e:
+            logger.error(f"Error during avatar cleanup: {e}")
+            cleanup_stats["error"] = str(e)
+
+        return cleanup_stats
+
+    async def invalidate_user_avatar_cache(self, user_id: str) -> bool:
+        """Invalidate all avatar-related cache for a specific user"""
+        redis_client = await self._get_redis()
+        if not redis_client:
+            return False
+
+        try:
+            # Get user's current avatar metadata to find hash
+            avatar_metadata = await self.get_cached_avatar_metadata(user_id)
+            
+            # Delete user's avatar metadata
+            await redis_client.cache_delete(f"avatar_metadata:{user_id}")
+            
+            # Remove user from avatar hash mapping if exists
+            if avatar_metadata and "avatar_hash" in avatar_metadata:
+                avatar_hash = avatar_metadata["avatar_hash"]
+                await self.remove_user_from_avatar_hash(avatar_hash, user_id)
+            
+            logger.info(f"🧹 AVATAR CACHE - Invalidated avatar cache for user {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error invalidating avatar cache for user {user_id}: {e}")
+            return False
 
     # Guild Information Caching (Extended TTL)
     async def cache_guild_info(self, guild_id: str, guild_data: Dict[str, Any]) -> bool:

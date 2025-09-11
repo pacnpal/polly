@@ -29,14 +29,14 @@ async def force_regenerate_all_static():
             print("⚠️ FORCE REGENERATE - No closed polls found")
             return
         
-        # Get Discord bot for username fetching
+        # Get Discord bot for username fetching and avatar caching
         bot = get_bot_instance()
         bot_status = "ready" if bot and hasattr(bot, "is_ready") and bot.is_ready() else "not ready"
         print(f"🤖 DEBUG - Bot status: {bot_status}")
         if bot:
-            print("🤖 FORCE REGENERATE - Discord bot available for username fetching")
+            print("🤖 FORCE REGENERATE - Discord bot available for real username fetching and avatar caching")
         else:
-            print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic")
+            print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic and no avatars cached")
         
         # Get static page generator
         generator = get_static_page_generator()
@@ -87,9 +87,13 @@ async def force_regenerate_all_static():
                     else:
                         print(f"❌ FORCE REGENERATE - Static JSON file not found after generation for poll {poll_id}")
                         
-                    # Show image processing results
+                    # Show processing results
                     if results.get("details_page"):
                         print(f"🖼️ FORCE REGENERATE - Images processed and compressed for poll {poll_id}")
+                        if bot:
+                            print(f"👤 FORCE REGENERATE - Real Discord usernames and avatars cached for poll {poll_id}")
+                        else:
+                            print(f"👤 FORCE REGENERATE - Generic usernames used (no Discord bot) for poll {poll_id}")
                 else:
                     failed_components = [k for k, v in results.items() if not v]
                     print(f"❌ FORCE REGENERATE - Failed to generate some static content for poll {poll_id}: {failed_components}")
@@ -165,7 +169,7 @@ async def test_component_loading():
             
         print(f"📏 COMPONENT TEST - Component size: {len(content)} characters")
         
-        # Check for key component elements
+        # Check for key component elements including new avatar functionality
         checks = [
             ("Component header", "<!-- Static Poll Details Component" in content),
             ("Container structure", '<div class="container-fluid">' in content),
@@ -174,6 +178,8 @@ async def test_component_loading():
             ("Progress bars", 'data-width=' in content),
             ("JavaScript", '<script>' in content),
             ("HTMX attributes", 'hx-get=' in content),
+            ("Avatar support", 'vote.avatar_url' in content or 'user-avatar-small' in content),
+            ("Username display", 'vote.username' in content),
         ]
         
         print("\n🔍 COMPONENT TEST - Component validation:")
