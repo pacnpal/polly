@@ -24,3 +24,4 @@ polly.db
 static/polls/
 static/images/
 polly/static_page_generator.py
+static/avatars/
