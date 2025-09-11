@@ -118,7 +118,7 @@ class StaticPageGenerator:
                 emojis = poll.emojis
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 
-                # Prepare vote data (anonymized for static pages for privacy)
+                # Prepare vote data with real Discord usernames (never anonymize for static pages)
                 vote_data = []
                 unique_users = set()
                 
@@ -128,11 +128,18 @@ class StaticPageGenerator:
                         option_index = TypeSafeColumn.get_int(vote, "option_index")
                         voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
                         
-                        # For static pages, always anonymize usernames for privacy
-                        if user_id not in unique_users:
-                            username = f"User {len(unique_users) + 1}"
-                        else:
-                            username = f"User {list(unique_users).index(user_id) + 1}"
+                        # Always fetch real Discord username for static pages (never anonymize)
+                        username = "Unknown User"
+                        if bot and user_id:
+                            try:
+                                discord_user = await bot.fetch_user(int(user_id))
+                                if discord_user:
+                                    username = discord_user.display_name or discord_user.name
+                            except Exception as e:
+                                logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
+                                username = f"User {user_id[:8]}..."
+                        elif user_id:
+                            username = f"User {user_id[:8]}..."
                         
                         # Get option details
                         option_text = options[option_index] if option_index < len(options) else "Unknown Option"
@@ -158,6 +165,12 @@ class StaticPageGenerator:
                 unique_voters = len(unique_users)
                 results = poll.get_results()
                 
+                # Check if dashboard screenshot exists
+                dashboard_screenshot_url = None
+                screenshot_path = self._get_dashboard_screenshot_path(poll_id)
+                if screenshot_path.exists():
+                    dashboard_screenshot_url = f"/static/images/shared/{screenshot_path.name}"
+                
                 # Generate static HTML using the component template
                 template = self.jinja_env.get_template("static/poll_details_static_component.html")
                 html_content = template.render(
@@ -171,7 +184,8 @@ class StaticPageGenerator:
                     is_anonymous=is_anonymous,
                     generated_at=datetime.now(),
                     is_static=True,
-                    image_mappings=image_mappings  # Pass image mappings to template
+                    image_mappings=image_mappings,  # Pass image mappings to template
+                    dashboard_screenshot_url=dashboard_screenshot_url  # Pass screenshot URL to template
                 )
                 
                 # Update HTML content to use static image URLs
@@ -220,7 +234,7 @@ class StaticPageGenerator:
                 emojis = poll.emojis
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 
-                # Prepare vote data (anonymized for static pages)
+                # Prepare vote data with real Discord usernames (never anonymize for static pages)
                 vote_data = []
                 unique_users = set()
                 
@@ -230,8 +244,18 @@ class StaticPageGenerator:
                         option_index = TypeSafeColumn.get_int(vote, "option_index")
                         voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
                         
-                        # For static pages, always anonymize usernames for privacy
-                        username = f"User {len(unique_users) + 1}" if user_id not in unique_users else f"User {list(unique_users).index(user_id) + 1}"
+                        # Always fetch real Discord username for static pages (never anonymize)
+                        username = "Unknown User"
+                        if bot and user_id:
+                            try:
+                                discord_user = await bot.fetch_user(int(user_id))
+                                if discord_user:
+                                    username = discord_user.display_name or discord_user.name
+                            except Exception as e:
+                                logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
+                                username = f"User {user_id[:8]}..."
+                        elif user_id:
+                            username = f"User {user_id[:8]}..."
                         
                         # Get option details
                         option_text = options[option_index] if option_index < len(options) else "Unknown Option"
@@ -345,16 +369,17 @@ class StaticPageGenerator:
             return False
             
     async def generate_all_static_content(self, poll_id: int, bot=None) -> Dict[str, bool]:
-        """Generate all static content for a closed poll"""
-        logger.info(f"🔧 STATIC GEN - Generating all static content for poll {poll_id}")
+        """Generate all static content for a closed poll with dashboard screenshot"""
+        logger.info(f"🔧 STATIC GEN - Generating all static content with screenshot for poll {poll_id}")
         
         results = {
             "details_page": await self.generate_static_poll_details(poll_id, bot),
+            "dashboard_screenshot": await self.generate_dashboard_with_screenshot(poll_id, bot),
             "data_file": await self.generate_static_poll_data(poll_id)
         }
         
         success_count = sum(1 for success in results.values() if success)
-        logger.info(f"✅ STATIC GEN - Generated {success_count}/2 static files for poll {poll_id}")
+        logger.info(f"✅ STATIC GEN - Generated {success_count}/3 static files for poll {poll_id}")
         
         return results
         

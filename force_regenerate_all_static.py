@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from polly.database import get_db_session, Poll, TypeSafeColumn
 from polly.static_page_generator import get_static_page_generator
+from polly.discord_bot import get_bot_instance
 
 async def force_regenerate_all_static():
     """Force regenerate static components for all closed polls"""
@@ -28,6 +29,13 @@ async def force_regenerate_all_static():
             print("⚠️ FORCE REGENERATE - No closed polls found")
             return
         
+        # Get Discord bot for username fetching
+        bot = get_bot_instance()
+        if bot:
+            print("🤖 FORCE REGENERATE - Discord bot available for username fetching")
+        else:
+            print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic")
+        
         # Get static page generator
         generator = get_static_page_generator()
         
@@ -42,8 +50,8 @@ async def force_regenerate_all_static():
             print(f"\n🔧 FORCE REGENERATE - Processing poll {poll_id}: '{poll_name}'")
             
             try:
-                # Force regenerate all static content with image compression
-                results = await generator.generate_all_static_content(poll_id)
+                # Force regenerate all static content with image compression and real usernames
+                results = await generator.generate_all_static_content(poll_id, bot)
                 
                 if all(results.values()):
                     print(f"✅ FORCE REGENERATE - Successfully generated all static content for poll {poll_id}")

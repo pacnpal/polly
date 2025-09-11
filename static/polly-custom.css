@@ -172,3 +172,32 @@
 .progress-bar[data-width] {
     transition: width 0.3s ease-in-out;
 }
+
+/* Dashboard screenshot styling */
+.dashboard-screenshot-container {
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+.dashboard-screenshot {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-screenshot:hover {
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+    .dashboard-screenshot {
+        border-radius: 4px;
+    }
+    
+    .dashboard-screenshot:hover {
+        transform: none;
+    }
+}
