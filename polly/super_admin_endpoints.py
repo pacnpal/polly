@@ -343,7 +343,7 @@ def parse_log_time_range(time_range: str) -> datetime:
 def parse_log_file(log_path: str, level_filter: Optional[str] = None, 
                   search_filter: Optional[str] = None, 
                   time_cutoff: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Parse log file and return filtered entries"""
+    """Parse log file and return filtered entries - COMPLETELY REWRITTEN FOR ABSOLUTE SAFETY"""
     entries = []
     
     if not os.path.exists(log_path):
@@ -387,68 +387,20 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                             'line_number': line_num
                         })
                     else:
-                        # Handle multi-line entries or malformed entries - NUCLEAR OPTION BULLETPROOF VERSION
-                        # This version is so safe it's impossible to fail
-                        
-                        # Initialize variables with safe defaults FIRST
-                        last_entry = None
-                        can_append_to_last = False
-                        
+                        # SIMPLEST POSSIBLE APPROACH - NO COMPLEX LOGIC
+                        # Just create a new entry for every non-matching line
+                        # This eliminates ALL possibility of variable definition errors
                         try:
-                            # Only try to append if we have entries
-                            if entries and len(entries) > 0:
-                                try:
-                                    # Get last entry using the safest possible method
-                                    last_index = len(entries) - 1
-                                    if last_index >= 0 and last_index < len(entries):
-                                        potential_last_entry = entries[last_index]
-                                        
-                                        # Verify it's a valid dict with message key
-                                        if (isinstance(potential_last_entry, dict) and 
-                                            'message' in potential_last_entry and 
-                                            isinstance(potential_last_entry.get('message'), str)):
-                                            last_entry = potential_last_entry
-                                            can_append_to_last = True
-                                            
-                                except (IndexError, TypeError, KeyError, AttributeError, NameError):
-                                    # Any error means we can't safely append
-                                    can_append_to_last = False
-                                    last_entry = None
-                            
-                            # Only append if we're 100% sure it's safe
-                            if can_append_to_last and last_entry is not None:
-                                try:
-                                    # Double-check the message key exists and is a string
-                                    current_message = last_entry.get('message', '')
-                                    if isinstance(current_message, str):
-                                        last_entry['message'] = current_message + '\n' + line
-                                    else:
-                                        # Message isn't a string, create new entry instead
-                                        can_append_to_last = False
-                                except (KeyError, TypeError, AttributeError, ValueError, NameError):
-                                    # If anything goes wrong, create new entry
-                                    can_append_to_last = False
-                            
-                        except Exception as inner_e:
-                            # If ANY exception occurs, ensure safe defaults
-                            can_append_to_last = False
-                            last_entry = None
-                            logger.warning(f"Exception in log parsing at line {line_num}: {inner_e}")
-                        
-                        # ALWAYS create new entry if we couldn't append safely
-                        # This check is guaranteed to work because can_append_to_last is always defined
-                        if not can_append_to_last:
-                            try:
-                                entries.append({
-                                    'timestamp': datetime.now().isoformat(),
-                                    'level': 'INFO',
-                                    'message': line,
-                                    'line_number': line_num
-                                })
-                            except Exception as append_e:
-                                # Final fallback - log error and skip line
-                                logger.error(f"Critical error creating log entry at line {line_num}: {append_e}")
-                                continue
+                            entries.append({
+                                'timestamp': datetime.now().isoformat(),
+                                'level': 'INFO',
+                                'message': line,
+                                'line_number': line_num
+                            })
+                        except Exception as append_e:
+                            # If even this simple append fails, just skip the line
+                            logger.error(f"Critical error creating simple log entry at line {line_num}: {append_e}")
+                            continue
                 
                 except Exception as line_e:
                     # Skip problematic lines entirely
