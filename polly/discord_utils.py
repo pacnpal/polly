@@ -1367,6 +1367,9 @@ async def send_vote_confirmation_dm(
         elif vote_action == "created":
             action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
             
+        elif vote_action == "already_recorded":
+            action_description = f"🧹 **Reaction Cleanup Notice**\n\nYour reaction for {selected_emoji} **{selected_option}** was removed because your vote was already recorded.\n\n💡 This is normal - the system automatically cleans up duplicate reactions to keep the poll tidy."
+            
         else:
             # Fallback for unknown actions
             action_description = f"🗳️ Your vote: {selected_emoji} **{selected_option}**"

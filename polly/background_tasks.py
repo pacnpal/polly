@@ -897,15 +897,50 @@ async def reaction_safeguard_task():
                                             )
 
                                             if existing_vote:
-                                                # Vote exists, remove the reaction (cleanup)
+                                                # User has existing vote - let normal vote processing handle this
+                                                # The bulletproof_vote_collection already handles vote changes correctly
+                                                logger.info(
+                                                    f"🛡️ Safeguard: User {user.id} has existing vote, processing through normal vote system for poll {poll_id}"
+                                                )
+
                                                 try:
-                                                    await reaction.remove(user)
-                                                    logger.debug(
-                                                        f"🧹 Safeguard: Cleaned up reaction from user {user.id} on poll {poll_id} (vote already recorded)"
+                                                    # Use bulletproof vote collection to handle the vote properly
+                                                    bulletproof_ops = (
+                                                        BulletproofPollOperations(bot)
                                                     )
-                                                except Exception as remove_error:
-                                                    logger.debug(
-                                                        f"⚠️ Safeguard: Failed to remove reaction from user {user.id}: {remove_error}"
+                                                    result = await bulletproof_ops.bulletproof_vote_collection(
+                                                        poll_id,
+                                                        str(user.id),
+                                                        option_index,
+                                                    )
+
+                                                    if result["success"]:
+                                                        # Vote was processed successfully - remove the reaction
+                                                        try:
+                                                            await reaction.remove(user)
+                                                            logger.info(
+                                                                f"✅ Safeguard: Vote processed and reaction removed for user {user.id} on poll {poll_id} (action: {result.get('action', 'unknown')})"
+                                                            )
+                                                        except Exception as remove_error:
+                                                            logger.warning(
+                                                                f"⚠️ Safeguard: Vote processed but failed to remove reaction from user {user.id}: {remove_error}"
+                                                            )
+
+                                                        # Update poll embed for live updates
+                                                        try:
+                                                            await update_poll_message(bot, poll)
+                                                            logger.debug(f"✅ Safeguard: Poll message updated for poll {poll_id}")
+                                                        except Exception as update_error:
+                                                            logger.error(f"❌ Safeguard: Failed to update poll message for poll {poll_id}: {update_error}")
+                                                    else:
+                                                        # Vote processing failed - leave reaction for user to try again
+                                                        logger.error(
+                                                            f"❌ Safeguard: Vote processing FAILED for user {user.id} on poll {poll_id}: {result['error']}"
+                                                        )
+
+                                                except Exception as vote_error:
+                                                    logger.error(
+                                                        f"❌ Safeguard: Critical error processing existing vote for user {user.id} on poll {poll_id}: {vote_error}"
                                                     )
                                             else:
                                                 # No vote recorded, but first re-check poll status to avoid race conditions
