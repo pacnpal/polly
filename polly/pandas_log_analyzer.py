@@ -192,9 +192,9 @@ class PandasLogAnalyzer:
         analytics = {
             'total_entries': len(df),
             'time_range': {
-                'start': df['timestamp'].min().isoformat() if not df.empty else None,
-                'end': df['timestamp'].max().isoformat() if not df.empty else None,
-                'duration_hours': (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600 if len(df) > 1 else 0
+                'start': df['timestamp'].min().isoformat() if not df.empty and not pd.isna(df['timestamp'].min()) else None,
+                'end': df['timestamp'].max().isoformat() if not df.empty and not pd.isna(df['timestamp'].max()) else None,
+                'duration_hours': (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600 if len(df) > 1 and not pd.isna(df['timestamp'].min()) and not pd.isna(df['timestamp'].max()) else 0
             }
         }
         
