@@ -239,8 +239,8 @@ def format_poll_closing_time(dt: datetime, poll_timezone: str) -> str:
         elif closing_date == tomorrow:
             return f"Tomorrow at {time_str}"
         else:
-            # For dates beyond tomorrow, show the full date
-            return local_dt.strftime("%Y-%m-%d %I:%M %p")
+            # For dates beyond tomorrow, show a friendly format like "Friday, Sep 13 at 3:00 PM"
+            return local_dt.strftime("%A, %b %d at %I:%M %p")
             
     except Exception as e:
         logger.error(
