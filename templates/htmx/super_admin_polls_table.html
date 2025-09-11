@@ -55,6 +55,9 @@
                         <button class="btn btn-sm btn-outline-primary" onclick="viewPollDetails({{ poll.id }})" title="View Details">
                             <i class="fas fa-eye"></i>
                         </button>
+                        <button class="btn btn-sm btn-outline-info" onclick="editPoll({{ poll.id }})" title="Edit Poll">
+                            <i class="fas fa-edit"></i>
+                        </button>
                         {% if poll.status != 'closed' %}
                         <button class="btn btn-sm btn-outline-warning" onclick="forceClosePoll({{ poll.id }}, '{{ poll.name|replace("'", "\\'") }}')" title="Force Close">
                             <i class="fas fa-stop"></i>

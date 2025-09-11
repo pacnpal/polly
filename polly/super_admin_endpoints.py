@@ -23,12 +23,49 @@ templates = Jinja2Templates(directory="templates")
 async def get_super_admin_dashboard(
     request: Request, current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
-    """Super admin dashboard page"""
+    """Super admin dashboard page - ULTRA OPTIMIZED"""
     try:
-        db = get_db_session()
-        try:
-            # Get system statistics
-            stats = super_admin_service.get_system_stats(db)
+        # PERFORMANCE OPTIMIZATION: Use async context manager for DB
+        from contextlib import asynccontextmanager
+        
+        @asynccontextmanager
+        async def get_db_async():
+            db = get_db_session()
+            try:
+                yield db
+            finally:
+                db.close()
+        
+        async with get_db_async() as db:
+            # PERFORMANCE OPTIMIZATION: Check cache first
+            from .redis_client import get_redis_client
+            redis_client = await get_redis_client()
+            
+            stats = None
+            if redis_client and redis_client.is_connected:
+                try:
+                    cached_stats = await redis_client.get("super_admin:dashboard_stats")
+                    if cached_stats:
+                        import json
+                        stats = json.loads(cached_stats)
+                except Exception as e:
+                    logger.warning(f"Cache read failed: {e}")
+            
+            # Get fresh stats if not cached
+            if not stats:
+                stats = super_admin_service.get_system_stats(db)
+                
+                # Cache for 60 seconds
+                if redis_client and redis_client.is_connected:
+                    try:
+                        import json
+                        await redis_client.set(
+                            "super_admin:dashboard_stats", 
+                            json.dumps(stats, default=str), 
+                            ex=60
+                        )
+                    except Exception as e:
+                        logger.warning(f"Cache write failed: {e}")
             
             return templates.TemplateResponse(
                 "super_admin_dashboard_new.html",
@@ -39,8 +76,6 @@ async def get_super_admin_dashboard(
                     "is_super_admin": True
                 }
             )
-        finally:
-            db.close()
             
     except Exception as e:
         logger.error(f"Error loading super admin dashboard: {e}")
@@ -185,7 +220,7 @@ async def get_all_polls_htmx(
     page: int = Query(1, ge=1),
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
-    """HTMX endpoint for polls table"""
+    """HTMX endpoint for polls table - PERFORMANCE OPTIMIZED"""
     try:
         db = get_db_session()
         try:
@@ -203,24 +238,10 @@ async def get_all_polls_htmx(
                 sort_order="desc"
             )
             
-            # Get Discord usernames for creators
-            from .discord_bot import get_bot_instance
-            bot = get_bot_instance()
-            
-            # Enhance poll data with creator usernames
+            # PERFORMANCE OPTIMIZATION: Skip Discord API calls - use cached usernames or fallback
             for poll in result["polls"]:
-                try:
-                    if bot and poll["creator_id"]:
-                        discord_user = await bot.fetch_user(int(poll["creator_id"]))
-                        if discord_user:
-                            poll["creator_username"] = discord_user.display_name or discord_user.name
-                        else:
-                            poll["creator_username"] = f"User {poll['creator_id'][:8]}..."
-                    else:
-                        poll["creator_username"] = f"User {poll['creator_id'][:8]}..."
-                except Exception as e:
-                    logger.warning(f"Could not fetch creator username for {poll['creator_id']}: {e}")
-                    poll["creator_username"] = f"User {poll['creator_id'][:8]}..."
+                # Use truncated creator ID as fallback - no Discord API calls
+                poll["creator_username"] = f"User {poll['creator_id'][:8]}..." if poll["creator_id"] else "Unknown"
             
             return templates.TemplateResponse(
                 "htmx/super_admin_polls_table.html",
@@ -254,7 +275,7 @@ async def get_poll_details_htmx(
     request: Request,
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
-    """HTMX endpoint for poll details modal"""
+    """HTMX endpoint for poll details modal - PERFORMANCE OPTIMIZED"""
     try:
         db = get_db_session()
         try:
@@ -266,42 +287,14 @@ async def get_poll_details_htmx(
                     status_code=404
                 )
             
-            # Get Discord usernames for voters
-            from .discord_bot import get_bot_instance
-            bot = get_bot_instance()
-            
-            # Enhance vote data with usernames
+            # PERFORMANCE OPTIMIZATION: Skip Discord API calls - use fallback usernames
             for vote in poll_details["votes"]:
-                try:
-                    if bot and vote["user_id"]:
-                        discord_user = await bot.fetch_user(int(vote["user_id"]))
-                        if discord_user:
-                            vote["username"] = discord_user.display_name or discord_user.name
-                            vote["avatar_url"] = discord_user.avatar.url if discord_user.avatar else None
-                        else:
-                            vote["username"] = f"User {vote['user_id'][:8]}..."
-                            vote["avatar_url"] = None
-                    else:
-                        vote["username"] = f"User {vote['user_id'][:8]}..."
-                        vote["avatar_url"] = None
-                except Exception as e:
-                    logger.warning(f"Could not fetch voter username for {vote['user_id']}: {e}")
-                    vote["username"] = f"User {vote['user_id'][:8]}..."
-                    vote["avatar_url"] = None
+                vote["username"] = f"User {vote['user_id'][:8]}..." if vote["user_id"] else "Unknown"
+                vote["avatar_url"] = None
             
-            # Get creator username
-            try:
-                if bot and poll_details["poll"]["creator_id"]:
-                    discord_user = await bot.fetch_user(int(poll_details["poll"]["creator_id"]))
-                    if discord_user:
-                        poll_details["poll"]["creator_username"] = discord_user.display_name or discord_user.name
-                    else:
-                        poll_details["poll"]["creator_username"] = f"User {poll_details['poll']['creator_id'][:8]}..."
-                else:
-                    poll_details["poll"]["creator_username"] = f"User {poll_details['poll']['creator_id'][:8]}..."
-            except Exception as e:
-                logger.warning(f"Could not fetch creator username: {e}")
-                poll_details["poll"]["creator_username"] = f"User {poll_details['poll']['creator_id'][:8]}..."
+            # PERFORMANCE OPTIMIZATION: Skip Discord API call for creator
+            creator_id = poll_details["poll"]["creator_id"]
+            poll_details["poll"]["creator_username"] = f"User {creator_id[:8]}..." if creator_id else "Unknown"
             
             return templates.TemplateResponse(
                 "htmx/super_admin_poll_details.html",
@@ -601,6 +594,181 @@ async def export_system_data_api(
         raise HTTPException(status_code=500, detail="Error generating system export")
 
 
+async def get_poll_edit_form_htmx(
+    poll_id: int,
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> HTMLResponse:
+    """HTMX endpoint for poll edit form - PERFORMANCE OPTIMIZED"""
+    try:
+        db = get_db_session()
+        try:
+            poll_details = super_admin_service.get_poll_details(db, poll_id)
+            
+            if not poll_details:
+                return HTMLResponse(
+                    content="<div class='alert alert-danger'>Poll not found</div>",
+                    status_code=404
+                )
+            
+            poll = poll_details["poll"]
+            
+            # PERFORMANCE OPTIMIZATION: Skip Discord API calls - use static guild list or cache
+            guilds = [
+                {'id': poll["server_id"], 'name': poll["server_name"] or "Current Server"}
+            ] if poll["server_id"] else []
+            
+            # PERFORMANCE OPTIMIZATION: Use pre-computed timezone list
+            common_timezones = [
+                {'name': 'UTC', 'display': 'UTC'},
+                {'name': 'US/Eastern', 'display': 'US Eastern'},
+                {'name': 'US/Central', 'display': 'US Central'},
+                {'name': 'US/Mountain', 'display': 'US Mountain'},
+                {'name': 'US/Pacific', 'display': 'US Pacific'},
+                {'name': 'Europe/London', 'display': 'Europe London'},
+                {'name': 'Europe/Paris', 'display': 'Europe Paris'},
+                {'name': 'Asia/Tokyo', 'display': 'Asia Tokyo'},
+                {'name': 'Australia/Sydney', 'display': 'Australia Sydney'}
+            ]
+            
+            # Format datetime fields for HTML input
+            open_time = ""
+            close_time = ""
+            
+            if poll["open_time"]:
+                try:
+                    open_time = poll["open_time"].strftime('%Y-%m-%dT%H:%M')
+                except:
+                    pass
+            
+            if poll["close_time"]:
+                try:
+                    close_time = poll["close_time"].strftime('%Y-%m-%dT%H:%M')
+                except:
+                    pass
+            
+            # Default emojis for new options
+            default_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+            
+            return templates.TemplateResponse(
+                "htmx/super_admin_edit_poll.html",
+                {
+                    "request": request,
+                    "poll": poll,
+                    "guilds": guilds,
+                    "timezones": common_timezones,
+                    "open_time": open_time,
+                    "close_time": close_time,
+                    "default_emojis": default_emojis,
+                    "is_super_admin": True
+                }
+            )
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error getting poll edit form for {poll_id}: {e}")
+        return HTMLResponse(
+            content="<div class='alert alert-danger'>Error loading edit form</div>",
+            status_code=500
+        )
+
+
+async def update_poll_api(
+    poll_id: int,
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> JSONResponse:
+    """Update poll via API (super admin only)"""
+    try:
+        # Parse form data
+        form_data = await request.form()
+        
+        # Extract and validate poll data
+        poll_data = {}
+        
+        # Basic fields
+        if "name" in form_data:
+            poll_data["name"] = str(form_data["name"]).strip()
+        
+        if "question" in form_data:
+            poll_data["question"] = str(form_data["question"]).strip()
+        
+        # Options and emojis
+        options = []
+        emojis = []
+        
+        for i in range(1, 11):  # Support up to 10 options
+            option_key = f"option{i}"
+            emoji_key = f"emoji{i}"
+            
+            if option_key in form_data:
+                option_text = str(form_data[option_key]).strip()
+                if option_text:
+                    options.append(option_text)
+                    emoji_value = str(form_data.get(emoji_key, "")).strip()
+                    emojis.append(emoji_value if emoji_value else f"{i}️⃣")
+        
+        if options:
+            poll_data["options"] = options
+            poll_data["emojis"] = emojis
+        
+        # Boolean fields
+        poll_data["anonymous"] = "anonymous" in form_data
+        poll_data["multiple_choice"] = "multiple_choice" in form_data
+        poll_data["ping_role_enabled"] = "ping_role_enabled" in form_data
+        poll_data["ping_role_on_close"] = "ping_role_on_close" in form_data
+        poll_data["ping_role_on_update"] = "ping_role_on_update" in form_data
+        
+        # Numeric fields
+        if "max_choices" in form_data and form_data["max_choices"]:
+            try:
+                poll_data["max_choices"] = int(form_data["max_choices"])
+            except ValueError:
+                poll_data["max_choices"] = None
+        
+        # DateTime fields
+        if "open_time" in form_data and form_data["open_time"]:
+            try:
+                from datetime import datetime
+                poll_data["open_time"] = datetime.fromisoformat(str(form_data["open_time"]))
+            except ValueError:
+                pass
+        
+        if "close_time" in form_data and form_data["close_time"]:
+            try:
+                from datetime import datetime
+                poll_data["close_time"] = datetime.fromisoformat(str(form_data["close_time"]))
+            except ValueError:
+                pass
+        
+        # String fields
+        string_fields = ["timezone", "image_path", "image_message_text", "ping_role_name", "ping_role_id"]
+        for field in string_fields:
+            if field in form_data:
+                value = str(form_data[field]).strip()
+                poll_data[field] = value if value else None
+        
+        # Update the poll
+        db = get_db_session()
+        try:
+            result = super_admin_service.update_poll(db, poll_id, poll_data, current_user.id)
+            
+            if result["success"]:
+                logger.info(f"Super admin {current_user.username} updated poll {poll_id}")
+                return JSONResponse(content=result)
+            else:
+                return JSONResponse(content=result, status_code=400)
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error updating poll {poll_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error updating poll")
+
+
 def add_super_admin_routes(app):
     """Add super admin routes to the FastAPI app"""
 
@@ -704,3 +872,15 @@ def add_super_admin_routes(app):
         request: Request, current_user: DiscordUser = Depends(require_super_admin)
     ):
         return await export_system_data_api(request, current_user)
+
+    @app.get("/super-admin/htmx/poll/{poll_id}/edit", response_class=HTMLResponse)
+    async def super_admin_poll_edit_form_htmx(
+        poll_id: int, request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await get_poll_edit_form_htmx(poll_id, request, current_user)
+
+    @app.put("/super-admin/api/poll/{poll_id}")
+    async def super_admin_update_poll(
+        poll_id: int, request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await update_poll_api(poll_id, request, current_user)
