@@ -70,12 +70,18 @@
                 <td class="fw-bold">Image:</td>
                 <td>
                     <div class="mb-2">
-                        <img src="/static/{{ poll_details.poll.image_path }}" class="img-thumbnail" style="max-width: 200px; max-height: 150px;" alt="Poll Image">
+                        <img src="/static/{{ poll_details.poll.image_path }}" class="img-thumbnail border" style="max-width: 300px; max-height: 200px; cursor: pointer;" alt="Poll Image" onclick="window.open('/static/{{ poll_details.poll.image_path }}', '_blank')">
                     </div>
                     <small class="text-muted">Path: {{ poll_details.poll.image_path }}</small>
-                    {% if poll_details.poll.image_message_text %}
                     <div class="mt-1">
-                        <strong>Image Message:</strong> {{ poll_details.poll.image_message_text }}
+                        <small class="text-info">
+                            <i class="fas fa-info-circle me-1"></i>Click image to view full size
+                        </small>
+                    </div>
+                    {% if poll_details.poll.image_message_text %}
+                    <div class="mt-2 p-2 bg-light rounded">
+                        <strong><i class="fas fa-comment me-1"></i>Image Message:</strong>
+                        <div class="mt-1">{{ poll_details.poll.image_message_text }}</div>
                     </div>
                     {% endif %}
                 </td>

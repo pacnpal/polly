@@ -1,0 +1,59 @@
+{% if redis_status.connected %}
+<div class="d-flex align-items-center mb-3">
+    <i class="fas fa-check-circle text-success fa-2x me-3"></i>
+    <div>
+        <h6 class="mb-0">Redis Connected</h6>
+        <small class="text-muted">Version {{ redis_status.info.version }}</small>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-6">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Uptime</span>
+            <span class="badge bg-info">{{ (redis_status.info.uptime // 3600) }}h {{ ((redis_status.info.uptime % 3600) // 60) }}m</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Clients</span>
+            <span class="badge bg-primary">{{ redis_status.info.connected_clients }}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+            <span>Memory</span>
+            <span class="badge bg-warning">{{ redis_status.info.used_memory }}</span>
+        </div>
+    </div>
+    <div class="col-6">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Commands</span>
+            <span class="badge bg-success">{{ "{:,}".format(redis_status.info.total_commands_processed) }}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>Cache Hits</span>
+            <span class="badge bg-info">{{ "{:,}".format(redis_status.info.keyspace_hits) }}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+            <span>Cache Misses</span>
+            <span class="badge bg-secondary">{{ "{:,}".format(redis_status.info.keyspace_misses) }}</span>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="d-flex align-items-center mb-3">
+    <i class="fas fa-exclamation-triangle text-danger fa-2x me-3"></i>
+    <div>
+        <h6 class="mb-0 text-danger">Redis Disconnected</h6>
+        <small class="text-muted">Unable to connect to Redis server</small>
+    </div>
+</div>
+
+{% if redis_status.error %}
+<div class="alert alert-danger">
+    <strong>Error:</strong> {{ redis_status.error }}
+</div>
+{% endif %}
+
+<div class="text-center">
+    <p class="text-muted">Redis monitoring and caching features are unavailable.</p>
+</div>
+{% endif %}

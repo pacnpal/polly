@@ -1,0 +1,31 @@
+{% if log_entries %}
+<div class="log-viewer">
+    {% for entry in log_entries %}
+    <div class="log-entry {{ entry.level.lower() }}">
+        <span class="text-muted">[{{ entry.timestamp[:19] }}]</span>
+        <span class="badge bg-{{ 'danger' if entry.level == 'ERROR' else 'warning' if entry.level == 'WARNING' else 'info' if entry.level == 'INFO' else 'secondary' }} me-2">{{ entry.level }}</span>
+        <span class="log-message">{{ entry.message }}</span>
+    </div>
+    {% endfor %}
+</div>
+
+{% if log_entries|length == 500 %}
+<div class="alert alert-info mt-3">
+    <i class="fas fa-info-circle me-2"></i>
+    Showing the 500 most recent log entries. Use filters to narrow down results or download logs for complete history.
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-center p-4">
+    <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+    <h5 class="text-muted">No log entries found</h5>
+    <p class="text-muted">
+        {% if filters.level or filters.search %}
+        Try adjusting your filters or expanding the time range.
+        {% else %}
+        No log files found or no entries in the selected time range.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

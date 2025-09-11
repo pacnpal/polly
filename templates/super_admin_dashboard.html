@@ -431,10 +431,17 @@
 
         // Poll actions
         function viewPollDetails(pollId) {
-            htmx.ajax('GET', `/super-admin/htmx/poll/${pollId}/details`, {
+            // Clear existing content first to ensure refresh
+            document.getElementById('poll-details-content').innerHTML = '<div class="text-center p-4"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading poll details...</p></div>';
+            
+            // Show modal immediately
+            const modal = new bootstrap.Modal(document.getElementById('pollDetailsModal'));
+            modal.show();
+            
+            // Load content with cache busting
+            htmx.ajax('GET', `/super-admin/htmx/poll/${pollId}/details?t=${Date.now()}`, {
                 target: '#poll-details-content'
             });
-            new bootstrap.Modal(document.getElementById('pollDetailsModal')).show();
         }
 
         function forceClosePoll(pollId, pollName) {

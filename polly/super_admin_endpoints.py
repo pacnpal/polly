@@ -4,10 +4,14 @@ API endpoints for super admin dashboard functionality.
 """
 
 import logging
+import os
+import re
+import json
+from datetime import datetime, timedelta
 from fastapi import Request, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from .super_admin import require_super_admin, super_admin_service, DiscordUser
 from .database import get_db_session
@@ -27,7 +31,7 @@ async def get_super_admin_dashboard(
             stats = super_admin_service.get_system_stats(db)
             
             return templates.TemplateResponse(
-                "super_admin_dashboard.html",
+                "super_admin_dashboard_new.html",
                 {
                     "request": request,
                     "user": current_user,
@@ -318,6 +322,347 @@ async def get_poll_details_htmx(
         )
 
 
+def parse_log_time_range(time_range: str) -> datetime:
+    """Parse time range string and return cutoff datetime"""
+    now = datetime.now()
+    
+    if time_range == "1h":
+        return now - timedelta(hours=1)
+    elif time_range == "6h":
+        return now - timedelta(hours=6)
+    elif time_range == "24h":
+        return now - timedelta(hours=24)
+    elif time_range == "7d":
+        return now - timedelta(days=7)
+    elif time_range == "30d":
+        return now - timedelta(days=30)
+    else:
+        return now - timedelta(hours=24)  # Default to 24h
+
+
+def parse_log_file(log_path: str, level_filter: Optional[str] = None, 
+                  search_filter: Optional[str] = None, 
+                  time_cutoff: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Parse log file and return filtered entries"""
+    entries = []
+    
+    if not os.path.exists(log_path):
+        return entries
+    
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Parse log entry (assuming format: TIMESTAMP - LEVEL - MESSAGE)
+                log_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - (\w+) - (.+)$', line)
+                
+                if log_match:
+                    timestamp_str, level, message = log_match.groups()
+                    
+                    try:
+                        timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        timestamp = datetime.now()
+                    
+                    # Apply time filter
+                    if time_cutoff and timestamp < time_cutoff:
+                        continue
+                    
+                    # Apply level filter
+                    if level_filter and level != level_filter:
+                        continue
+                    
+                    # Apply search filter
+                    if search_filter and search_filter.lower() not in message.lower():
+                        continue
+                    
+                    entries.append({
+                        'timestamp': timestamp.isoformat(),
+                        'level': level,
+                        'message': message,
+                        'line_number': line_num
+                    })
+                else:
+                    # Handle multi-line entries or malformed entries
+                    if entries:  # Append to last entry if it exists
+                        entries[-1]['message'] += '\n' + line
+    
+    except Exception as e:
+        logger.error(f"Error parsing log file {log_path}: {e}")
+    
+    return sorted(entries, key=lambda x: x['timestamp'], reverse=True)
+
+
+async def get_system_logs_htmx(
+    request: Request,
+    level: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    time_range: str = Query("24h"),
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> HTMLResponse:
+    """HTMX endpoint for system logs"""
+    try:
+        time_cutoff = parse_log_time_range(time_range)
+        
+        # Get logs from multiple sources
+        log_files = [
+            "polly.log",
+            "logs/polly.log",
+            "logs/error.log",
+            "logs/access.log"
+        ]
+        
+        all_entries = []
+        for log_file in log_files:
+            if os.path.exists(log_file):
+                entries = parse_log_file(log_file, level, search, time_cutoff)
+                all_entries.extend(entries)
+        
+        # Sort all entries by timestamp
+        all_entries = sorted(all_entries, key=lambda x: x['timestamp'], reverse=True)
+        
+        # Limit to 500 most recent entries
+        all_entries = all_entries[:500]
+        
+        return templates.TemplateResponse(
+            "htmx/super_admin_logs.html",
+            {
+                "request": request,
+                "log_entries": all_entries,
+                "filters": {
+                    "level": level,
+                    "search": search,
+                    "time_range": time_range
+                }
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting system logs: {e}")
+        return HTMLResponse(
+            content="<div class='alert alert-danger'>Error loading system logs</div>",
+            status_code=500
+        )
+
+
+async def download_logs_api(
+    request: Request,
+    level: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    time_range: str = Query("24h"),
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> StreamingResponse:
+    """Download filtered logs as text file"""
+    try:
+        time_cutoff = parse_log_time_range(time_range)
+        
+        log_files = [
+            "polly.log",
+            "logs/polly.log",
+            "logs/error.log",
+            "logs/access.log"
+        ]
+        
+        all_entries = []
+        for log_file in log_files:
+            if os.path.exists(log_file):
+                entries = parse_log_file(log_file, level, search, time_cutoff)
+                all_entries.extend(entries)
+        
+        # Sort all entries by timestamp
+        all_entries = sorted(all_entries, key=lambda x: x['timestamp'], reverse=True)
+        
+        # Generate log content
+        def generate_log_content():
+            yield f"# Polly System Logs Export\n"
+            yield f"# Generated: {datetime.now().isoformat()}\n"
+            yield f"# Filters: Level={level or 'All'}, Search={search or 'None'}, Time Range={time_range}\n"
+            yield f"# Total Entries: {len(all_entries)}\n\n"
+            
+            for entry in all_entries:
+                yield f"{entry['timestamp']} - {entry['level']} - {entry['message']}\n"
+        
+        filename = f"polly_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        
+        return StreamingResponse(
+            generate_log_content(),
+            media_type="text/plain",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error downloading logs: {e}")
+        raise HTTPException(status_code=500, detail="Error generating log download")
+
+
+async def get_redis_status_htmx(
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> HTMLResponse:
+    """HTMX endpoint for Redis status"""
+    try:
+        from .redis_client import get_redis_client
+        
+        redis_client = get_redis_client()
+        status_data = {
+            "connected": False,
+            "info": {},
+            "error": None
+        }
+        
+        if redis_client:
+            try:
+                # Test connection
+                redis_client.ping()
+                status_data["connected"] = True
+                
+                # Get Redis info
+                info = redis_client.info()
+                status_data["info"] = {
+                    "version": info.get("redis_version", "Unknown"),
+                    "uptime": info.get("uptime_in_seconds", 0),
+                    "connected_clients": info.get("connected_clients", 0),
+                    "used_memory": info.get("used_memory_human", "Unknown"),
+                    "total_commands_processed": info.get("total_commands_processed", 0),
+                    "keyspace_hits": info.get("keyspace_hits", 0),
+                    "keyspace_misses": info.get("keyspace_misses", 0)
+                }
+                
+            except Exception as e:
+                status_data["error"] = str(e)
+        else:
+            status_data["error"] = "Redis client not initialized"
+        
+        return templates.TemplateResponse(
+            "htmx/super_admin_redis_status.html",
+            {
+                "request": request,
+                "redis_status": status_data
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting Redis status: {e}")
+        return HTMLResponse(
+            content="<div class='alert alert-danger'>Error loading Redis status</div>",
+            status_code=500
+        )
+
+
+async def get_redis_stats_htmx(
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> HTMLResponse:
+    """HTMX endpoint for Redis cache statistics"""
+    try:
+        from .redis_client import get_redis_client
+        
+        redis_client = get_redis_client()
+        stats_data = {
+            "cache_keys": 0,
+            "poll_cache_keys": 0,
+            "user_cache_keys": 0,
+            "session_keys": 0,
+            "total_memory": "0B",
+            "hit_rate": 0.0,
+            "error": None
+        }
+        
+        if redis_client:
+            try:
+                # Get all keys with patterns
+                all_keys = redis_client.keys("*")
+                stats_data["cache_keys"] = len(all_keys)
+                
+                # Count specific key types
+                poll_keys = redis_client.keys("poll:*")
+                user_keys = redis_client.keys("user:*")
+                session_keys = redis_client.keys("session:*")
+                
+                stats_data["poll_cache_keys"] = len(poll_keys)
+                stats_data["user_cache_keys"] = len(user_keys)
+                stats_data["session_keys"] = len(session_keys)
+                
+                # Get memory info
+                info = redis_client.info("memory")
+                stats_data["total_memory"] = info.get("used_memory_human", "0B")
+                
+                # Calculate hit rate
+                keyspace_hits = redis_client.info().get("keyspace_hits", 0)
+                keyspace_misses = redis_client.info().get("keyspace_misses", 0)
+                total_requests = keyspace_hits + keyspace_misses
+                
+                if total_requests > 0:
+                    stats_data["hit_rate"] = (keyspace_hits / total_requests) * 100
+                
+            except Exception as e:
+                stats_data["error"] = str(e)
+        else:
+            stats_data["error"] = "Redis client not initialized"
+        
+        return templates.TemplateResponse(
+            "htmx/super_admin_redis_stats.html",
+            {
+                "request": request,
+                "redis_stats": stats_data
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting Redis stats: {e}")
+        return HTMLResponse(
+            content="<div class='alert alert-danger'>Error loading Redis stats</div>",
+            status_code=500
+        )
+
+
+async def export_system_data_api(
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> StreamingResponse:
+    """Export comprehensive system data"""
+    try:
+        db = get_db_session()
+        try:
+            # Get all system data
+            stats = super_admin_service.get_system_stats(db)
+            all_polls = super_admin_service.get_all_polls(db, limit=10000)
+            
+            export_data = {
+                "export_info": {
+                    "generated_at": datetime.now().isoformat(),
+                    "generated_by": current_user.username,
+                    "version": "1.0"
+                },
+                "system_stats": stats,
+                "polls_summary": {
+                    "total_count": all_polls["total_count"],
+                    "polls": all_polls["polls"]
+                }
+            }
+            
+            def generate_export():
+                yield json.dumps(export_data, indent=2, default=str)
+            
+            filename = f"polly_system_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            return StreamingResponse(
+                generate_export(),
+                media_type="application/json",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error exporting system data: {e}")
+        raise HTTPException(status_code=500, detail="Error generating system export")
+
+
 def add_super_admin_routes(app):
     """Add super admin routes to the FastAPI app"""
 
@@ -383,3 +728,41 @@ def add_super_admin_routes(app):
         poll_id: int, request: Request, current_user: DiscordUser = Depends(require_super_admin)
     ):
         return await get_poll_details_htmx(poll_id, request, current_user)
+
+    @app.get("/super-admin/htmx/logs", response_class=HTMLResponse)
+    async def super_admin_logs_htmx(
+        request: Request,
+        level: Optional[str] = Query(None),
+        search: Optional[str] = Query(None),
+        time_range: str = Query("24h"),
+        current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await get_system_logs_htmx(request, level, search, time_range, current_user)
+
+    @app.get("/super-admin/api/logs/download")
+    async def super_admin_download_logs(
+        request: Request,
+        level: Optional[str] = Query(None),
+        search: Optional[str] = Query(None),
+        time_range: str = Query("24h"),
+        current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await download_logs_api(request, level, search, time_range, current_user)
+
+    @app.get("/super-admin/htmx/redis/status", response_class=HTMLResponse)
+    async def super_admin_redis_status_htmx(
+        request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await get_redis_status_htmx(request, current_user)
+
+    @app.get("/super-admin/htmx/redis/stats", response_class=HTMLResponse)
+    async def super_admin_redis_stats_htmx(
+        request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await get_redis_stats_htmx(request, current_user)
+
+    @app.get("/super-admin/api/export/system-data")
+    async def super_admin_export_system_data(
+        request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await export_system_data_api(request, current_user)
