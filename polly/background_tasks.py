@@ -915,16 +915,40 @@ async def reaction_safeguard_task():
                                                     )
 
                                                     if result["success"]:
+                                                        vote_action = result.get("action", "unknown")
+                                                        
                                                         # Vote was processed successfully - remove the reaction
                                                         try:
                                                             await reaction.remove(user)
                                                             logger.info(
-                                                                f"✅ Safeguard: Vote processed and reaction removed for user {user.id} on poll {poll_id} (action: {result.get('action', 'unknown')})"
+                                                                f"✅ Safeguard: Vote processed and reaction removed for user {user.id} on poll {poll_id} (action: {vote_action})"
                                                             )
                                                         except Exception as remove_error:
                                                             logger.warning(
                                                                 f"⚠️ Safeguard: Vote processed but failed to remove reaction from user {user.id}: {remove_error}"
                                                             )
+
+                                                        # Send DM confirmation to the voter
+                                                        try:
+                                                            from .discord_utils import send_vote_confirmation_dm
+
+                                                            logger.info(f"🔔 SAFEGUARD DM DEBUG - About to send DM for vote_action: {vote_action} to user {user.id}")
+                                                            dm_sent = await send_vote_confirmation_dm(
+                                                                bot, poll, str(user.id), option_index, vote_action
+                                                            )
+                                                            if dm_sent:
+                                                                logger.info(
+                                                                    f"✅ Safeguard: Vote confirmation DM sent to user {user.id} for poll {poll_id} (action: {vote_action})"
+                                                                )
+                                                            else:
+                                                                logger.warning(
+                                                                    f"⚠️ Safeguard: Vote confirmation DM not sent to user {user.id} (DMs disabled or error) (action: {vote_action})"
+                                                                )
+                                                        except Exception as dm_error:
+                                                            logger.error(
+                                                                f"❌ Safeguard: Failed to send vote confirmation DM to user {user.id}: {dm_error} (action: {vote_action})"
+                                                            )
+                                                            # Don't fail the vote process if DM fails
 
                                                         # Update poll embed for live updates
                                                         try:
