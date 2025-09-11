@@ -387,40 +387,54 @@ def parse_log_file(log_path: str, level_filter: Optional[str] = None,
                             'line_number': line_num
                         })
                     else:
-                        # Handle multi-line entries or malformed entries - COMPLETELY BULLETPROOF VERSION
-                        # Avoid entries[-1] entirely to prevent any IndexError
+                        # Handle multi-line entries or malformed entries - ULTIMATE BULLETPROOF VERSION
+                        # This version completely eliminates any possibility of KeyError or IndexError
                         try:
-                            # Get the last entry safely without using [-1]
+                            # Get the last entry with maximum safety
                             last_entry = None
+                            can_append_to_last = False
+                            
                             if entries and len(entries) > 0:
                                 try:
-                                    last_entry = entries[len(entries) - 1]  # Safe alternative to [-1]
-                                except (IndexError, TypeError):
-                                    last_entry = None
+                                    # Get last entry using safe index access
+                                    last_index = len(entries) - 1
+                                    if last_index >= 0 and last_index < len(entries):
+                                        potential_last_entry = entries[last_index]
+                                        
+                                        # Verify it's a valid dict with message key
+                                        if (isinstance(potential_last_entry, dict) and 
+                                            'message' in potential_last_entry and 
+                                            isinstance(potential_last_entry.get('message'), str)):
+                                            last_entry = potential_last_entry
+                                            can_append_to_last = True
+                                            
+                                except (IndexError, TypeError, KeyError, AttributeError):
+                                    # Any error means we can't safely append
+                                    can_append_to_last = False
                             
-                            # Check if we can append to the last entry
-                            if (last_entry is not None and 
-                                isinstance(last_entry, dict) and 
-                                'message' in last_entry and 
-                                isinstance(last_entry['message'], str)):
+                            # Only append if we're 100% sure it's safe
+                            if can_append_to_last and last_entry is not None:
                                 try:
-                                    last_entry['message'] += '\n' + line
-                                except (KeyError, TypeError, AttributeError):
-                                    # If appending fails, create new entry
-                                    entries.append({
-                                        'timestamp': datetime.now().isoformat(),
-                                        'level': 'INFO',
-                                        'message': line,
-                                        'line_number': line_num
-                                    })
-                            else:
-                                # Create new entry if no valid last entry exists
+                                    # Double-check the message key exists and is a string
+                                    current_message = last_entry.get('message', '')
+                                    if isinstance(current_message, str):
+                                        last_entry['message'] = current_message + '\n' + line
+                                    else:
+                                        # Message isn't a string, create new entry instead
+                                        raise ValueError("Message is not a string")
+                                except (KeyError, TypeError, AttributeError, ValueError):
+                                    # If anything goes wrong, create new entry
+                                    can_append_to_last = False
+                            
+                            # If we couldn't append safely, create new entry
+                            if not can_append_to_last:
                                 entries.append({
                                     'timestamp': datetime.now().isoformat(),
                                     'level': 'INFO',
                                     'message': line,
                                     'line_number': line_num
                                 })
+                                
                         except Exception as inner_e:
                             # Ultimate fallback - create new entry or skip line
                             logger.warning(f"Error handling log line {line_num}, creating new entry: {inner_e}")
