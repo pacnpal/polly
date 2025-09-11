@@ -83,24 +83,33 @@
                         </div>
 
                         <!-- Image Section -->
-                        {% if poll.image_path %}
-                        <div class="mb-3">
-                            <label class="form-label">Current Image</label>
-                            <div class="card" style="max-width: 300px;">
-                                <img src="/{{ poll.image_path }}" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Current poll image">
-                                <div class="card-body p-2">
-                                    <small class="text-muted">{{ poll.image_path }}</small>
+                        <div class="mb-4">
+                            <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-image me-2"></i>Image Settings</h6>
+                            
+                            {% if poll.image_path %}
+                            <div class="mb-3">
+                                <label class="form-label">Current Image</label>
+                                <div class="card" style="max-width: 300px;">
+                                    <img src="/{{ poll.image_path }}" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Current poll image">
+                                    <div class="card-body p-2">
+                                        <small class="text-muted">{{ poll.image_path }}</small>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        {% endif %}
+                            {% endif %}
 
-                        {% if poll.image_message_text %}
-                        <div class="mb-3">
-                            <label for="image-message-text" class="form-label">Image Message Text</label>
-                            <textarea class="form-control" id="image-message-text" name="image_message_text" rows="2">{{ poll.image_message_text }}</textarea>
+                            <div class="mb-3">
+                                <label for="image-path" class="form-label">Image Path</label>
+                                <input type="text" class="form-control" id="image-path" name="image_path" value="{{ poll.image_path or '' }}" placeholder="e.g., static/uploads/image.png">
+                                <div class="form-text">Enter the path to an image file, or leave blank to remove image</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="image-message-text" class="form-label">Image Message Text</label>
+                                <textarea class="form-control" id="image-message-text" name="image_message_text" rows="2" placeholder="Optional text to display with the image">{{ poll.image_message_text or '' }}</textarea>
+                                <div class="form-text">This text will be posted along with the image before the poll</div>
+                            </div>
                         </div>
-                        {% endif %}
 
                         <div class="mb-3">
                             <div class="form-check">
