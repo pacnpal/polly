@@ -868,14 +868,32 @@ def add_static_poll_routes(app: FastAPI):
     """Add static poll page routes to serve cached content for closed polls"""
     from .static_page_generator import get_static_page_generator
     from fastapi.responses import FileResponse
+    import os
     
     @app.get("/poll/{poll_id}/static", response_class=HTMLResponse)
     async def serve_static_poll_details(poll_id: int, request: Request):
-        """Serve static poll details page for closed polls using proper template"""
+        """Serve static poll details page - checks for pre-generated static file first, falls back to dynamic generation"""
         try:
             from .database import Poll, Vote, TypeSafeColumn
             from datetime import datetime
             
+            # First, check if a pre-generated static file exists
+            static_file_path = f"static/polls/poll_{poll_id}_details.html"
+            if os.path.exists(static_file_path):
+                logger.info(f"📄 STATIC SERVE - Serving pre-generated static file for poll {poll_id}: {static_file_path}")
+                return FileResponse(
+                    path=static_file_path,
+                    media_type="text/html",
+                    headers={
+                        "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+                        "X-Static-Content": "true",
+                        "X-Static-Source": "pre-generated-file"
+                    }
+                )
+            
+            logger.info(f"📄 STATIC SERVE - No pre-generated file found for poll {poll_id}, falling back to dynamic generation")
+            
+            # Fallback to dynamic generation (original code)
             # Get poll data directly from database since we need the full poll object
             db = get_db_session()
             try:
@@ -968,6 +986,7 @@ def add_static_poll_routes(app: FastAPI):
                 )
                 response.headers["Cache-Control"] = "public, max-age=86400"
                 response.headers["X-Static-Content"] = "true"
+                response.headers["X-Static-Source"] = "dynamic-generation"
                 return response
                 
             finally:
