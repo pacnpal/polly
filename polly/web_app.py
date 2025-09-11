@@ -1187,7 +1187,8 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        return await get_poll_details_htmx(poll_id, request, current_user)
+        bot = get_bot_instance()
+        return await get_poll_details_htmx(poll_id, request, bot, current_user)
 
     @app.get("/htmx/poll/{poll_id}/results-realtime", response_class=HTMLResponse)
     async def htmx_poll_results_realtime(
