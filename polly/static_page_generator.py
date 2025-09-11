@@ -138,16 +138,21 @@ class StaticPageGenerator:
                         
                         if bot and user_id:
                             try:
-                                discord_user = await bot.fetch_user(int(user_id))
-                                if discord_user:
-                                    username = discord_user.display_name or discord_user.name
-                                    # Get cached avatar URL
-                                    if discord_user.avatar:
-                                        original_avatar_url = discord_user.avatar.url
-                                        cached_avatar_url = await avatar_cache.cache_user_avatar(
-                                            user_id, original_avatar_url, username
-                                        )
-                                        avatar_url = cached_avatar_url or original_avatar_url
+                                # Check if bot is ready before attempting to fetch user
+                                if hasattr(bot, 'is_ready') and bot.is_ready():
+                                    discord_user = await bot.fetch_user(int(user_id))
+                                    if discord_user:
+                                        username = discord_user.display_name or discord_user.name
+                                        # Get cached avatar URL
+                                        if discord_user.avatar:
+                                            original_avatar_url = discord_user.avatar.url
+                                            cached_avatar_url = await avatar_cache.cache_user_avatar(
+                                                user_id, original_avatar_url, username
+                                            )
+                                            avatar_url = cached_avatar_url or original_avatar_url
+                                else:
+                                    logger.warning(f"Discord bot not ready, using fallback username for user {user_id}")
+                                    username = f"User {user_id[:8]}..."
                             except Exception as e:
                                 logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
                                 username = f"User {user_id[:8]}..."
@@ -268,16 +273,21 @@ class StaticPageGenerator:
                         
                         if bot and user_id:
                             try:
-                                discord_user = await bot.fetch_user(int(user_id))
-                                if discord_user:
-                                    username = discord_user.display_name or discord_user.name
-                                    # Get cached avatar URL
-                                    if discord_user.avatar:
-                                        original_avatar_url = discord_user.avatar.url
-                                        cached_avatar_url = await avatar_cache.cache_user_avatar(
-                                            user_id, original_avatar_url, username
-                                        )
-                                        avatar_url = cached_avatar_url or original_avatar_url
+                                # Check if bot is ready before attempting to fetch user
+                                if hasattr(bot, 'is_ready') and bot.is_ready():
+                                    discord_user = await bot.fetch_user(int(user_id))
+                                    if discord_user:
+                                        username = discord_user.display_name or discord_user.name
+                                        # Get cached avatar URL
+                                        if discord_user.avatar:
+                                            original_avatar_url = discord_user.avatar.url
+                                            cached_avatar_url = await avatar_cache.cache_user_avatar(
+                                                user_id, original_avatar_url, username
+                                            )
+                                            avatar_url = cached_avatar_url or original_avatar_url
+                                else:
+                                    logger.warning(f"Discord bot not ready, using fallback username for user {user_id}")
+                                    username = f"User {user_id[:8]}..."
                             except Exception as e:
                                 logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
                                 username = f"User {user_id[:8]}..."
