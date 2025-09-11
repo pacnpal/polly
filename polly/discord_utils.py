@@ -412,27 +412,26 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     # Show close time for scheduled and active polls
     if poll_status in ["scheduled", "active"]:
         poll_timezone = str(getattr(poll, "timezone", "UTC"))
-        if poll_timezone and poll_timezone != "UTC":
-            try:
-                # Validate and normalize timezone first
-                from .utils import validate_and_normalize_timezone
-
-                normalized_tz = validate_and_normalize_timezone(poll_timezone)
-                tz = pytz.timezone(normalized_tz)
-                local_close = poll.close_time.astimezone(tz)
-                embed.add_field(
-                    name=f"Closes ({normalized_tz})",
-                    value=local_close.strftime("%Y-%m-%d %I:%M %p"),
-                    inline=True,
-                )
-            except Exception as e:
-                logger.debug(f"Could not format timezone {poll_timezone}: {e}")
-                # Fallback to UTC
-                embed.add_field(
-                    name="Closes (UTC)",
-                    value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
-                    inline=True,
-                )
+        try:
+            # Use the new helper function to format closing time with Today/Tomorrow
+            from .utils import format_poll_closing_time, validate_and_normalize_timezone
+            
+            formatted_time = format_poll_closing_time(poll.close_time, poll_timezone)
+            normalized_tz = validate_and_normalize_timezone(poll_timezone)
+            
+            embed.add_field(
+                name=f"Closes ({normalized_tz})",
+                value=formatted_time,
+                inline=True,
+            )
+        except Exception as e:
+            logger.debug(f"Could not format closing time for timezone {poll_timezone}: {e}")
+            # Fallback to UTC
+            embed.add_field(
+                name="Closes (UTC)",
+                value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
+                inline=True,
+            )
 
     # Add poll info in footer without Poll ID
     embed.set_footer(text="Created by Polly")
@@ -1369,7 +1368,7 @@ async def send_vote_confirmation_dm(
             action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
             
         elif vote_action == "already_recorded":
-            action_description = f"🗳️ **Vote Confirmation**\n\nYour vote for {selected_emoji} **{selected_option}** was previously recorded.\n\n💡 Your vote already counted and this is just confirmation of your vote."
+            action_description = f"Your vote for {selected_emoji} **{selected_option}** was previously recorded.\n\n💡 Your vote already counted and this is just confirmation of your vote."
 
         else:
             # Fallback for unknown actions

@@ -7,7 +7,7 @@ import logging
 import os
 import uuid
 import aiofiles
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -209,6 +209,50 @@ def format_datetime_for_user(dt: datetime, user_timezone: str) -> str:
         )
         # Fallback to UTC
         return dt.strftime("%b %d, %I:%M %p UTC")
+
+
+def format_poll_closing_time(dt: datetime, poll_timezone: str) -> str:
+    """Format poll closing time with relative dates (Today/Tomorrow) when appropriate"""
+    try:
+        if dt.tzinfo is None:
+            # Assume UTC if no timezone info
+            dt = pytz.UTC.localize(dt)
+
+        # Convert to poll's timezone
+        poll_tz = pytz.timezone(validate_and_normalize_timezone(poll_timezone))
+        local_dt = dt.astimezone(poll_tz)
+        
+        # Get current time in the same timezone
+        now = datetime.now(poll_tz)
+        
+        # Get date components
+        today = now.date()
+        tomorrow = (now + timedelta(days=1)).date()
+        closing_date = local_dt.date()
+        
+        # Format time part
+        time_str = local_dt.strftime("%I:%M %p")
+        
+        # Determine if it's today, tomorrow, or a specific date
+        if closing_date == today:
+            return f"Today at {time_str}"
+        elif closing_date == tomorrow:
+            return f"Tomorrow at {time_str}"
+        else:
+            # For dates beyond tomorrow, show the full date
+            return local_dt.strftime("%Y-%m-%d %I:%M %p")
+            
+    except Exception as e:
+        logger.error(
+            f"Error formatting poll closing time {dt} for timezone {poll_timezone}: {e}"
+        )
+        # Fallback to standard format
+        try:
+            if dt.tzinfo is None:
+                dt = pytz.UTC.localize(dt)
+            return dt.strftime("%Y-%m-%d %I:%M %p UTC")
+        except Exception:
+            return "Invalid date"
 
 
 def get_common_timezones() -> List[Dict[str, str]]:
