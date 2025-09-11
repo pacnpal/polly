@@ -8,13 +8,14 @@ import sys
 import os
 from datetime import datetime
 from decouple import config
+import discord
+from discord.ext import commands
 
 # Add the project directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from polly.database import get_db_session, Poll, TypeSafeColumn
 from polly.static_page_generator import get_static_page_generator
-from polly.discord_bot import get_bot_instance, start_bot, shutdown_bot
 
 async def force_regenerate_all_static():
     """Force regenerate static components for all closed polls"""
@@ -36,125 +37,139 @@ async def force_regenerate_all_static():
             print("⚠️ FORCE REGENERATE - No closed polls found")
             return
         
-        # Start Discord bot if token is available
-        if discord_token:
-            print("🤖 FORCE REGENERATE - Starting Discord bot for real username fetching...")
-            bot = get_bot_instance()
-            
-            # Start the bot in the background
-            bot_task = asyncio.create_task(bot.start(discord_token))
-            
-            # Wait for bot to be ready (with timeout)
-            try:
-                await asyncio.wait_for(bot.wait_until_ready(), timeout=30.0)
-                print("✅ FORCE REGENERATE - Discord bot is ready for real username fetching and avatar caching")
-            except asyncio.TimeoutError:
-                print("⚠️ FORCE REGENERATE - Discord bot startup timed out, using fallback usernames")
-                bot = None
-        else:
-            print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic and no avatars cached")
-        
         # Get static page generator
         generator = get_static_page_generator()
         
-        success_count = 0
-        error_count = 0
-        
-        # Process each closed poll
-        for poll in closed_polls:
-            poll_id = TypeSafeColumn.get_int(poll, "id")
-            poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
+        # Create and start Discord bot if token is available
+        if discord_token:
+            print("🤖 FORCE REGENERATE - Creating Discord bot for real username fetching...")
             
-            print(f"\n🔧 FORCE REGENERATE - Processing poll {poll_id}: '{poll_name}'")
+            # Create a fresh bot instance for this script
+            intents = discord.Intents.default()
+            intents.message_content = True
+            intents.guilds = True
+            bot = commands.Bot(command_prefix=lambda bot, message: None, intents=intents)
             
+            # Start the bot and wait for it to be ready
             try:
-                # Force regenerate all static content with image compression and real usernames
-                results = await generator.generate_all_static_content(poll_id, bot)
-                print(f"🔧 DEBUG - About to generate static content for poll {poll_id} with bot: {bool(bot)}")
+                print("🤖 FORCE REGENERATE - Starting Discord bot connection...")
                 
-                if all(results.values()):
-                    print(f"✅ FORCE REGENERATE - Successfully generated all static content for poll {poll_id}")
-                    success_count += 1
+                # Use async context manager to properly start and stop the bot
+                async with bot:
+                    await bot.start(discord_token)
+                    print("✅ FORCE REGENERATE - Discord bot is ready for real username fetching and avatar caching")
                     
-                    # Verify the files were created
-                    static_path = generator._get_static_page_path(poll_id, "details")
-                    data_path = generator._get_static_data_path(poll_id)
+                    # Process polls with the ready bot
+                    await process_polls_with_bot(bot, closed_polls, generator)
                     
-                    if static_path.exists():
-                        file_size = static_path.stat().st_size
-                        print(f"📁 FORCE REGENERATE - Static HTML created: {static_path} ({file_size} bytes)")
-                        
-                        # Check content preview
-                        with open(static_path, 'r', encoding='utf-8') as f:
-                            content = f.read(200)
-                        
-                        # Verify it's a component (not full HTML document)
-                        if content.strip().startswith('<!-- Static Poll Details Component'):
-                            print(f"✅ FORCE REGENERATE - Verified component format for poll {poll_id}")
-                        else:
-                            print(f"⚠️ FORCE REGENERATE - Warning: poll {poll_id} may not be in component format")
+                print("🤖 FORCE REGENERATE - Discord bot connection closed")
+                return  # Exit early since we processed everything inside the context manager
+                
+            except Exception as e:
+                print(f"⚠️ FORCE REGENERATE - Discord bot startup failed: {e}, using fallback usernames")
+                bot = None
+        else:
+            print("⚠️ FORCE REGENERATE - Discord bot not available, usernames will be generic and no avatars cached")
+            bot = None
+        
+        # Process polls without bot (fallback)
+        await process_polls_with_bot(bot, closed_polls, generator)
+        
+    finally:
+        db.close()
+
+async def process_polls_with_bot(bot, closed_polls, generator):
+    """Process all closed polls with or without bot"""
+    success_count = 0
+    error_count = 0
+    
+    # Process each closed poll
+    for poll in closed_polls:
+        poll_id = TypeSafeColumn.get_int(poll, "id")
+        poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
+        
+        print(f"\n🔧 FORCE REGENERATE - Processing poll {poll_id}: '{poll_name}'")
+        
+        try:
+            # Force regenerate all static content with image compression and real usernames
+            results = await generator.generate_all_static_content(poll_id, bot)
+            print(f"🔧 DEBUG - About to generate static content for poll {poll_id} with bot: {bool(bot)}")
+            
+            if all(results.values()):
+                print(f"✅ FORCE REGENERATE - Successfully generated all static content for poll {poll_id}")
+                success_count += 1
+                
+                # Verify the files were created
+                static_path = generator._get_static_page_path(poll_id, "details")
+                data_path = generator._get_static_data_path(poll_id)
+                
+                if static_path.exists():
+                    file_size = static_path.stat().st_size
+                    print(f"📁 FORCE REGENERATE - Static HTML created: {static_path} ({file_size} bytes)")
+                    
+                    # Check content preview
+                    with open(static_path, 'r', encoding='utf-8') as f:
+                        content = f.read(200)
+                    
+                    # Verify it's a component (not full HTML document)
+                    if content.strip().startswith('<!-- Static Poll Details Component'):
+                        print(f"✅ FORCE REGENERATE - Verified component format for poll {poll_id}")
                     else:
-                        print(f"❌ FORCE REGENERATE - Static HTML file not found after generation for poll {poll_id}")
-                        error_count += 1
-                        
-                    if data_path.exists():
-                        data_size = data_path.stat().st_size
-                        print(f"📁 FORCE REGENERATE - Static JSON created: {data_path} ({data_size} bytes)")
-                    else:
-                        print(f"❌ FORCE REGENERATE - Static JSON file not found after generation for poll {poll_id}")
-                        
-                    # Show processing results
-                    if results.get("details_page"):
-                        print(f"🖼️ FORCE REGENERATE - Images processed and compressed for poll {poll_id}")
-                        if bot:
-                            print(f"👤 FORCE REGENERATE - Real Discord usernames and avatars cached for poll {poll_id}")
-                        else:
-                            print(f"👤 FORCE REGENERATE - Generic usernames used (no Discord bot) for poll {poll_id}")
+                        print(f"⚠️ FORCE REGENERATE - Warning: poll {poll_id} may not be in component format")
                 else:
-                    failed_components = [k for k, v in results.items() if not v]
-                    print(f"❌ FORCE REGENERATE - Failed to generate some static content for poll {poll_id}: {failed_components}")
+                    print(f"❌ FORCE REGENERATE - Static HTML file not found after generation for poll {poll_id}")
                     error_count += 1
                     
-            except Exception as e:
-                print(f"❌ FORCE REGENERATE - Error processing poll {poll_id}: {e}")
-                error_count += 1
-                import traceback
-                traceback.print_exc()
-        
-        print("\n📊 FORCE REGENERATE - Summary:")
-        print(f"✅ Successfully processed: {success_count} polls")
-        print(f"❌ Errors: {error_count} polls")
-        print(f"📊 Total closed polls: {len(closed_polls)}")
-        
-        # Get image storage statistics
-        if success_count > 0:
-            try:
-                image_stats = await generator.get_image_storage_stats()
-                print("\n🖼️ IMAGE COMPRESSION - Statistics:")
-                print(f"📊 Total storage: {image_stats['total_storage_mb']:.1f}MB")
-                print(f"🔗 Shared images: {image_stats['shared_images']['count']} files ({image_stats['shared_images']['total_size_mb']:.1f}MB)")
-                print(f"📁 Poll-specific images: {image_stats['poll_specific_images']['count']} files ({image_stats['poll_specific_images']['total_size_mb']:.1f}MB)")
-                print(f"♻️ Deduplication: {'Enabled' if image_stats['deduplication_enabled'] else 'Disabled'}")
-                print(f"📏 Max image size: {image_stats['max_image_size_mb']}MB")
-                
-                if image_stats['shared_images']['formats']:
-                    print(f"🎨 Image formats: {', '.join(f'{ext}({count})' for ext, count in image_stats['shared_images']['formats'].items())}")
+                if data_path.exists():
+                    data_size = data_path.stat().st_size
+                    print(f"📁 FORCE REGENERATE - Static JSON created: {data_path} ({data_size} bytes)")
+                else:
+                    print(f"❌ FORCE REGENERATE - Static JSON file not found after generation for poll {poll_id}")
                     
-            except Exception as e:
-                print(f"⚠️ IMAGE COMPRESSION - Could not get statistics: {e}")
+                # Show processing results
+                if results.get("details_page"):
+                    print(f"🖼️ FORCE REGENERATE - Images processed and compressed for poll {poll_id}")
+                    if bot:
+                        print(f"👤 FORCE REGENERATE - Real Discord usernames and avatars cached for poll {poll_id}")
+                    else:
+                        print(f"👤 FORCE REGENERATE - Generic usernames used (no Discord bot) for poll {poll_id}")
+            else:
+                failed_components = [k for k, v in results.items() if not v]
+                print(f"❌ FORCE REGENERATE - Failed to generate some static content for poll {poll_id}: {failed_components}")
+                error_count += 1
+                
+        except Exception as e:
+            print(f"❌ FORCE REGENERATE - Error processing poll {poll_id}: {e}")
+            error_count += 1
+            import traceback
+            traceback.print_exc()
+    
+    print("\n📊 FORCE REGENERATE - Summary:")
+    print(f"✅ Successfully processed: {success_count} polls")
+    print(f"❌ Errors: {error_count} polls")
+    print(f"📊 Total closed polls: {len(closed_polls)}")
+    
+    # Get image storage statistics
+    if success_count > 0:
+        try:
+            image_stats = await generator.get_image_storage_stats()
+            print("\n🖼️ IMAGE COMPRESSION - Statistics:")
+            print(f"📊 Total storage: {image_stats['total_storage_mb']:.1f}MB")
+            print(f"🔗 Shared images: {image_stats['shared_images']['count']} files ({image_stats['shared_images']['total_size_mb']:.1f}MB)")
+            print(f"📁 Poll-specific images: {image_stats['poll_specific_images']['count']} files ({image_stats['poll_specific_images']['total_size_mb']:.1f}MB)")
+            print(f"♻️ Deduplication: {'Enabled' if image_stats['deduplication_enabled'] else 'Disabled'}")
+            print(f"📏 Max image size: {image_stats['max_image_size_mb']}MB")
             
-            print(f"\n🎉 FORCE REGENERATE - Successfully regenerated {success_count} static poll components with image compression!")
+            if image_stats['shared_images']['formats']:
+                print(f"🎨 Image formats: {', '.join(f'{ext}({count})' for ext, count in image_stats['shared_images']['formats'].items())}")
+                
+        except Exception as e:
+            print(f"⚠️ IMAGE COMPRESSION - Could not get statistics: {e}")
         
-        if error_count > 0:
-            print(f"\n⚠️ FORCE REGENERATE - {error_count} polls had errors during regeneration")
-            
-    finally:
-        # Clean up Discord bot
-        if bot and not bot.is_closed():
-            print("🤖 FORCE REGENERATE - Shutting down Discord bot...")
-            await bot.close()
-        
-        db.close()
+        print(f"\n🎉 FORCE REGENERATE - Successfully regenerated {success_count} static poll components with image compression!")
+    
+    if error_count > 0:
+        print(f"\n⚠️ FORCE REGENERATE - {error_count} polls had errors during regeneration")
 
 async def test_component_loading():
     """Test that the HTMX endpoint properly loads static components"""
