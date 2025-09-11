@@ -140,6 +140,10 @@ class StaticPageGenerator:
                             try:
                                 # Check if bot is ready before attempting to fetch user
                                 if hasattr(bot, 'is_ready') and bot.is_ready():
+                                    # Additional rate limiting protection in static generator
+                                    import asyncio
+                                    await asyncio.sleep(0.1)  # Extra 100ms delay for safety
+                                    
                                     discord_user = await bot.fetch_user(int(user_id))
                                     if discord_user:
                                         username = discord_user.display_name or discord_user.name
@@ -276,6 +280,10 @@ class StaticPageGenerator:
                             try:
                                 # Check if bot is ready before attempting to fetch user
                                 if hasattr(bot, 'is_ready') and bot.is_ready():
+                                    # Additional rate limiting protection in static generator
+                                    import asyncio
+                                    await asyncio.sleep(0.1)  # Extra 100ms delay for safety
+                                    
                                     discord_user = await bot.fetch_user(int(user_id))
                                     if discord_user:
                                         username = discord_user.display_name or discord_user.name

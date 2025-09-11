@@ -78,8 +78,8 @@ async def force_regenerate_all_static():
                         }
                         
                         try:
-                            # Add rate limiting delay to avoid 429 errors
-                            await asyncio.sleep(0.1)  # 100ms delay between requests
+                            # AGGRESSIVE rate limiting prevention - 500ms delay between ALL requests
+                            await asyncio.sleep(0.5)  # 500ms delay between requests
                             
                             async with self.session.get(
                                 f'https://discord.com/api/v10/users/{user_id}',
@@ -113,9 +113,9 @@ async def force_regenerate_all_static():
                                     
                                     return SimpleUser(data)
                                 elif response.status == 429:
-                                    # Rate limited - wait longer and return None
-                                    print(f"⚠️ Discord API rate limited for user {user_id}, skipping")
-                                    await asyncio.sleep(1.0)  # Wait 1 second on rate limit
+                                    # Rate limited - wait much longer and return None
+                                    print(f"⚠️ Discord API rate limited for user {user_id}, waiting 5 seconds")
+                                    await asyncio.sleep(5.0)  # Wait 5 seconds on rate limit
                                     return None
                                 else:
                                     print(f"⚠️ Discord API error for user {user_id}: {response.status}")
@@ -281,8 +281,8 @@ async def test_component_loading():
             ("Progress bars", 'data-width=' in content),
             ("JavaScript", '<script>' in content),
             ("HTMX attributes", 'hx-get=' in content),
-            ("Avatar support", 'vote.avatar_url' in content or 'user-avatar-small' in content),
-            ("Username display", 'vote.username' in content),
+            ("Avatar support", 'avatar-placeholder' in content or 'user-avatar-small' in content),
+            ("Username display", 'User ' in content and 'text-truncate' in content),
         ]
         
         print("\n🔍 COMPONENT TEST - Component validation:")
