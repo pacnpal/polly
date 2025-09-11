@@ -169,6 +169,7 @@ async def on_reaction_add(reaction, user):
         if result["success"]:
             # Vote was successfully recorded - handle reaction based on poll type and anonymity
             vote_action = result.get("action", "unknown")
+            logger.info(f"🔔 DM DEBUG - Vote processing successful, vote_action: {vote_action}, poll_id: {poll_id}, user: {user.id}")
 
             # Check poll properties safely using TypeSafeColumn
             is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
@@ -206,10 +207,12 @@ async def on_reaction_add(reaction, user):
             try:
                 from .discord_utils import send_vote_confirmation_dm
 
-                logger.info(f"🔔 DM DEBUG - Attempting to send DM for vote_action: {vote_action} to user {user.id}")
+                logger.info(f"🔔 DM DEBUG - About to call send_vote_confirmation_dm for vote_action: {vote_action} to user {user.id}")
+                logger.info(f"🔔 DM DEBUG - Parameters: poll_id={poll_id}, user_id={user.id}, option_index={option_index}, vote_action={vote_action}")
                 dm_sent = await send_vote_confirmation_dm(
                     bot, poll, str(user.id), option_index, vote_action
                 )
+                logger.info(f"🔔 DM DEBUG - send_vote_confirmation_dm returned: {dm_sent}")
                 if dm_sent:
                     logger.info(
                         f"✅ Vote confirmation DM sent to user {user.id} for poll {poll_id} (action: {vote_action})"
