@@ -1,0 +1,173 @@
+<div class="row">
+    <div class="col-md-6">
+        <h6 class="fw-bold mb-3">Poll Information</h6>
+        <table class="table table-sm">
+            <tr>
+                <td class="fw-bold">ID:</td>
+                <td>#{{ poll_details.poll.id }}</td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Name:</td>
+                <td>{{ poll_details.poll.name }}</td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Question:</td>
+                <td>{{ poll_details.poll.question }}</td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Status:</td>
+                <td>
+                    <span class="badge {% if poll_details.poll.status == 'active' %}bg-success{% elif poll_details.poll.status == 'scheduled' %}bg-warning{% else %}bg-secondary{% endif %}">
+                        {{ poll_details.poll.status.upper() }}
+                    </span>
+                </td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Server:</td>
+                <td>
+                    {{ poll_details.poll.server_name }}<br>
+                    <small class="text-muted">{{ poll_details.poll.server_id }}</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Channel:</td>
+                <td>
+                    #{{ poll_details.poll.channel_name }}<br>
+                    <small class="text-muted">{{ poll_details.poll.channel_id }}</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Creator:</td>
+                <td>
+                    {{ poll_details.poll.creator_username }}<br>
+                    <small class="text-muted">{{ poll_details.poll.creator_id }}</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Created:</td>
+                <td>{{ poll_details.poll.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Opens:</td>
+                <td>{{ poll_details.poll.open_time.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Closes:</td>
+                <td>{{ poll_details.poll.close_time.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
+            </tr>
+            <tr>
+                <td class="fw-bold">Timezone:</td>
+                <td>{{ poll_details.poll.timezone }}</td>
+            </tr>
+            {% if poll_details.poll.message_id %}
+            <tr>
+                <td class="fw-bold">Message ID:</td>
+                <td>{{ poll_details.poll.message_id }}</td>
+            </tr>
+            {% endif %}
+        </table>
+
+        <h6 class="fw-bold mb-3 mt-4">Poll Settings</h6>
+        <div class="mb-2">
+            {% if poll_details.poll.anonymous %}
+            <span class="badge bg-info me-1"><i class="fas fa-eye-slash"></i> Anonymous</span>
+            {% endif %}
+            {% if poll_details.poll.multiple_choice %}
+            <span class="badge bg-primary me-1"><i class="fas fa-list"></i> Multiple Choice</span>
+            {% endif %}
+            {% if poll_details.poll.ping_role_enabled %}
+            <span class="badge bg-warning me-1"><i class="fas fa-bell"></i> Role Ping: {{ poll_details.poll.ping_role_name or 'Unknown Role' }}</span>
+            {% endif %}
+            {% if poll_details.poll.image_path %}
+            <span class="badge bg-success me-1"><i class="fas fa-image"></i> Has Image</span>
+            {% endif %}
+        </div>
+
+        <h6 class="fw-bold mb-3 mt-4">Poll Options</h6>
+        {% for option in poll_details.poll.options %}
+        <div class="d-flex align-items-center mb-2">
+            <span class="me-2">{{ poll_details.poll.emojis[loop.index0] if poll_details.poll.emojis and loop.index0 < poll_details.poll.emojis|length else '📊' }}</span>
+            <span class="flex-grow-1">{{ option }}</span>
+            <span class="badge bg-primary">{{ poll_details.statistics.results[loop.index0] or 0 }} votes</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="col-md-6">
+        <h6 class="fw-bold mb-3">Vote Statistics</h6>
+        <div class="row mb-4">
+            <div class="col-4 text-center">
+                <div class="h4 text-primary">{{ poll_details.statistics.vote_count }}</div>
+                <small class="text-muted">Total Votes</small>
+            </div>
+            <div class="col-4 text-center">
+                <div class="h4 text-success">{{ poll_details.statistics.unique_voters }}</div>
+                <small class="text-muted">Unique Voters</small>
+            </div>
+            <div class="col-4 text-center">
+                <div class="h4 text-info">{{ poll_details.poll.options|length }}</div>
+                <small class="text-muted">Options</small>
+            </div>
+        </div>
+
+        <h6 class="fw-bold mb-3">Recent Votes</h6>
+        <div style="max-height: 400px; overflow-y: auto;">
+            {% if poll_details.votes %}
+            {% for vote in poll_details.votes[:20] %}
+            <div class="vote-item p-2 mb-2 rounded">
+                <div class="d-flex align-items-center">
+                    {% if vote.avatar_url %}
+                    <img src="{{ vote.avatar_url }}" class="rounded-circle me-2" width="24" height="24" alt="Avatar">
+                    {% else %}
+                    <div class="bg-secondary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
+                        <i class="fas fa-user text-white" style="font-size: 12px;"></i>
+                    </div>
+                    {% endif %}
+                    <div class="flex-grow-1">
+                        <div class="fw-bold">{{ vote.username }}</div>
+                        <small class="text-muted">{{ vote.user_id[:8] }}...</small>
+                    </div>
+                    <div class="text-end">
+                        <div>
+                            <span class="me-1">{{ poll_details.poll.emojis[vote.option_index] if poll_details.poll.emojis and vote.option_index < poll_details.poll.emojis|length else '📊' }}</span>
+                            {{ vote.option_text }}
+                        </div>
+                        <small class="text-muted">{{ vote.voted_at.strftime('%m/%d %H:%M') }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% if poll_details.votes|length > 20 %}
+            <div class="text-center text-muted">
+                <small>Showing 20 of {{ poll_details.votes|length }} votes</small>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="text-center text-muted p-4">
+                <i class="fas fa-inbox fa-2x mb-2"></i>
+                <div>No votes yet</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="mt-4 pt-3 border-top">
+    <div class="d-flex justify-content-between">
+        <div>
+            {% if poll_details.poll.status != 'closed' %}
+            <button class="btn btn-warning me-2" onclick="forceClosePoll({{ poll_details.poll.id }}, '{{ poll_details.poll.name|replace("'", "\\'") }}')">
+                <i class="fas fa-stop me-1"></i>Force Close Poll
+            </button>
+            {% endif %}
+            <button class="btn btn-danger" onclick="deletePoll({{ poll_details.poll.id }}, '{{ poll_details.poll.name|replace("'", "\\'") }}')">
+                <i class="fas fa-trash me-1"></i>Delete Poll
+            </button>
+        </div>
+        <div>
+            <button class="btn btn-secondary" data-bs-dismiss="modal">
+                <i class="fas fa-times me-1"></i>Close
+            </button>
+        </div>
+    </div>
+</div>
