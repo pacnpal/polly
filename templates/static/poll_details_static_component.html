@@ -117,56 +117,57 @@
     </div>
 </div>
 
-<!-- Static Results Dashboard - Screenshot or HTML fallback -->
+<!-- Static Results Dashboard - SCREENSHOTS DISABLED, HTML only -->
 <div id="poll-dashboard-container">
-    {% if dashboard_screenshot_url %}
+    <!-- DISABLED: Screenshot functionality completely disabled per user request -->
+    <!-- {% if dashboard_screenshot_url %} -->
     <!-- Dashboard Screenshot Version -->
-    <div class="card mt-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h6 class="card-title mb-0">
-                <i class="fas fa-camera me-2"></i>Final Results Dashboard (Screenshot)
-            </h6>
-            <div class="btn-group" role="group">
-                <a href="/htmx/poll/{{ poll.id }}/export-csv" download
-                   class="btn btn-sm btn-outline-success"
-                   title="Export to CSV (shows all voter names for poll creator)"
-                   hx-disable
-                   onclick="setTimeout(() => { this.style.opacity = '0.6'; setTimeout(() => { this.style.opacity = '1'; }, 1000); }, 100);">
-                    <i class="fas fa-download me-1"></i>Export CSV
-                </a>
-                <button type="button" class="btn btn-sm btn-outline-info"
-                        onclick="document.getElementById('dashboard-screenshot').scrollIntoView({behavior: 'smooth'})"
-                        title="View screenshot">
-                    <i class="fas fa-image me-1"></i>View Screenshot
-                </button>
-                <span class="btn btn-sm btn-outline-secondary disabled">
-                    <i class="fas fa-camera me-1"></i>Static Screenshot
-                </span>
-            </div>
-        </div>
-        <div class="card-body">
-            <div class="text-center mb-3">
-                <p class="text-muted mb-3">
-                    <i class="fas fa-info-circle me-1"></i>
-                    This dashboard was captured as a screenshot showing all voter names, even for anonymous polls.
-                </p>
-                <div id="dashboard-screenshot" class="dashboard-screenshot-container">
-                    <img src="{{ dashboard_screenshot_url }}" 
-                         alt="Dashboard Screenshot for {{ poll.name|e }}" 
-                         class="img-fluid rounded border dashboard-screenshot"
-                         loading="lazy">
-                </div>
-                <small class="text-muted mt-2 d-block">
-                    <i class="fas fa-clock me-1"></i>
-                    Screenshot captured: {{ generated_at.strftime('%b %d, %Y at %I:%M %p') if generated_at else 'Unknown' }}
-                </small>
-            </div>
-        </div>
-    </div>
-    {% else %}
+    <!-- <div class="card mt-4"> -->
+        <!-- <div class="card-header d-flex justify-content-between align-items-center"> -->
+            <!-- <h6 class="card-title mb-0"> -->
+                <!-- <i class="fas fa-camera me-2"></i>Final Results Dashboard (Screenshot) -->
+            <!-- </h6> -->
+            <!-- <div class="btn-group" role="group"> -->
+                <!-- <a href="/htmx/poll/{{ poll.id }}/export-csv" download -->
+                   <!-- class="btn btn-sm btn-outline-success" -->
+                   <!-- title="Export to CSV (shows all voter names for poll creator)" -->
+                   <!-- hx-disable -->
+                   <!-- onclick="setTimeout(() => { this.style.opacity = '0.6'; setTimeout(() => { this.style.opacity = '1'; }, 1000); }, 100);"> -->
+                    <!-- <i class="fas fa-download me-1"></i>Export CSV -->
+                <!-- </a> -->
+                <!-- <button type="button" class="btn btn-sm btn-outline-info" -->
+                        <!-- onclick="document.getElementById('dashboard-screenshot').scrollIntoView({behavior: 'smooth'})" -->
+                        <!-- title="View screenshot"> -->
+                    <!-- <i class="fas fa-image me-1"></i>View Screenshot -->
+                <!-- </button> -->
+                <!-- <span class="btn btn-sm btn-outline-secondary disabled"> -->
+                    <!-- <i class="fas fa-camera me-1"></i>Static Screenshot -->
+                <!-- </span> -->
+            <!-- </div> -->
+        <!-- </div> -->
+        <!-- <div class="card-body"> -->
+            <!-- <div class="text-center mb-3"> -->
+                <!-- <p class="text-muted mb-3"> -->
+                    <!-- <i class="fas fa-info-circle me-1"></i> -->
+                    <!-- This dashboard was captured as a screenshot showing all voter names, even for anonymous polls. -->
+                <!-- </p> -->
+                <!-- <div id="dashboard-screenshot" class="dashboard-screenshot-container"> -->
+                    <!-- <img src="{{ dashboard_screenshot_url }}"  -->
+                         <!-- alt="Dashboard Screenshot for {{ poll.name|e }}"  -->
+                         <!-- class="img-fluid rounded border dashboard-screenshot" -->
+                         <!-- loading="lazy"> -->
+                <!-- </div> -->
+                <!-- <small class="text-muted mt-2 d-block"> -->
+                    <!-- <i class="fas fa-clock me-1"></i> -->
+                    <!-- Screenshot captured: {{ generated_at.strftime('%b %d, %Y at %I:%M %p') if generated_at else 'Unknown' }} -->
+                <!-- </small> -->
+            <!-- </div> -->
+        <!-- </div> -->
+    <!-- </div> -->
+    <!-- {% else %} -->
     <!-- HTML Dashboard Fallback - Use EXACT same template as dynamic dashboard -->
     {% include 'htmx/components/poll_dashboard.html' %}
-    {% endif %}
+    <!-- {% endif %} -->
 </div>
 
 <!-- JavaScript to handle progress bar widths from data attributes -->

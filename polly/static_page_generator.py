@@ -29,15 +29,17 @@ except ImportError:
     logger.warning("PIL/Pillow not available - image compression disabled")
 
 # Browser automation imports for dashboard screenshots (optional dependencies)
-try:
-    from playwright.async_api import async_playwright
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-    logger.warning("Playwright not available - dashboard screenshot capture disabled")
+# DISABLED: Screenshot functionality completely disabled per user request
+# try:
+#     from playwright.async_api import async_playwright
+#     PLAYWRIGHT_AVAILABLE = True
+# except ImportError:
+#     PLAYWRIGHT_AVAILABLE = False
+#     logger.warning("Playwright not available - dashboard screenshot capture disabled")
 
+PLAYWRIGHT_AVAILABLE = False  # FORCE DISABLED - Screenshots not to be used at all
 
-print(f"📸 PLAYWRIGHT DEBUG - PLAYWRIGHT_AVAILABLE: {PLAYWRIGHT_AVAILABLE}")
+# print(f"📸 PLAYWRIGHT DEBUG - PLAYWRIGHT_AVAILABLE: {PLAYWRIGHT_AVAILABLE}")
 class StaticPageGenerator:
     """Generates static HTML pages for closed polls"""
     
@@ -188,14 +190,15 @@ class StaticPageGenerator:
                 unique_voters = len(unique_users)
                 results = poll.get_results()
                 
+                # DISABLED: Screenshot functionality completely disabled per user request
                 # Check if dashboard screenshot exists
                 dashboard_screenshot_url = None
-                screenshot_path = self._get_dashboard_screenshot_path(poll_id)
-                if screenshot_path.exists():
-                    dashboard_screenshot_url = f"/static/images/shared/{screenshot_path.name}"
-                    print(f"✅ SCREENSHOT DETECTED - Found existing screenshot for poll {poll_id}: {screenshot_path.name}")
-                else:
-                    print(f"⚠️ NO SCREENSHOT - No screenshot found for poll {poll_id}, using HTML fallback")
+                # screenshot_path = self._get_dashboard_screenshot_path(poll_id)
+                # if screenshot_path.exists():
+                #     dashboard_screenshot_url = f"/static/images/shared/{screenshot_path.name}"
+                #     print(f"✅ SCREENSHOT DETECTED - Found existing screenshot for poll {poll_id}: {screenshot_path.name}")
+                # else:
+                #     print(f"⚠️ NO SCREENSHOT - No screenshot found for poll {poll_id}, using HTML fallback")
                 # Generate static HTML using the component template
                 template = self.jinja_env.get_template("static/poll_details_static_component.html")
                 html_content = template.render(
@@ -937,169 +940,175 @@ class StaticPageGenerator:
         filename = f"poll_{poll_id}_dashboard_screenshot.jpg"
         return self.shared_images_dir / filename
         
+    # DISABLED: Screenshot functionality completely disabled per user request
+    # async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "https://polly.pacnp.al") -> Optional[str]:
+    #     logger.info(f"📸 DEBUG - Starting capture_dashboard_screenshot for poll {poll_id}, creator_id: {creator_id}")
+    #     print(f"📸 PRINT DEBUG - Starting capture_dashboard_screenshot for poll {poll_id}")
+    #     """
+    #     Capture a screenshot of the complete dashboard using headless browser with secure one-time token
+    #     
+    #     Args:
+    #         poll_id: The poll ID
+    #         creator_id: The poll creator's user ID
+    #         base_url: Base URL of the application
+    #         
+    #     Returns: Static URL path to screenshot if successful, None if failed
+    #     """
+    #     if not self.enable_dashboard_screenshots:
+    #         logger.warning(f"📸 SCREENSHOT - Playwright not available, skipping dashboard screenshot for poll {poll_id}")
+    #         return None
+    #         
+    #     try:
+    #         logger.info(f"📸 SCREENSHOT - Starting secure dashboard screenshot capture for poll {poll_id}")
+    #         
+    #         screenshot_path = self._get_dashboard_screenshot_path(poll_id)
+    #         
+    #         # Check if screenshot already exists
+    #         if screenshot_path.exists():
+    #             logger.info(f"📸 SCREENSHOT - Using existing dashboard screenshot for poll {poll_id}")
+    #             return f"/static/images/shared/{screenshot_path.name}"
+    #         
+    #         # Create secure one-time token for authentication
+    #         logger.info(f"📸 DEBUG - About to import create_screenshot_token and create token for poll {poll_id}")
+    #         from .web_app import create_screenshot_token
+    #         print(f"📸 PRINT DEBUG - About to create token for poll {poll_id}")
+    #         token = await create_screenshot_token(poll_id, creator_id)
+    #         logger.info(f"📸 DEBUG - Successfully imported create_screenshot_token, about to call it")
+    #         print(f"🔑 DEBUG - Generated screenshot token: {token}")
+    #         
+    #         # Construct secure dashboard URL with token
+    #         secure_dashboard_url = f"{base_url}/screenshot/poll/{poll_id}/dashboard?token={token}"
+    #         print(f"🌐 DEBUG - Secure dashboard URL: {secure_dashboard_url}")
+    #         
+    #         logger.info(f"📸 SCREENSHOT - Using secure authenticated URL for poll {poll_id}")
+    #         
+    #         async with async_playwright() as p:
+    #             # Launch headless browser (works without GUI)
+    #             browser = await p.chromium.launch(
+    #                 headless=True,  # Always headless for server environments
+    #                 args=[
+    #                     '--no-sandbox',
+    #                     '--disable-setuid-sandbox',
+    #                     '--disable-dev-shm-usage',
+    #                     '--disable-gpu',
+    #                     '--no-first-run',
+    #                     '--no-default-browser-check',
+    #                     '--disable-background-timer-throttling',
+    #                     '--disable-backgrounding-occluded-windows',
+    #                     '--disable-renderer-backgrounding'
+    #                 ]
+    #             )
+    #             
+    #             try:
+    #                 # Create new page with specific viewport
+    #                 page = await browser.new_page(
+    #                     viewport={
+    #                         'width': self.screenshot_width,
+    #                         'height': self.screenshot_height
+    #                     }
+    #                 )
+    #                 
+    #                 # Set longer timeout for complex dashboards
+    #                 page.set_default_timeout(self.screenshot_timeout)
+    #                 
+    #                 logger.info(f"📸 SCREENSHOT - Navigating to secure dashboard URL for poll {poll_id}")
+    #                 
+    #                 # Enable JavaScript (should be enabled by default, but make sure)
+    #                 await page.add_init_script("console.log('JavaScript enabled for Polly screenshots');")
+    #                 print("📸 DEBUG - JavaScript initialization script added")
+
+    #                 # Navigate to secure dashboard
+    #                 await page.goto(secure_dashboard_url, wait_until='networkidle')
+    #                 
+    #                 logger.info(f"📸 DEBUG - Page loaded successfully for poll {poll_id}, checking for dashboard content")
+    #                 # Debug: Save page content for debugging
+    #                 page_content = await page.content()
+    #                 logger.info(f"📸 DEBUG - Page title: {await page.title()}")
+    #                 logger.info(f"📸 DEBUG - Page content length: {len(page_content)} chars")
+    #                 # Wait for dashboard content to load
+    #                 # Wait for JavaScript to render dashboard content
+    #                 print("📸 DEBUG - Waiting for JavaScript to render dashboard content...")
+    #                 
+    #                 # Execute JavaScript to wait for content to be truly visible
+    #                 content_visible = await page.evaluate("""
+    #                 async () => {
+    #                     const maxWait = 20000; // 20 seconds max wait
+    #                     const startTime = Date.now();
+    #                     
+    #                     while (Date.now() - startTime < maxWait) {
+    #                         // Look for the dashboard content
+    #                         const chartIcon = document.querySelector(".fas.fa-chart-bar");
+    #                         if (chartIcon) {
+    #                             const style = window.getComputedStyle(chartIcon);
+    #                             const rect = chartIcon.getBoundingClientRect();
+    #                             
+    #                             // Check if element is truly visible (not hidden by CSS and has dimensions)
+    #                             if (style.display !== "none" && 
+    #                                 style.visibility !== "hidden" && 
+    #                                 style.opacity !== "0" &&
+    #                                 rect.width > 0 && 
+    #                                 rect.height > 0) {
+    #                                 return true;
+    #                             }
+    #                         }
+    #                         
+    #                         # Also check for any dashboard content cards
+    #                         const dashboardCards = document.querySelectorAll(".card, [class*=dashboard]");
+    #                         for (const card of dashboardCards) {
+    #                             const style = window.getComputedStyle(card);
+    #                             const rect = card.getBoundingClientRect();
+    #                             if (style.display !== "none" && 
+    #                                 style.visibility !== "hidden" && 
+    #                                 rect.width > 0 && rect.height > 0) {
+    #                                 return true;
+    #                             }
+    #                         }
+    #                         
+    #                         await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms
+    #                     }
+    #                     return false;
+    #                 }
+    #                 """)
+    #                 
+    #                 if not content_visible:
+    #                     print("⚠️  DEBUG - Dashboard content not visible after JavaScript wait, but continuing with screenshot")
+    #                 else:
+    #                     print("✅ DEBUG - Dashboard content is now visible!")
+
+    #                 
+    #                 # Wait for any images to load
+    #                 await page.wait_for_load_state('networkidle')
+    #                 
+    #                 # Additional wait for Discord avatars and dynamic content
+    #                 await page.wait_for_timeout(2000)
+    #                 
+    #                 logger.info("📸 SCREENSHOT - Capturing full page screenshot")
+    #                 
+    #                 # Capture full page screenshot
+    #                 screenshot_bytes = await page.screenshot(
+    #                     path=str(screenshot_path),
+    #                     type='jpeg',
+    #                     quality=self.screenshot_quality,
+    #                     full_page=True
+    #                 )
+    #                 
+    #                 logger.info(f"📸 SCREENSHOT - Successfully captured dashboard screenshot: {screenshot_path}")
+    #                 
+    #                 # Return static URL
+    #                 return f"/static/images/shared/{screenshot_path.name}"
+    #                 
+    #             finally:
+    #                 await browser.close()
+    #                 
+    #     except Exception as e:
+    #         logger.error(f"❌ SCREENSHOT - Error capturing dashboard screenshot for poll {poll_id}: {e}")
+    #         logger.exception("Full traceback for screenshot error:")
+    #         return None
+    
     async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "https://polly.pacnp.al") -> Optional[str]:
-        logger.info(f"📸 DEBUG - Starting capture_dashboard_screenshot for poll {poll_id}, creator_id: {creator_id}")
-        print(f"📸 PRINT DEBUG - Starting capture_dashboard_screenshot for poll {poll_id}")
-        """
-        Capture a screenshot of the complete dashboard using headless browser with secure one-time token
-        
-        Args:
-            poll_id: The poll ID
-            creator_id: The poll creator's user ID
-            base_url: Base URL of the application
-            
-        Returns: Static URL path to screenshot if successful, None if failed
-        """
-        if not self.enable_dashboard_screenshots:
-            logger.warning(f"📸 SCREENSHOT - Playwright not available, skipping dashboard screenshot for poll {poll_id}")
-            return None
-            
-        try:
-            logger.info(f"📸 SCREENSHOT - Starting secure dashboard screenshot capture for poll {poll_id}")
-            
-            screenshot_path = self._get_dashboard_screenshot_path(poll_id)
-            
-            # Check if screenshot already exists
-            if screenshot_path.exists():
-                logger.info(f"📸 SCREENSHOT - Using existing dashboard screenshot for poll {poll_id}")
-                return f"/static/images/shared/{screenshot_path.name}"
-            
-            # Create secure one-time token for authentication
-            logger.info(f"📸 DEBUG - About to import create_screenshot_token and create token for poll {poll_id}")
-            from .web_app import create_screenshot_token
-            print(f"📸 PRINT DEBUG - About to create token for poll {poll_id}")
-            token = await create_screenshot_token(poll_id, creator_id)
-            logger.info(f"📸 DEBUG - Successfully imported create_screenshot_token, about to call it")
-            print(f"🔑 DEBUG - Generated screenshot token: {token}")
-            
-            # Construct secure dashboard URL with token
-            secure_dashboard_url = f"{base_url}/screenshot/poll/{poll_id}/dashboard?token={token}"
-            print(f"🌐 DEBUG - Secure dashboard URL: {secure_dashboard_url}")
-            
-            logger.info(f"📸 SCREENSHOT - Using secure authenticated URL for poll {poll_id}")
-            
-            async with async_playwright() as p:
-                # Launch headless browser (works without GUI)
-                browser = await p.chromium.launch(
-                    headless=True,  # Always headless for server environments
-                    args=[
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu',
-                        '--no-first-run',
-                        '--no-default-browser-check',
-                        '--disable-background-timer-throttling',
-                        '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding'
-                    ]
-                )
-                
-                try:
-                    # Create new page with specific viewport
-                    page = await browser.new_page(
-                        viewport={
-                            'width': self.screenshot_width,
-                            'height': self.screenshot_height
-                        }
-                    )
-                    
-                    # Set longer timeout for complex dashboards
-                    page.set_default_timeout(self.screenshot_timeout)
-                    
-                    logger.info(f"📸 SCREENSHOT - Navigating to secure dashboard URL for poll {poll_id}")
-                    
-                    # Enable JavaScript (should be enabled by default, but make sure)
-                    await page.add_init_script("console.log('JavaScript enabled for Polly screenshots');")
-                    print("📸 DEBUG - JavaScript initialization script added")
-
-                    # Navigate to secure dashboard
-                    await page.goto(secure_dashboard_url, wait_until='networkidle')
-                    
-                    logger.info(f"📸 DEBUG - Page loaded successfully for poll {poll_id}, checking for dashboard content")
-                    # Debug: Save page content for debugging
-                    page_content = await page.content()
-                    logger.info(f"📸 DEBUG - Page title: {await page.title()}")
-                    logger.info(f"📸 DEBUG - Page content length: {len(page_content)} chars")
-                    # Wait for dashboard content to load
-                    # Wait for JavaScript to render dashboard content
-                    print("📸 DEBUG - Waiting for JavaScript to render dashboard content...")
-                    
-                    # Execute JavaScript to wait for content to be truly visible
-                    content_visible = await page.evaluate("""
-                    async () => {
-                        const maxWait = 20000; // 20 seconds max wait
-                        const startTime = Date.now();
-                        
-                        while (Date.now() - startTime < maxWait) {
-                            // Look for the dashboard content
-                            const chartIcon = document.querySelector(".fas.fa-chart-bar");
-                            if (chartIcon) {
-                                const style = window.getComputedStyle(chartIcon);
-                                const rect = chartIcon.getBoundingClientRect();
-                                
-                                // Check if element is truly visible (not hidden by CSS and has dimensions)
-                                if (style.display !== "none" && 
-                                    style.visibility !== "hidden" && 
-                                    style.opacity !== "0" &&
-                                    rect.width > 0 && 
-                                    rect.height > 0) {
-                                    return true;
-                                }
-                            }
-                            
-                            // Also check for any dashboard content cards
-                            const dashboardCards = document.querySelectorAll(".card, [class*=dashboard]");
-                            for (const card of dashboardCards) {
-                                const style = window.getComputedStyle(card);
-                                const rect = card.getBoundingClientRect();
-                                if (style.display !== "none" && 
-                                    style.visibility !== "hidden" && 
-                                    rect.width > 0 && rect.height > 0) {
-                                    return true;
-                                }
-                            }
-                            
-                            await new Promise(resolve => setTimeout(resolve, 200)); // Wait 200ms
-                        }
-                        return false;
-                    }
-                    """)
-                    
-                    if not content_visible:
-                        print("⚠️  DEBUG - Dashboard content not visible after JavaScript wait, but continuing with screenshot")
-                    else:
-                        print("✅ DEBUG - Dashboard content is now visible!")
-
-                    
-                    # Wait for any images to load
-                    await page.wait_for_load_state('networkidle')
-                    
-                    # Additional wait for Discord avatars and dynamic content
-                    await page.wait_for_timeout(2000)
-                    
-                    logger.info("📸 SCREENSHOT - Capturing full page screenshot")
-                    
-                    # Capture full page screenshot
-                    screenshot_bytes = await page.screenshot(
-                        path=str(screenshot_path),
-                        type='jpeg',
-                        quality=self.screenshot_quality,
-                        full_page=True
-                    )
-                    
-                    logger.info(f"📸 SCREENSHOT - Successfully captured dashboard screenshot: {screenshot_path}")
-                    
-                    # Return static URL
-                    return f"/static/images/shared/{screenshot_path.name}"
-                    
-                finally:
-                    await browser.close()
-                    
-        except Exception as e:
-            logger.error(f"❌ SCREENSHOT - Error capturing dashboard screenshot for poll {poll_id}: {e}")
-            logger.exception("Full traceback for screenshot error:")
-            return None
+        """DISABLED: Screenshot functionality completely disabled per user request"""
+        logger.info(f"📸 SCREENSHOT DISABLED - Skipping screenshot for poll {poll_id} (disabled per user request)")
+        return None
             
     async def generate_dashboard_with_screenshot(self, poll_id: int, bot=None, base_url: str = "https://polly.pacnp.al") -> bool:
         print(f"📸 PRINT DEBUG - Starting generate_dashboard_with_screenshot for poll {poll_id}")
