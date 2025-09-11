@@ -322,106 +322,7 @@ async def get_poll_details_htmx(
         )
 
 
-def parse_log_time_range(time_range: str) -> datetime:
-    """Parse time range string and return cutoff datetime"""
-    now = datetime.now()
-    
-    if time_range == "1h":
-        return now - timedelta(hours=1)
-    elif time_range == "6h":
-        return now - timedelta(hours=6)
-    elif time_range == "24h":
-        return now - timedelta(hours=24)
-    elif time_range == "7d":
-        return now - timedelta(days=7)
-    elif time_range == "30d":
-        return now - timedelta(days=30)
-    else:
-        return now - timedelta(hours=24)  # Default to 24h
-
-
-def parse_log_file(log_path: str, level_filter: Optional[str] = None, 
-                  search_filter: Optional[str] = None, 
-                  time_cutoff: Optional[datetime] = None) -> List[Dict[str, Any]]:
-    """Parse log file and return filtered entries - COMPLETELY REWRITTEN FOR ABSOLUTE SAFETY"""
-    entries = []
-    
-    if not os.path.exists(log_path):
-        return entries
-    
-    try:
-        with open(log_path, 'r', encoding='utf-8') as f:
-            for line_num, line in enumerate(f, 1):
-                try:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    # Parse log entry (assuming format: TIMESTAMP - LEVEL - MESSAGE)
-                    log_match = re.match(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+ - (\w+) - (.+)$', line)
-                    
-                    if log_match:
-                        timestamp_str, level, message = log_match.groups()
-                        
-                        try:
-                            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-                        except ValueError:
-                            timestamp = datetime.now()
-                        
-                        # Apply time filter
-                        if time_cutoff and timestamp < time_cutoff:
-                            continue
-                        
-                        # Apply level filter
-                        if level_filter and level != level_filter:
-                            continue
-                        
-                        # Apply search filter
-                        if search_filter and search_filter.lower() not in message.lower():
-                            continue
-                        
-                        entries.append({
-                            'timestamp': timestamp.isoformat(),
-                            'level': level,
-                            'message': message,
-                            'line_number': line_num
-                        })
-                    else:
-                        # SIMPLEST POSSIBLE APPROACH - NO COMPLEX LOGIC
-                        # Just create a new entry for every non-matching line
-                        # This eliminates ALL possibility of variable definition errors
-                        try:
-                            entries.append({
-                                'timestamp': datetime.now().isoformat(),
-                                'level': 'INFO',
-                                'message': line,
-                                'line_number': line_num
-                            })
-                        except Exception as append_e:
-                            # If even this simple append fails, just skip the line
-                            logger.error(f"Critical error creating simple log entry at line {line_num}: {append_e}")
-                            continue
-                
-                except Exception as line_e:
-                    # Skip problematic lines entirely
-                    logger.warning(f"Skipping problematic log line {line_num}: {line_e}")
-                    continue
-    
-    except Exception as e:
-        logger.error(f"Error parsing log file {log_path}: {e}")
-        # Return a safe fallback entry
-        return [{
-            'timestamp': datetime.now().isoformat(),
-            'level': 'ERROR',
-            'message': f'Error parsing log file {log_path}: {str(e)}',
-            'line_number': 1
-        }]
-    
-    try:
-        return sorted(entries, key=lambda x: x.get('timestamp', ''), reverse=True)
-    except Exception as sort_e:
-        logger.error(f"Error sorting log entries: {sort_e}")
-        return entries  # Return unsorted if sorting fails
+# Old manual log parsing functions removed - now using pandas_log_analyzer
 
 
 async def get_system_logs_htmx(
@@ -431,34 +332,24 @@ async def get_system_logs_htmx(
     time_range: str = Query("24h"),
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
-    """HTMX endpoint for system logs"""
+    """HTMX endpoint for system logs using pandas analyzer"""
     try:
-        time_cutoff = parse_log_time_range(time_range)
+        from .pandas_log_analyzer import pandas_log_analyzer
         
-        # Get logs from multiple sources
-        log_files = [
-            "polly.log",
-            "logs/polly.log",
-            "logs/dev.log"
-        ]
-        
-        all_entries = []
-        for log_file in log_files:
-            if os.path.exists(log_file):
-                entries = parse_log_file(log_file, level, search, time_cutoff)
-                all_entries.extend(entries)
-        
-        # Sort all entries by timestamp
-        all_entries = sorted(all_entries, key=lambda x: x['timestamp'], reverse=True)
-        
-        # Limit to 500 most recent entries
-        all_entries = all_entries[:500]
+        # Use pandas analyzer for advanced log parsing
+        log_entries, analytics = pandas_log_analyzer.get_filtered_logs(
+            level_filter=level,
+            search_filter=search,
+            time_range=time_range,
+            limit=500
+        )
         
         return templates.TemplateResponse(
             "htmx/super_admin_logs.html",
             {
                 "request": request,
-                "log_entries": all_entries,
+                "log_entries": log_entries,
+                "analytics": analytics,
                 "filters": {
                     "level": level,
                     "search": search,
@@ -468,7 +359,7 @@ async def get_system_logs_htmx(
         )
         
     except Exception as e:
-        logger.error(f"Error getting system logs: {e}")
+        logger.error(f"Error getting system logs with pandas analyzer: {e}")
         return HTMLResponse(
             content="<div class='alert alert-danger'>Error loading system logs</div>",
             status_code=500
@@ -482,36 +373,46 @@ async def download_logs_api(
     time_range: str = Query("24h"),
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> StreamingResponse:
-    """Download filtered logs as text file"""
+    """Download filtered logs as text file using pandas analyzer"""
     try:
-        time_cutoff = parse_log_time_range(time_range)
+        from .pandas_log_analyzer import pandas_log_analyzer
         
-        log_files = [
-            "polly.log",
-            "logs/polly.log",
-            "logs/dev.log"
-        ]
+        # Use pandas analyzer for log parsing
+        log_entries, analytics = pandas_log_analyzer.get_filtered_logs(
+            level_filter=level,
+            search_filter=search,
+            time_range=time_range,
+            limit=10000  # Higher limit for downloads
+        )
         
-        all_entries = []
-        for log_file in log_files:
-            if os.path.exists(log_file):
-                entries = parse_log_file(log_file, level, search, time_cutoff)
-                all_entries.extend(entries)
-        
-        # Sort all entries by timestamp
-        all_entries = sorted(all_entries, key=lambda x: x['timestamp'], reverse=True)
-        
-        # Generate log content
+        # Generate log content with analytics header
         def generate_log_content():
-            yield f"# Polly System Logs Export\n"
+            yield f"# Polly System Logs Export (Pandas-Powered)\n"
             yield f"# Generated: {datetime.now().isoformat()}\n"
             yield f"# Filters: Level={level or 'All'}, Search={search or 'None'}, Time Range={time_range}\n"
-            yield f"# Total Entries: {len(all_entries)}\n\n"
+            yield f"# Total Entries: {len(log_entries)}\n"
+            yield f"# Analytics Summary:\n"
+            yield f"#   - Error Rate: {analytics.get('error_rate', 0):.2f}%\n"
+            yield f"#   - Time Range: {analytics.get('time_range', {}).get('start', 'N/A')} to {analytics.get('time_range', {}).get('end', 'N/A')}\n"
+            yield f"#   - Level Distribution: {analytics.get('level_distribution', {})}\n"
+            yield f"#   - Poll Events: {analytics.get('poll_activity', {}).get('total_poll_events', 0)}\n"
+            yield f"\n"
             
-            for entry in all_entries:
-                yield f"{entry['timestamp']} - {entry['level']} - {entry['message']}\n"
+            for entry in log_entries:
+                metadata = entry.get('metadata', {})
+                metadata_str = ""
+                if metadata.get('poll_id'):
+                    metadata_str += f" [Poll:{metadata['poll_id']}]"
+                if metadata.get('user_id'):
+                    metadata_str += f" [User:{metadata['user_id']}]"
+                if metadata.get('endpoint'):
+                    metadata_str += f" [API:{metadata['endpoint']}]"
+                if metadata.get('response_time'):
+                    metadata_str += f" [RT:{metadata['response_time']}ms]"
+                
+                yield f"{entry['timestamp']} - {entry['level']} - {entry['message']}{metadata_str}\n"
         
-        filename = f"polly_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        filename = f"polly_logs_pandas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         
         return StreamingResponse(
             generate_log_content(),
@@ -520,7 +421,7 @@ async def download_logs_api(
         )
         
     except Exception as e:
-        logger.error(f"Error downloading logs: {e}")
+        logger.error(f"Error downloading logs with pandas analyzer: {e}")
         raise HTTPException(status_code=500, detail="Error generating log download")
 
 

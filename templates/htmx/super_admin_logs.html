@@ -1,3 +1,116 @@
+{% if analytics %}
+<!-- Pandas Analytics Dashboard -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Total Entries</h6>
+                        <h4>{{ analytics.total_entries }}</h4>
+                    </div>
+                    <i class="fas fa-list fa-2x opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-{{ 'danger' if analytics.error_rate > 10 else 'warning' if analytics.error_rate > 5 else 'success' }} text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Error Rate</h6>
+                        <h4>{{ "%.1f"|format(analytics.error_rate) }}%</h4>
+                    </div>
+                    <i class="fas fa-exclamation-triangle fa-2x opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Poll Events</h6>
+                        <h4>{{ analytics.poll_activity.total_poll_events }}</h4>
+                    </div>
+                    <i class="fas fa-poll fa-2x opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-secondary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-title">Time Range</h6>
+                        <small>{{ "%.1f"|format(analytics.time_range.duration_hours) }}h</small>
+                    </div>
+                    <i class="fas fa-clock fa-2x opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if analytics.level_distribution %}
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Log Level Distribution</h6>
+            </div>
+            <div class="card-body">
+                {% for level, count in analytics.level_distribution.items() %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="badge bg-{{ 'danger' if level == 'ERROR' else 'warning' if level == 'WARNING' else 'info' if level == 'INFO' else 'secondary' }}">{{ level }}</span>
+                    <span>{{ count }} entries</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    {% if analytics.performance_metrics.avg_response_time > 0 %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Performance Metrics</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Avg Response Time:</span>
+                    <span>{{ "%.1f"|format(analytics.performance_metrics.avg_response_time) }}ms</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Max Response Time:</span>
+                    <span>{{ "%.1f"|format(analytics.performance_metrics.max_response_time) }}ms</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Slow Requests (>1s):</span>
+                    <span class="badge bg-{{ 'danger' if analytics.performance_metrics.slow_requests > 10 else 'warning' if analytics.performance_metrics.slow_requests > 0 else 'success' }}">{{ analytics.performance_metrics.slow_requests }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if analytics.top_errors %}
+<div class="alert alert-warning">
+    <h6><i class="fas fa-exclamation-triangle me-2"></i>Top Error Messages:</h6>
+    <ul class="mb-0">
+        {% for error in analytics.top_errors[:3] %}
+        <li><strong>{{ error.count }}x:</strong> {{ error.message[:100] }}{% if error.message|length > 100 %}...{% endif %}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endif %}
+
 {% if log_entries %}
 <div class="log-viewer">
     {% for entry in log_entries %}
@@ -5,6 +118,26 @@
         <span class="text-muted">[{{ entry.timestamp[:19] }}]</span>
         <span class="badge bg-{{ 'danger' if entry.level == 'ERROR' else 'warning' if entry.level == 'WARNING' else 'info' if entry.level == 'INFO' else 'secondary' }} me-2">{{ entry.level }}</span>
         <span class="log-message">{{ entry.message }}</span>
+        
+        {% if entry.metadata %}
+        <div class="log-metadata mt-1">
+            {% if entry.metadata.poll_id %}
+            <span class="badge bg-light text-dark me-1">Poll: {{ entry.metadata.poll_id }}</span>
+            {% endif %}
+            {% if entry.metadata.user_id %}
+            <span class="badge bg-light text-dark me-1">User: {{ entry.metadata.user_id[:8] }}...</span>
+            {% endif %}
+            {% if entry.metadata.endpoint %}
+            <span class="badge bg-light text-dark me-1">{{ entry.metadata.endpoint }}</span>
+            {% endif %}
+            {% if entry.metadata.response_time %}
+            <span class="badge bg-{{ 'danger' if entry.metadata.response_time > 1000 else 'warning' if entry.metadata.response_time > 500 else 'light' }} text-{{ 'white' if entry.metadata.response_time > 500 else 'dark' }} me-1">{{ entry.metadata.response_time }}ms</span>
+            {% endif %}
+            {% if entry.metadata.status_code %}
+            <span class="badge bg-{{ 'danger' if entry.metadata.status_code >= 500 else 'warning' if entry.metadata.status_code >= 400 else 'success' }} me-1">{{ entry.metadata.status_code }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
     {% endfor %}
 </div>
@@ -13,6 +146,7 @@
 <div class="alert alert-info mt-3">
     <i class="fas fa-info-circle me-2"></i>
     Showing the 500 most recent log entries. Use filters to narrow down results or download logs for complete history.
+    <strong>Powered by Pandas Analytics</strong> - Enhanced parsing with metadata extraction and performance insights.
 </div>
 {% endif %}
 
@@ -27,5 +161,6 @@
         No log files found or no entries in the selected time range.
         {% endif %}
     </p>
+    <small class="text-muted">Powered by Pandas Log Analyzer</small>
 </div>
 {% endif %}
