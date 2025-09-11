@@ -532,20 +532,29 @@ class BulletproofPollOperations:
                             .first()
                         )
 
-                        vote_action = "updated" if existing_vote else "created"
-
                         if existing_vote:
-                            # Update existing vote atomically
-                            old_option = existing_vote.option_index
-                            setattr(existing_vote, "option_index", option_index)
-                            setattr(
-                                existing_vote, "voted_at", datetime.now(timezone.utc)
-                            )
-                            logger.debug(
-                                f"Updated vote for user {user_id}: {old_option} -> {option_index}"
-                            )
+                            # Check if user is clicking the same option they already voted for
+                            if existing_vote.option_index == option_index:
+                                # User clicked the same option they already voted for
+                                vote_action = "already_recorded"
+                                logger.debug(
+                                    f"User {user_id} clicked same option {option_index} they already voted for"
+                                )
+                                # Don't modify the database - vote is already recorded correctly
+                            else:
+                                # User is changing their vote to a different option
+                                vote_action = "updated"
+                                old_option = existing_vote.option_index
+                                setattr(existing_vote, "option_index", option_index)
+                                setattr(
+                                    existing_vote, "voted_at", datetime.now(timezone.utc)
+                                )
+                                logger.debug(
+                                    f"Updated vote for user {user_id}: {old_option} -> {option_index}"
+                                )
                         else:
                             # Create new vote atomically
+                            vote_action = "created"
                             vote = Vote(
                                 poll_id=poll_id,
                                 user_id=user_id,
@@ -581,8 +590,30 @@ class BulletproofPollOperations:
                                 "success": False,
                                 "error": "Vote removal verification failed",
                             }
+                    elif vote_action == "already_recorded":
+                        # For already_recorded votes, just verify the vote exists with correct option
+                        # No database changes were made, so just verify the existing vote is correct
+                        verification_vote = (
+                            db.query(Vote)
+                            .filter(
+                                Vote.poll_id == poll_id, Vote.user_id == user_id
+                            )
+                            .first()
+                        )
+
+                        if (
+                            not verification_vote
+                            or verification_vote.option_index != option_index
+                        ):
+                            logger.error(
+                                f"Already recorded vote verification failed for poll {poll_id}, user {user_id}"
+                            )
+                            return {
+                                "success": False,
+                                "error": "Already recorded vote verification failed",
+                            }
                     else:
-                        # For added/updated votes, verify the vote exists with correct option
+                        # For added/updated/created votes, verify the vote exists with correct option
                         multiple_choice_verification = TypeSafeColumn.get_bool(
                             poll, "multiple_choice", False
                         )
