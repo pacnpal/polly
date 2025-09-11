@@ -3495,7 +3495,7 @@ async def create_poll_htmx(
 async def get_poll_details_htmx(
     poll_id: int, request: Request, bot, current_user: DiscordUser = Depends(require_auth)
 ):
-    """Get poll details view as HTML for HTMX - serves static component for closed polls with image compression"""
+    """Get poll details view as HTML for HTMX - serves pre-generated static files for closed polls"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
     db = get_db_session()
     try:
@@ -3513,98 +3513,72 @@ async def get_poll_details_htmx(
                 {"request": request, "message": "Poll not found or access denied"},
             )
 
-        # Check if poll is closed and use static generator with image compression
+        # Check if poll is closed and serve pre-generated static content
         poll_status = TypeSafeColumn.get_string(poll, "status")
         if poll_status == "closed":
-            logger.info(f"📄 STATIC SERVE - Using static generator with image compression for closed poll {poll_id}")
+            logger.info(f"📄 STATIC SERVE - Checking for pre-generated static content for closed poll {poll_id}")
             
-            # Import the static page generator
+            # Import the static page generator to check for existing files
             from .static_page_generator import get_static_page_generator
             
             # Get the static page generator instance
             static_generator = get_static_page_generator()
             
-            # Generate static content with image compression if not already done
-            try:
-                await static_generator.generate_static_poll_details(poll_id, bot)
-                logger.info(f"📷 IMAGE COMPRESSION - Generated static content with compressed images for poll {poll_id}")
-            except Exception as e:
-                logger.warning(f"Static generation failed for poll {poll_id}: {e}, falling back to dynamic generation")
+            # Check if static file exists
+            static_path = static_generator._get_static_page_path(poll_id, "details")
             
-            # Get the data needed for the static component template (same as before)
-            votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
-            
-            # Prepare vote data with real Discord usernames (never anonymize for static pages)
-            vote_data = []
-            unique_users = set()
-            
-            for vote in votes:
+            if static_path.exists():
+                logger.info(f"✅ STATIC SERVE - Found pre-generated static file for poll {poll_id}: {static_path}")
+                
+                # Read and serve the pre-generated static content
                 try:
-                    user_id = TypeSafeColumn.get_string(vote, "user_id")
-                    option_index = TypeSafeColumn.get_int(vote, "option_index")
-                    voted_at = TypeSafeColumn.get_datetime(vote, "voted_at")
+                    with open(static_path, 'r', encoding='utf-8') as f:
+                        static_content = f.read()
                     
-                    # Always fetch real Discord username for static pages (never anonymize)
-                    username = "Unknown User"
-                    if bot and user_id:
+                    logger.info(f"📄 STATIC SERVE - Successfully served pre-generated static content for poll {poll_id}")
+                    
+                    # Return the static content directly as HTML response
+                    from fastapi.responses import HTMLResponse
+                    return HTMLResponse(content=static_content)
+                    
+                except Exception as read_error:
+                    logger.error(f"❌ STATIC SERVE - Error reading static file for poll {poll_id}: {read_error}")
+                    # Fall through to dynamic content as fallback
+            else:
+                logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
+                logger.warning(f"⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
+                
+                # Try to regenerate the static file once if it's missing
+                logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")
+                try:
+                    regeneration_success = await static_generator.generate_static_poll_details(poll_id, bot)
+                    if regeneration_success and static_path.exists():
+                        logger.info(f"✅ STATIC SERVE - Successfully regenerated static content for poll {poll_id}")
+                        
+                        # Try to serve the newly generated content
                         try:
-                            discord_user = await bot.fetch_user(int(user_id))
-                            if discord_user:
-                                username = discord_user.display_name or discord_user.name
-                        except Exception as e:
-                            logger.warning(f"Could not fetch Discord user {user_id} for static generation: {e}")
-                            username = f"User {user_id[:8]}..."
-                    elif user_id:
-                        username = f"User {user_id[:8]}..."
-                    
-                    # Get option details
-                    options = poll.options
-                    emojis = poll.emojis
-                    option_text = options[option_index] if option_index < len(options) else "Unknown Option"
-                    emoji = emojis[option_index] if option_index < len(emojis) else "📊"
-                    
-                    vote_data.append({
-                        "username": username,
-                        "option_index": option_index,
-                        "option_text": option_text,
-                        "emoji": emoji,
-                        "voted_at": voted_at,
-                        "is_unique": user_id not in unique_users
-                    })
-                    
-                    unique_users.add(user_id)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing vote data: {e}")
-                    continue
+                            with open(static_path, 'r', encoding='utf-8') as f:
+                                static_content = f.read()
+                            
+                            logger.info(f"📄 STATIC SERVE - Successfully served regenerated static content for poll {poll_id}")
+                            
+                            # Return the static content directly as HTML response
+                            from fastapi.responses import HTMLResponse
+                            return HTMLResponse(content=static_content)
+                            
+                        except Exception as read_error:
+                            logger.error(f"❌ STATIC SERVE - Error reading regenerated static file for poll {poll_id}: {read_error}")
+                    else:
+                        logger.error(f"❌ STATIC SERVE - Failed to regenerate static content for poll {poll_id}")
+                        
+                except Exception as regen_error:
+                    logger.error(f"❌ STATIC SERVE - Error during static content regeneration for poll {poll_id}: {regen_error}")
             
-            # Get poll data
-            options = poll.options
-            emojis = poll.emojis
-            is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
-            total_votes = len(votes)
-            unique_voters = len(unique_users)
-            results = poll.get_results()
-            
-            # Serve the static component template with the data (images will be compressed via static generator)
-            return templates.TemplateResponse(
-                "static/poll_details_static_component.html",
-                {
-                    "request": request,
-                    "poll": poll,
-                    "vote_data": vote_data,
-                    "total_votes": total_votes,
-                    "unique_voters": unique_voters,
-                    "results": results,
-                    "options": options,
-                    "emojis": emojis,
-                    "is_anonymous": is_anonymous,
-                    "generated_at": datetime.now(),
-                    "is_static": True
-                }
-            )
+            # For closed polls, we should NOT regenerate on-demand repeatedly - that defeats the purpose
+            # Instead, fall back to dynamic content and log this as an issue
+            logger.warning(f"⚠️ STATIC SERVE - Falling back to dynamic content for closed poll {poll_id} - static file missing or unreadable")
 
-        # Serve dynamic content for active/scheduled polls
+        # Serve dynamic content for active/scheduled polls or as fallback for closed polls
         return templates.TemplateResponse(
             "htmx/poll_details.html",
             {
