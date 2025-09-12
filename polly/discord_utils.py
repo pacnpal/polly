@@ -191,11 +191,16 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         color = 0xFF0000  # Red
         status_emoji = "🏁"
 
-    # Get the poll's opening time in the correct timezone
-    poll_open_time = getattr(poll, "open_time", datetime.now(pytz.UTC))
+    # Get the appropriate timestamp based on poll status and timezone
     poll_timezone = str(getattr(poll, "timezone", "UTC"))
     
-    # Convert opening time to poll's timezone if specified
+    # For closed polls, use close time; for others, use open time
+    if poll_status == "closed":
+        poll_timestamp = getattr(poll, "close_time", datetime.now(pytz.UTC))
+    else:
+        poll_timestamp = getattr(poll, "open_time", datetime.now(pytz.UTC))
+    
+    # Convert timestamp to poll's timezone if specified
     if poll_timezone and poll_timezone != "UTC":
         try:
             # Validate and normalize timezone first
@@ -203,16 +208,16 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             normalized_tz = validate_and_normalize_timezone(poll_timezone)
             tz = pytz.timezone(normalized_tz)
             # Convert to the poll's timezone for display
-            poll_open_time = poll_open_time.astimezone(tz)
+            poll_timestamp = poll_timestamp.astimezone(tz)
         except Exception as e:
-            logger.debug(f"Could not convert opening time to timezone {poll_timezone}: {e}")
+            logger.debug(f"Could not convert timestamp to timezone {poll_timezone}: {e}")
             # Keep original UTC time if timezone conversion fails
 
     embed = discord.Embed(
         title=f"{status_emoji} {str(getattr(poll, 'name', ''))}",
         description=str(getattr(poll, "question", "")),
         color=color,
-        timestamp=poll_open_time,
+        timestamp=poll_timestamp,
     )
 
     # For closed polls, use a cleaner layout without duplicates
@@ -1176,11 +1181,28 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
     poll_name = str(getattr(poll, "name", ""))
     poll_question = str(getattr(poll, "question", ""))
 
+    # Use poll's close time in the correct timezone for the timestamp
+    poll_timezone = str(getattr(poll, "timezone", "UTC"))
+    poll_close_time = getattr(poll, "close_time", datetime.now(pytz.UTC))
+    
+    # Convert close time to poll's timezone if specified
+    if poll_timezone and poll_timezone != "UTC":
+        try:
+            # Validate and normalize timezone first
+            from .utils import validate_and_normalize_timezone
+            normalized_tz = validate_and_normalize_timezone(poll_timezone)
+            tz = pytz.timezone(normalized_tz)
+            # Convert to the poll's timezone for display
+            poll_close_time = poll_close_time.astimezone(tz)
+        except Exception as e:
+            logger.debug(f"Could not convert close time to timezone {poll_timezone}: {e}")
+            # Keep original UTC time if timezone conversion fails
+
     embed = discord.Embed(
         title=f"🏁 Poll Results: {poll_name}",
         description=poll_question,
         color=0xFF0000,  # Red for closed
-        timestamp=datetime.now(pytz.UTC),
+        timestamp=poll_close_time,
     )
 
     # Get results data
