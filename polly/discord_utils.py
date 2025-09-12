@@ -363,7 +363,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         else:
             choice_info = "🔢 You may make **1 choice** in this poll"
             
-        embed.add_field(value=choice_info, inline=False)
+        embed.add_field(name="", value=choice_info, inline=False)
 
         # Always show total votes for active polls
         total_votes = poll.get_total_votes()
