@@ -142,32 +142,25 @@
                 </div>
             </div>
 
-            <!-- Image Upload Section with HTMX -->
+            <!-- Image Upload Section -->
             <div class="mb-3">
                 <label class="form-label">
                     <i class="fas fa-image me-1"></i>Poll Image (Optional)
                 </label>
                 
-                <!-- HTMX File Upload Form -->
-                <form id='image-upload-form' hx-encoding='multipart/form-data' hx-post='/htmx/upload-image'>
-                    <div class="upload-area border-2 border-dashed rounded p-4 text-center" style="border-color: #dee2e6; background-color: #f8f9fa;">
-                        <i class="fas fa-cloud-upload-alt fa-2x text-primary mb-2"></i>
-                        <p class="mb-2">Select an image to upload</p>
-                        <input type='file' name='image' class="form-control" accept="image/jpeg,image/png,image/gif,image/webp">
-                        <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
-                    </div>
-                    <button type="submit" class="btn btn-primary mt-2">
-                        <i class="fas fa-upload me-1"></i>Upload Image
-                    </button>
-                    <progress id='upload-progress' value='0' max='100' class="form-control mt-2" style="display: none;"></progress>
-                </form>
+                <div class="upload-area border-2 border-dashed rounded p-4 text-center" style="border-color: #dee2e6; background-color: #f8f9fa;">
+                    <i class="fas fa-cloud-upload-alt fa-2x text-primary mb-2"></i>
+                    <p class="mb-2">Select an image to upload</p>
+                    <input type='file' name='image' class="form-control" accept="image/jpeg,image/png,image/gif,image/webp" id="image-file-input">
+                    <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
+                </div>
                 
                 <!-- Image Preview Area -->
                 <div id="image-preview" style="display: none;" class="mt-3">
                     <div class="card" style="max-width: 300px;">
-                        <img id="preview-image" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Uploaded image">
+                        <img id="preview-image" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="Selected image">
                         <div class="card-body p-2 d-flex justify-content-between align-items-center">
-                            <small class="text-muted" id="image-info">Uploaded Image</small>
+                            <small class="text-muted" id="image-info">Selected Image</small>
                             <button type="button" class="btn btn-sm btn-outline-danger" id="remove-image">
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -187,9 +180,6 @@
                               placeholder="Add a message to display with your image..."></textarea>
                     <small class="text-muted">This text will appear with the image before the poll</small>
                 </div>
-                
-                <!-- Hidden input to store uploaded image path for main form -->
-                <input type="hidden" name="uploaded_image_path" id="uploaded-image-path" value="">
             </div>
 
             <div class="mb-3">
@@ -307,102 +297,108 @@
 // Global default emojis for form handler
 window.DEFAULT_EMOJIS = {{ default_emojis|tojson }};
 
-// Initialize form functionality
-function initializeImageUpload() {
-    console.log('🔧 CREATE FORM - Initializing image upload');
+// Handle file selection and preview
+function handleFileSelection() {
+    const fileInput = document.getElementById('image-file-input');
+    if (!fileInput) return;
     
-    // Set up HTMX file upload progress tracking
-    const uploadForm = document.getElementById('image-upload-form');
-    if (uploadForm) {
-        // Remove any existing listeners first
-        uploadForm.removeEventListener('htmx:xhr:progress', handleUploadProgress);
-        uploadForm.removeEventListener('htmx:afterRequest', handleUploadComplete);
-        
-        // Add new listeners
-        uploadForm.addEventListener('htmx:xhr:progress', handleUploadProgress);
-        uploadForm.addEventListener('htmx:afterRequest', handleUploadComplete);
-        
-        console.log('✅ CREATE FORM - Upload listeners attached');
-    }
-}
-
-// Handle upload progress
-function handleUploadProgress(evt) {
-    const progress = document.getElementById('upload-progress');
-    if (progress) {
-        progress.style.display = 'block';
-        progress.setAttribute('value', evt.detail.loaded/evt.detail.total * 100);
-    }
-}
-
-// Handle upload completion
-function handleUploadComplete(evt) {
-    const progress = document.getElementById('upload-progress');
-    if (progress) {
-        progress.style.display = 'none';
-    }
-    
-    if (evt.detail.xhr.status === 200) {
-        const response = JSON.parse(evt.detail.xhr.responseText);
-        if (response.success) {
-            // Store uploaded image path
-            const hiddenInput = document.getElementById('uploaded-image-path');
-            if (hiddenInput) {
-                hiddenInput.value = response.image_path;
+    fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            // Validate file
+            if (!validateImageFile(file)) {
+                fileInput.value = '';
+                return;
             }
             
-            // Show image preview
-            const preview = document.getElementById('image-preview');
-            const previewImg = document.getElementById('preview-image');
-            const imageInfo = document.getElementById('image-info');
-            
-            if (preview && previewImg && imageInfo) {
-                previewImg.src = '/' + response.image_path;
-                imageInfo.textContent = response.filename || 'Uploaded Image';
-                preview.style.display = 'block';
-            }
+            // Show preview
+            showImagePreview(file);
             
             // Show image message section
             const imageMessageSection = document.getElementById('image-message-section');
             if (imageMessageSection) {
                 imageMessageSection.style.display = 'block';
             }
-            
-            // Hide upload form
-            const uploadForm = document.getElementById('image-upload-form');
-            if (uploadForm) {
-                uploadForm.style.display = 'none';
-            }
-        } else {
-            alert('Upload failed: ' + (response.error || 'Unknown error'));
         }
-    } else {
-        alert('Upload failed. Please try again.');
+    });
+}
+
+// Validate image file
+function validateImageFile(file) {
+    const maxSize = 8 * 1024 * 1024; // 8MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    
+    if (!allowedTypes.includes(file.type)) {
+        alert('Please select a valid image file (JPEG, PNG, GIF, or WebP)');
+        return false;
     }
+    
+    if (file.size > maxSize) {
+        alert('File size must be less than 8MB');
+        return false;
+    }
+    
+    return true;
+}
+
+// Show image preview
+function showImagePreview(file) {
+    const preview = document.getElementById('image-preview');
+    const previewImg = document.getElementById('preview-image');
+    const imageInfo = document.getElementById('image-info');
+    
+    if (preview && previewImg && imageInfo) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            previewImg.src = e.target.result;
+            imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+            preview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // Handle image removal
 document.addEventListener('click', function(e) {
     if (e.target.id === 'remove-image' || e.target.parentElement.id === 'remove-image') {
-        // Clear uploaded image
-        const hiddenInput = document.getElementById('uploaded-image-path');
-        const preview = document.getElementById('image-preview');
-        const imageMessageSection = document.getElementById('image-message-section');
-        const uploadForm = document.getElementById('image-upload-form');
+        // Clear file input
+        const fileInput = document.getElementById('image-file-input');
+        if (fileInput) {
+            fileInput.value = '';
+        }
         
-        if (hiddenInput) hiddenInput.value = '';
-        if (preview) preview.style.display = 'none';
-        if (imageMessageSection) imageMessageSection.style.display = 'none';
-        if (uploadForm) {
-            uploadForm.style.display = 'block';
-            uploadForm.reset();
+        // Hide preview
+        const preview = document.getElementById('image-preview');
+        if (preview) {
+            preview.style.display = 'none';
+        }
+        
+        // Hide image message section
+        const imageMessageSection = document.getElementById('image-message-section');
+        if (imageMessageSection) {
+            imageMessageSection.style.display = 'none';
+        }
+        
+        // Clear image message text
+        const imageMessageText = document.getElementById('image-message-text');
+        if (imageMessageText) {
+            imageMessageText.value = '';
         }
     }
 });
 
 // Initialize form functionality
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔧 CREATE FORM - Initializing with HTMX file upload');
+    console.log('🔧 CREATE FORM - Initializing');
     
     // Initialize form handler functionality
     if (window.PollyFormHandler) {
@@ -413,8 +409,8 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✅ CREATE FORM - Form handler initialized');
     }
     
-    // Initialize image upload
-    initializeImageUpload();
+    // Initialize file selection handling
+    handleFileSelection();
 });
 
 // Re-initialize on HTMX content swaps
@@ -424,8 +420,8 @@ document.addEventListener('htmx:afterSwap', function(event) {
         window.PollyFormHandler.init();
     }
     
-    // Re-initialize image upload
-    setTimeout(initializeImageUpload, 100);
+    // Re-initialize file selection handling
+    setTimeout(handleFileSelection, 100);
 });
 </script>
 
