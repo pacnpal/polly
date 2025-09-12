@@ -309,19 +309,10 @@
 <script>
 // Initialize Edit Form functionality (HTMX compatible)
 (function() {
-    // Prevent multiple initializations
-    if (window.pollyEditFormInitialized) {
-        return;
-    }
-    window.pollyEditFormInitialized = true;
-
     function initializeEditForm() {
-        // Check if already initialized to prevent duplicate event listeners
-        if (document.getElementById('image-drop-zone')?.dataset.initialized === 'true') {
-            return;
-        }
-
-        // Image upload functionality
+        console.log('🔍 IMAGE UPLOAD DEBUG - Initializing edit form image upload functionality');
+        
+        // Get elements with detailed logging
         const imageDropZone = document.getElementById('image-drop-zone');
         const imageInput = document.getElementById('poll-image');
         const imagePreview = document.getElementById('image-preview');
@@ -332,40 +323,66 @@
         const currentImage = document.getElementById('current-image');
         const imageMessageSection = document.getElementById('image-message-section');
 
+        console.log('🔍 IMAGE UPLOAD DEBUG - Elements found:', {
+            imageDropZone: !!imageDropZone,
+            imageInput: !!imageInput,
+            imagePreview: !!imagePreview,
+            previewImg: !!previewImg,
+            imageInfo: !!imageInfo,
+            removeImageBtn: !!removeImageBtn,
+            removeCurrentImageBtn: !!removeCurrentImageBtn,
+            currentImage: !!currentImage,
+            imageMessageSection: !!imageMessageSection
+        });
+
         if (imageDropZone && imageInput) {
-            // Mark as initialized
-            imageDropZone.dataset.initialized = 'true';
+            // Clear any existing event listeners to prevent duplicates
+            const newImageDropZone = imageDropZone.cloneNode(true);
+            imageDropZone.parentNode.replaceChild(newImageDropZone, imageDropZone);
+            
+            // Re-get the element reference after cloning
+            const cleanImageDropZone = document.getElementById('image-drop-zone');
+            
+            console.log('🔍 IMAGE UPLOAD DEBUG - Setting up event listeners');
             // Click to browse - with better error handling
-            imageDropZone.addEventListener('click', (e) => {
+            cleanImageDropZone.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log('🔍 IMAGE UPLOAD DEBUG - Drop zone clicked');
                 try {
                     if (imageInput && typeof imageInput.click === 'function') {
+                        console.log('🔍 IMAGE UPLOAD DEBUG - Triggering file input click');
                         imageInput.click();
                     } else {
+                        console.error('🔍 IMAGE UPLOAD DEBUG - File input not available or no click method');
                         showImageError('File upload not available. Please refresh the page and try again.');
                     }
                 } catch (error) {
+                    console.error('🔍 IMAGE UPLOAD DEBUG - Error opening file browser:', error);
                     showImageError('Error opening file browser. Please try again.');
                 }
             });
 
             // Drag and drop functionality
-            imageDropZone.addEventListener('dragover', (e) => {
+            cleanImageDropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
-                imageDropZone.classList.add('drag-over');
+                console.log('🔍 IMAGE UPLOAD DEBUG - Drag over detected');
+                cleanImageDropZone.classList.add('drag-over');
             });
 
-            imageDropZone.addEventListener('dragleave', (e) => {
+            cleanImageDropZone.addEventListener('dragleave', (e) => {
                 e.preventDefault();
-                imageDropZone.classList.remove('drag-over');
+                console.log('🔍 IMAGE UPLOAD DEBUG - Drag leave detected');
+                cleanImageDropZone.classList.remove('drag-over');
             });
 
-            imageDropZone.addEventListener('drop', (e) => {
+            cleanImageDropZone.addEventListener('drop', (e) => {
                 e.preventDefault();
-                imageDropZone.classList.remove('drag-over');
+                console.log('🔍 IMAGE UPLOAD DEBUG - File drop detected');
+                cleanImageDropZone.classList.remove('drag-over');
 
                 const files = e.dataTransfer.files;
+                console.log('🔍 IMAGE UPLOAD DEBUG - Files dropped:', files.length);
                 if (files.length > 0) {
                     handleImageFile(files[0]);
                 }
@@ -373,7 +390,9 @@
 
             // File input change
             imageInput.addEventListener('change', (e) => {
+                console.log('🔍 IMAGE UPLOAD DEBUG - File input changed, files:', e.target.files.length);
                 if (e.target.files.length > 0) {
+                    console.log('🔍 IMAGE UPLOAD DEBUG - Processing selected file:', e.target.files[0].name);
                     handleImageFile(e.target.files[0]);
                 }
             });
@@ -396,12 +415,15 @@
             }
 
             function handleImageFile(file) {
+                console.log('🔍 IMAGE UPLOAD DEBUG - Handling file:', file.name, file.type, file.size);
+                
                 // Clear any previous errors
                 clearImageError();
                 
                 // Validate file type
                 const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
                 if (!allowedTypes.includes(file.type)) {
+                    console.error('🔍 IMAGE UPLOAD DEBUG - Invalid file type:', file.type);
                     showImageError('Invalid file type. Please select a JPEG, PNG, GIF, or WebP image.');
                     return;
                 }
@@ -409,24 +431,28 @@
                 // Validate file size (8MB)
                 const maxSize = 8 * 1024 * 1024;
                 if (file.size > maxSize) {
+                    console.error('🔍 IMAGE UPLOAD DEBUG - File too large:', file.size);
                     showImageError(`File too large. Maximum size is 8MB. Your file is ${formatFileSize(file.size)}.`);
                     return;
                 }
 
+                console.log('🔍 IMAGE UPLOAD DEBUG - File validation passed, showing preview');
+                
                 // Show upload progress indicator
                 showImageUploadProgress('Preparing image preview...');
 
                 // Show preview
                 const reader = new FileReader();
                 reader.onload = (e) => {
+                    console.log('🔍 IMAGE UPLOAD DEBUG - FileReader loaded successfully');
                     previewImg.src = e.target.result;
                     imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
                     
                     // Remove CSS classes that force display:none and show elements
                     imagePreview.classList.remove('image-preview-hidden');
                     imagePreview.style.display = 'block';
-                    imageDropZone.classList.add('image-drop-zone-hidden');
-                    imageDropZone.style.display = 'none';
+                    cleanImageDropZone.classList.add('image-drop-zone-hidden');
+                    cleanImageDropZone.style.display = 'none';
                     imageMessageSection.classList.remove('image-message-section-hidden');
                     imageMessageSection.style.display = 'block';
 
@@ -438,9 +464,11 @@
                     // Hide progress indicator and show success
                     hideImageUploadProgress();
                     showImageUploadStatus('success', 'New image loaded successfully! Ready to update poll.');
+                    console.log('🔍 IMAGE UPLOAD DEBUG - Image preview setup complete');
                 };
                 
                 reader.onerror = (e) => {
+                    console.error('🔍 IMAGE UPLOAD DEBUG - FileReader error:', e);
                     hideImageUploadProgress();
                     showImageError('Failed to read image file. Please try again.');
                 };
@@ -449,13 +477,14 @@
             }
 
             function clearImagePreview() {
+                console.log('🔍 IMAGE UPLOAD DEBUG - Clearing image preview');
                 imageInput.value = '';
                 
                 // Remove CSS classes that force display:none and show elements
                 imagePreview.classList.remove('image-preview-hidden');
                 imagePreview.style.display = 'none';
-                imageDropZone.classList.remove('image-drop-zone-hidden');
-                imageDropZone.style.display = 'block';
+                cleanImageDropZone.classList.remove('image-drop-zone-hidden');
+                cleanImageDropZone.style.display = 'block';
                 
                 previewImg.src = '';
                 imageInfo.textContent = '';
@@ -597,9 +626,12 @@
         function waitForEmojiPicker(callback) {
             if (customElements.get('emoji-picker')) {
                 callback();
-            } else {
-                customElements.whenDefined('emoji-picker').then(callback);
-            }
+        } else {
+            console.error('🔍 IMAGE UPLOAD DEBUG - Required elements not found:', {
+                imageDropZone: !!imageDropZone,
+                imageInput: !!imageInput
+            });
+        }
         }
 
         waitForEmojiPicker(function() {
@@ -1019,19 +1051,33 @@
         });
     }
 
+    // Initialize immediately and on various events
+    function safeInitialize() {
+        try {
+            initializeEditForm();
+        } catch (error) {
+            console.error('🔍 IMAGE UPLOAD DEBUG - Error during initialization:', error);
+        }
+    }
+    
     // Initialize on DOM ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeEditForm);
+        document.addEventListener('DOMContentLoaded', safeInitialize);
     } else {
-        initializeEditForm();
+        safeInitialize();
     }
 
     // Re-initialize when HTMX loads new content
     document.addEventListener('htmx:afterSwap', function(event) {
-        // Only re-initialize if this content contains our form
-        if (event.detail.target.querySelector('#emoji-picker-container') || event.detail.target.querySelector('#image-drop-zone')) {
-            initializeEditForm();
-        }
+        console.log('🔍 IMAGE UPLOAD DEBUG - HTMX afterSwap event detected');
+        // Always re-initialize for edit form to ensure functionality works
+        setTimeout(safeInitialize, 100); // Small delay to ensure DOM is ready
+    });
+    
+    // Also initialize on htmx:load event
+    document.addEventListener('htmx:load', function(event) {
+        console.log('🔍 IMAGE UPLOAD DEBUG - HTMX load event detected');
+        setTimeout(safeInitialize, 100);
     });
 
     // Ensure submit button is enabled on initial load
