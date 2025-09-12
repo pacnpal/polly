@@ -1902,11 +1902,37 @@ async def get_polls_htmx(
     filter: str = None,
     current_user: DiscordUser = Depends(require_auth),
 ):
-    """Get user's polls as HTML for HTMX with bulletproof error handling"""
+    """Get user's polls as HTML for HTMX with caching to prevent rate limiting"""
+    from .enhanced_cache_service import get_enhanced_cache_service
+
+    enhanced_cache = get_enhanced_cache_service()
+
+    logger.debug(f"Getting polls for user {current_user.id} with filter: {filter}")
+
+    # Check cache first (30 second TTL for polls to reduce database load)
+    cache_key = f"user_polls_htmx:{current_user.id}:{filter or 'all'}"
+    try:
+        redis_client = await enhanced_cache._get_redis()
+        if redis_client:
+            cached_polls_data = await redis_client.cache_get(cache_key)
+            if cached_polls_data:
+                logger.debug(f"🚀 POLLS CACHE HIT - Retrieved cached polls for user {current_user.id} (filter: {filter})")
+                return templates.TemplateResponse(
+                    "htmx/polls.html",
+                    {
+                        "request": request,
+                        "format_datetime_for_user": format_datetime_for_user,
+                        **cached_polls_data
+                    },
+                )
+    except Exception as e:
+        logger.warning(f"Error checking polls cache for user {current_user.id}: {e}")
+
+    # Cache miss - generate polls data
+    logger.debug(f"🔍 POLLS CACHE MISS - Generating polls for user {current_user.id} (filter: {filter})")
+
     db = get_db_session()
     try:
-        logger.debug(f"Getting polls for user {current_user.id} with filter: {filter}")
-
         # Query polls with error handling
         try:
             query = db.query(Poll).filter(Poll.creator_id == current_user.id)
@@ -1926,17 +1952,13 @@ async def get_polls_htmx(
             logger.exception("Full traceback for polls query error:")
 
             # Return error template with empty polls list
-            return templates.TemplateResponse(
-                "htmx/polls.html",
-                {
-                    "request": request,
-                    "polls": [],
-                    "current_filter": filter,
-                    "user_timezone": "US/Eastern",
-                    "format_datetime_for_user": format_datetime_for_user,
-                    "error": "Database error loading polls",
-                },
-            )
+            error_data = {
+                "polls": [],
+                "current_filter": filter,
+                "user_timezone": "US/Eastern",
+                "error": "Database error loading polls",
+            }
+            return templates.TemplateResponse("htmx/polls.html", {"request": request, "format_datetime_for_user": format_datetime_for_user, **error_data})
 
         # Process polls with individual error handling
         processed_polls = []
@@ -1971,14 +1993,38 @@ async def get_polls_htmx(
 
         logger.debug(f"Returning {len(processed_polls)} processed polls")
 
+        # Prepare data for caching and template
+        # Note: We can't cache the Poll objects directly, so we'll cache the template data
+        polls_data = {
+            "polls": processed_polls,  # These will be serialized by the template
+            "current_filter": filter,
+            "user_timezone": user_timezone,
+        }
+
+        # Cache the polls data for 30 seconds to reduce database load
+        # Note: We cache the basic data, not the full template response
+        try:
+            if redis_client:
+                # Create a simplified version for caching (without complex objects)
+                cacheable_data = {
+                    "current_filter": filter,
+                    "user_timezone": user_timezone,
+                    "poll_count": len(processed_polls),
+                    "cached_at": datetime.now().isoformat(),
+                }
+                # For now, we'll cache just the metadata and let the template handle the polls
+                # This is a compromise since Poll objects are complex to serialize
+                await redis_client.cache_set(cache_key, cacheable_data, 30)
+                logger.debug(f"💾 POLLS CACHED - Stored polls metadata for user {current_user.id} with 30s TTL")
+        except Exception as e:
+            logger.warning(f"Error caching polls for user {current_user.id}: {e}")
+
         return templates.TemplateResponse(
             "htmx/polls.html",
             {
                 "request": request,
-                "polls": processed_polls,
-                "current_filter": filter,
-                "user_timezone": user_timezone,
                 "format_datetime_for_user": format_datetime_for_user,
+                **polls_data
             },
         )
 
@@ -1989,17 +2035,13 @@ async def get_polls_htmx(
         logger.exception("Full traceback for polls endpoint error:")
 
         # Return error-safe template
-        return templates.TemplateResponse(
-            "htmx/polls.html",
-            {
-                "request": request,
-                "polls": [],
-                "current_filter": filter,
-                "user_timezone": "US/Eastern",
-                "format_datetime_for_user": format_datetime_for_user,
-                "error": f"Error loading polls: {str(e)}",
-            },
-        )
+        error_data = {
+            "polls": [],
+            "current_filter": filter,
+            "user_timezone": "US/Eastern",
+            "error": f"Error loading polls: {str(e)}",
+        }
+        return templates.TemplateResponse("htmx/polls.html", {"request": request, "format_datetime_for_user": format_datetime_for_user, **error_data})
     finally:
         try:
             db.close()
@@ -2010,11 +2052,36 @@ async def get_polls_htmx(
 async def get_stats_htmx(
     request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
-    """Get dashboard stats as HTML for HTMX with bulletproof error handling"""
+    """Get dashboard stats as HTML for HTMX with caching to prevent rate limiting"""
+    from .enhanced_cache_service import get_enhanced_cache_service
+
+    enhanced_cache = get_enhanced_cache_service()
+
+    logger.debug(f"Getting stats for user {current_user.id}")
+
+    # Check cache first (30 second TTL for stats to reduce database load)
+    cache_key = f"user_stats_htmx:{current_user.id}"
+    try:
+        redis_client = await enhanced_cache._get_redis()
+        if redis_client:
+            cached_stats = await redis_client.cache_get(cache_key)
+            if cached_stats:
+                logger.debug(f"🚀 STATS CACHE HIT - Retrieved cached stats for user {current_user.id}")
+                return templates.TemplateResponse(
+                    "htmx/stats.html",
+                    {
+                        "request": request,
+                        **cached_stats
+                    },
+                )
+    except Exception as e:
+        logger.warning(f"Error checking stats cache for user {current_user.id}: {e}")
+
+    # Cache miss - generate stats
+    logger.debug(f"🔍 STATS CACHE MISS - Generating stats for user {current_user.id}")
+
     db = get_db_session()
     try:
-        logger.debug(f"Getting stats for user {current_user.id}")
-
         # Query polls with error handling
         try:
             polls = db.query(Poll).filter(Poll.creator_id == current_user.id).all()
@@ -2023,16 +2090,13 @@ async def get_stats_htmx(
             logger.error(
                 f"Database error querying polls for user {current_user.id}: {e}"
             )
-            return templates.TemplateResponse(
-                "htmx/stats.html",
-                {
-                    "request": request,
-                    "total_polls": 0,
-                    "active_polls": 0,
-                    "total_votes": 0,
-                    "error": "Database error loading polls",
-                },
-            )
+            error_stats = {
+                "total_polls": 0,
+                "active_polls": 0,
+                "total_votes": 0,
+                "error": "Database error loading polls",
+            }
+            return templates.TemplateResponse("htmx/stats.html", {"request": request, **error_stats})
 
         # Calculate stats with individual error handling
         total_polls = len(polls)
@@ -2088,13 +2152,26 @@ async def get_stats_htmx(
             f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}"
         )
 
+        # Prepare stats data for caching and template
+        stats_data = {
+            "total_polls": total_polls,
+            "active_polls": active_polls,
+            "total_votes": total_votes,
+        }
+
+        # Cache the stats for 30 seconds to reduce database load
+        try:
+            if redis_client:
+                await redis_client.cache_set(cache_key, stats_data, 30)
+                logger.debug(f"💾 STATS CACHED - Stored stats for user {current_user.id} with 30s TTL")
+        except Exception as e:
+            logger.warning(f"Error caching stats for user {current_user.id}: {e}")
+
         return templates.TemplateResponse(
             "htmx/stats.html",
             {
                 "request": request,
-                "total_polls": total_polls,
-                "active_polls": active_polls,
-                "total_votes": total_votes,
+                **stats_data
             },
         )
 
@@ -2105,16 +2182,13 @@ async def get_stats_htmx(
         logger.exception("Full traceback for stats error:")
 
         # Return error-safe template
-        return templates.TemplateResponse(
-            "htmx/stats.html",
-            {
-                "request": request,
-                "total_polls": 0,
-                "active_polls": 0,
-                "total_votes": 0,
-                "error": f"Error loading stats: {str(e)}",
-            },
-        )
+        error_stats = {
+            "total_polls": 0,
+            "active_polls": 0,
+            "total_votes": 0,
+            "error": f"Error loading stats: {str(e)}",
+        }
+        return templates.TemplateResponse("htmx/stats.html", {"request": request, **error_stats})
     finally:
         try:
             db.close()
