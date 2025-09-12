@@ -282,8 +282,7 @@
 {% include 'htmx/components/form_validation.html' %}
 
 <!-- Uppy CSS -->
-<link href="https://cdn.jsdelivr.net/npm/@uppy/core@3.8.0/dist/style.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/@uppy/dashboard@3.7.4/dist/style.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/uppy@3.24.0/dist/uppy.min.css" rel="stylesheet">
 
 <!-- Emoji Picker Element -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
@@ -304,6 +303,19 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.PollyFormHandler) {
         window.PollyFormHandler.init();
         console.log('✅ EDIT FORM - Form handler initialized');
+    }
+
+    // Initialize Uppy upload handler
+    if (window.PollyUppyUpload) {
+        window.PollyUppyUpload.init().then(uppy => {
+            if (uppy) {
+                console.log('✅ EDIT FORM - Uppy initialized successfully');
+            } else {
+                console.log('⚠️ EDIT FORM - Uppy failed, using fallback');
+            }
+        }).catch(error => {
+            console.error('❌ EDIT FORM - Uppy initialization failed:', error);
+        });
     }
 
     // Handle remove current image button

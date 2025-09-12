@@ -274,8 +274,7 @@
 {% include 'htmx/components/form_validation.html' %}
 
 <!-- Uppy CSS -->
-<link href="https://cdn.jsdelivr.net/npm/@uppy/core@3.8.0/dist/style.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/@uppy/dashboard@3.7.4/dist/style.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/uppy@3.24.0/dist/uppy.min.css" rel="stylesheet">
 
 <!-- Emoji Picker Element -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
@@ -290,11 +289,27 @@ window.DEFAULT_EMOJIS = {{ default_emojis|tojson }};
 
 // Initialize form functionality
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔧 CREATE FORM - Initializing with Uppy');
+    
     // Initialize form handler functionality
     if (window.PollyFormHandler) {
         window.PollyFormHandler.init({
             isTemplate: {{ is_template|default(false)|tojson }},
             templateData: {% if template_data %}{{ template_data|tojson }}{% else %}null{% endif %}
+        });
+        console.log('✅ CREATE FORM - Form handler initialized');
+    }
+
+    // Initialize Uppy upload handler
+    if (window.PollyUppyUpload) {
+        window.PollyUppyUpload.init().then(uppy => {
+            if (uppy) {
+                console.log('✅ CREATE FORM - Uppy initialized successfully');
+            } else {
+                console.log('⚠️ CREATE FORM - Uppy failed, using fallback');
+            }
+        }).catch(error => {
+            console.error('❌ CREATE FORM - Uppy initialization failed:', error);
         });
     }
 });
