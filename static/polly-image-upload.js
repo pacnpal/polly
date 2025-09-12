@@ -148,16 +148,26 @@ window.PollyImageUpload = (function() {
         console.log('🔍 IMAGE UPLOAD - Drop zone clicked!'); // Always log this
         
         const elements = getElements();
-        debugLog('Elements check:', {
+        console.log('🔍 IMAGE UPLOAD - Elements check:', {
             imageInput: !!elements.imageInput,
-            hasClickMethod: elements.imageInput && typeof elements.imageInput.click === 'function'
+            imageInputId: elements.imageInput ? elements.imageInput.id : 'null',
+            imageInputType: elements.imageInput ? elements.imageInput.type : 'null',
+            imageInputAccept: elements.imageInput ? elements.imageInput.accept : 'null',
+            hasClickMethod: elements.imageInput && typeof elements.imageInput.click === 'function',
+            isHidden: elements.imageInput ? elements.imageInput.classList.contains('d-none') : 'null',
+            style: elements.imageInput ? elements.imageInput.style.cssText : 'null'
         });
         
         try {
             if (elements.imageInput && typeof elements.imageInput.click === 'function') {
                 debugLog('Triggering file input click');
                 console.log('🔍 IMAGE UPLOAD - Triggering file input click'); // Always log this
+                
+                // Force focus on the input before clicking
+                elements.imageInput.focus();
                 elements.imageInput.click();
+                
+                console.log('🔍 IMAGE UPLOAD - File input click triggered successfully');
             } else {
                 console.error('File input not available or no click method');
                 console.error('🔍 IMAGE UPLOAD - File input not available:', {
@@ -353,9 +363,11 @@ window.PollyImageUpload = (function() {
             }
 
             // Check if already initialized to prevent duplicate event listeners
-            if (elements.imageDropZone.dataset.initialized === 'true') {
-                debugLog('Drop zone already initialized, skipping');
-                console.log('🔍 IMAGE UPLOAD - Already initialized, skipping');
+            // But allow re-initialization if the click handler is missing
+            const hasClickHandler = elements.imageDropZone._pollyClickHandler;
+            if (elements.imageDropZone.dataset.initialized === 'true' && hasClickHandler) {
+                debugLog('Drop zone already initialized with handlers, skipping');
+                console.log('🔍 IMAGE UPLOAD - Already initialized with handlers, skipping');
                 return false;
             }
             
@@ -366,6 +378,8 @@ window.PollyImageUpload = (function() {
             console.log('🔍 IMAGE UPLOAD - Setting up event listeners');
             
             // Event listeners with enhanced debugging
+            // Store reference to click handler for initialization check
+            elements.imageDropZone._pollyClickHandler = handleDropZoneClick;
             elements.imageDropZone.addEventListener('click', handleDropZoneClick);
             elements.imageDropZone.addEventListener('dragover', handleDragOver);
             elements.imageDropZone.addEventListener('dragleave', handleDragLeave);
