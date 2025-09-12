@@ -199,13 +199,14 @@ window.PollyDebug = (function() {
 if (PollyDebug.enabled && typeof htmx !== 'undefined') {
     // Wait for DOM to be ready before adding event listeners
     function addHTMXEventListeners() {
-        const targetElement = document.body || document.documentElement;
-        
-        if (!targetElement) {
-            // If neither body nor documentElement is available, wait and try again
+        // Wait for document.body to be available
+        if (!document.body) {
+            // If body is not available, wait and try again
             setTimeout(addHTMXEventListeners, 100);
             return;
         }
+        
+        const targetElement = document.body;
         
         // Log HTMX requests
         targetElement.addEventListener('htmx:beforeRequest', function(evt) {

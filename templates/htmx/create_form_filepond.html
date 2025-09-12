@@ -887,30 +887,30 @@
         }
 
         // Time validation
-        const openTimeInput = document.getElementById('open-time');
-        const closeTimeInput = document.getElementById('close-time');
-        const timezoneSelect = document.getElementById('timezone');
-        const openTimeError = document.getElementById('open-time-error');
-        const closeTimeError = document.getElementById('close-time-error');
-        const form = openTimeInput ? openTimeInput.closest('form') : null;
+        const createOpenTimeInput = document.getElementById('open-time');
+        const createCloseTimeInput = document.getElementById('close-time');
+        const createTimezoneSelect = document.getElementById('timezone');
+        const createOpenTimeError = document.getElementById('open-time-error');
+        const createCloseTimeError = document.getElementById('close-time-error');
+        const createForm = createOpenTimeInput ? createOpenTimeInput.closest('form') : null;
 
         function validateTimes() {
             let isValid = true;
 
             // Clear previous errors
-            openTimeInput.classList.remove('is-invalid');
-            closeTimeInput.classList.remove('is-invalid');
-            openTimeError.textContent = '';
-            closeTimeError.textContent = '';
+            createOpenTimeInput.classList.remove('is-invalid');
+            createCloseTimeInput.classList.remove('is-invalid');
+            createOpenTimeError.textContent = '';
+            createCloseTimeError.textContent = '';
 
-            if (openTimeInput.value && closeTimeInput.value) {
-                const openTime = new Date(openTimeInput.value);
-                const closeTime = new Date(closeTimeInput.value);
+            if (createOpenTimeInput.value && createCloseTimeInput.value) {
+                const openTime = new Date(createOpenTimeInput.value);
+                const closeTime = new Date(createCloseTimeInput.value);
                 
                 // Check if close time is after open time (basic validation)
                 if (closeTime <= openTime) {
-                    closeTimeInput.classList.add('is-invalid');
-                    closeTimeError.textContent = 'Close time must be after open time';
+                    createCloseTimeInput.classList.add('is-invalid');
+                    createCloseTimeError.textContent = 'Close time must be after open time';
                     isValid = false;
                 }
             }
@@ -919,12 +919,12 @@
         }
 
         // Validate on input change
-        if (openTimeInput) openTimeInput.addEventListener('change', validateTimes);
-        if (closeTimeInput) closeTimeInput.addEventListener('change', validateTimes);
+        if (createOpenTimeInput) createOpenTimeInput.addEventListener('change', validateTimes);
+        if (createCloseTimeInput) createCloseTimeInput.addEventListener('change', validateTimes);
 
         // Validate on form submission
-        if (form) {
-            form.addEventListener('submit', function(e) {
+        if (createForm) {
+            createForm.addEventListener('submit', function(e) {
                 if (!validateTimes()) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -933,21 +933,21 @@
         }
 
         // Handle loading states and form submission
-        const submitBtn = document.getElementById('submit-btn');
-        const submitText = submitBtn?.querySelector('.submit-text');
-        const loadingText = submitBtn?.querySelector('.loading-text');
+        const createSubmitBtn = document.getElementById('submit-btn');
+        const createSubmitText = createSubmitBtn?.querySelector('.submit-text');
+        const createLoadingText = createSubmitBtn?.querySelector('.loading-text');
 
         // HTMX event handlers for seamless validation and loading states
         document.addEventListener('htmx:beforeRequest', function(event) {
-            if (event.detail.elt === form) {
+            if (event.detail.elt === createForm) {
                 // Show loading state
-                if (submitText && loadingText) {
-                    submitText.classList.add('d-none');
-                    loadingText.classList.remove('d-none');
+                if (createSubmitText && createLoadingText) {
+                    createSubmitText.classList.add('d-none');
+                    createLoadingText.classList.remove('d-none');
                 }
                 
                 // Disable form elements to prevent multiple submissions
-                const formElements = form.querySelectorAll('input, select, textarea, button');
+                const formElements = createForm.querySelectorAll('input, select, textarea, button');
                 formElements.forEach(el => {
                     if (el.type !== 'submit') {
                         el.disabled = true;
@@ -957,15 +957,15 @@
         });
 
         document.addEventListener('htmx:afterRequest', function(event) {
-            if (event.detail.elt === form) {
+            if (event.detail.elt === createForm) {
                 // Hide loading state
-                if (submitText && loadingText) {
-                    submitText.classList.remove('d-none');
-                    loadingText.classList.add('d-none');
+                if (createSubmitText && createLoadingText) {
+                    createSubmitText.classList.remove('d-none');
+                    createLoadingText.classList.add('d-none');
                 }
                 
                 // Re-enable form elements
-                const formElements = form.querySelectorAll('input, select, textarea, button');
+                const formElements = createForm.querySelectorAll('input, select, textarea, button');
                 formElements.forEach(el => {
                     el.disabled = false;
                 });
@@ -974,15 +974,15 @@
 
         // Handle validation errors - stay on page and show errors
         document.addEventListener('htmx:responseError', function(event) {
-            if (event.detail.elt === form) {
+            if (event.detail.elt === createForm) {
                 // Hide loading state on error
-                if (submitText && loadingText) {
-                    submitText.classList.remove('d-none');
-                    loadingText.classList.add('d-none');
+                if (createSubmitText && createLoadingText) {
+                    createSubmitText.classList.remove('d-none');
+                    createLoadingText.classList.add('d-none');
                 }
                 
                 // Re-enable form elements
-                const formElements = form.querySelectorAll('input, select, textarea, button');
+                const formElements = createForm.querySelectorAll('input, select, textarea, button');
                 formElements.forEach(el => {
                     el.disabled = false;
                 });
@@ -1033,30 +1033,30 @@
         }
 
         // Open Immediately checkbox functionality
-        const openImmediatelyCheckbox = document.getElementById('open-immediately');
-        const openTimeContainer = document.getElementById('open-time-container');
-        const openTimeInputElement = document.getElementById('open-time');
+        const createOpenImmediatelyCheckbox = document.getElementById('open-immediately');
+        const createOpenTimeContainer = document.getElementById('open-time-container');
+        const createOpenTimeInputElement = document.getElementById('open-time');
         
-        if (openImmediatelyCheckbox && openTimeContainer && openTimeInputElement) {
+        if (createOpenImmediatelyCheckbox && createOpenTimeContainer && createOpenTimeInputElement) {
             // Show/hide open time field based on checkbox state
-            openImmediatelyCheckbox.addEventListener('change', function() {
+            createOpenImmediatelyCheckbox.addEventListener('change', function() {
                 if (this.checked) {
-                    openTimeContainer.style.display = 'none';
-                    openTimeInputElement.removeAttribute('required');
-                    openTimeInputElement.value = ''; // Clear the value when hidden
+                    createOpenTimeContainer.style.display = 'none';
+                    createOpenTimeInputElement.removeAttribute('required');
+                    createOpenTimeInputElement.value = ''; // Clear the value when hidden
                 } else {
-                    openTimeContainer.style.display = 'block';
-                    openTimeInputElement.setAttribute('required', 'required');
+                    createOpenTimeContainer.style.display = 'block';
+                    createOpenTimeInputElement.setAttribute('required', 'required');
                 }
             });
             
             // Initialize visibility based on current checkbox state
-            if (openImmediatelyCheckbox.checked) {
-                openTimeContainer.style.display = 'none';
-                openTimeInputElement.removeAttribute('required');
+            if (createOpenImmediatelyCheckbox.checked) {
+                createOpenTimeContainer.style.display = 'none';
+                createOpenTimeInputElement.removeAttribute('required');
             } else {
-                openTimeContainer.style.display = 'block';
-                openTimeInputElement.setAttribute('required', 'required');
+                createOpenTimeContainer.style.display = 'block';
+                createOpenTimeInputElement.setAttribute('required', 'required');
             }
         }
 
