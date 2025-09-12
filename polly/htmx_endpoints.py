@@ -304,33 +304,51 @@ def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> d
 
 
 async def validate_image_file(image_file) -> tuple[bool, str, bytes | None]:
-    """Validate uploaded image file and return validation result"""
+    """Enhanced image file validation with comprehensive logging"""
     try:
-        if (
-            not image_file
-            or not hasattr(image_file, "filename")
-            or not image_file.filename
-        ):
+        logger.info(f"🔍 HTMX IMAGE VALIDATION - Starting validation for image_file: {type(image_file)}")
+        
+        if not image_file:
+            logger.info("🔍 HTMX IMAGE VALIDATION - No image file provided (None)")
+            return True, "", None
+            
+        if not hasattr(image_file, "filename"):
+            logger.error("🔍 HTMX IMAGE VALIDATION - Image file has no filename attribute")
+            return False, "Invalid image file format", None
+            
+        filename = getattr(image_file, "filename", None)
+        if not filename:
+            logger.info("🔍 HTMX IMAGE VALIDATION - Image file has empty filename")
             return True, "", None
 
-        # Read file content
-        content = await image_file.read()
+        logger.info(f"🔍 HTMX IMAGE VALIDATION - Processing file: {filename}")
+
+        # Read file content with error handling
+        try:
+            content = await image_file.read()
+            logger.info(f"🔍 HTMX IMAGE VALIDATION - File content read: {len(content)} bytes")
+        except Exception as read_error:
+            logger.error(f"🔍 HTMX IMAGE VALIDATION - Error reading file content: {read_error}")
+            return False, "Error reading image file", None
 
         # Validate file size (8MB limit)
         if len(content) > 8 * 1024 * 1024:
+            logger.error(f"🔍 HTMX IMAGE VALIDATION - File too large: {len(content)} bytes")
             return False, "Image file too large (max 8MB)", None
 
         # Validate file type
         allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-        if (
-            hasattr(image_file, "content_type")
-            and image_file.content_type not in allowed_types
-        ):
+        content_type = getattr(image_file, "content_type", None)
+        
+        if content_type and content_type not in allowed_types:
+            logger.error(f"🔍 HTMX IMAGE VALIDATION - Invalid content type: {content_type}")
             return False, "Invalid image format (JPEG, PNG, GIF, WebP only)", None
 
+        logger.info(f"🔍 HTMX IMAGE VALIDATION - ✅ Validation passed for {filename}")
         return True, "", content
+        
     except Exception as e:
-        logger.error(f"Error validating image file: {e}")
+        logger.error(f"🔍 HTMX IMAGE VALIDATION - ❌ Critical error: {e}")
         return False, "Error processing image file", None
 
 

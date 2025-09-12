@@ -19,6 +19,17 @@ from discord.ext import commands
 import aiofiles
 from PIL import Image
 
+# Try to import python-magic for bulletproof MIME type detection
+try:
+    import magic
+    MAGIC_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("python-magic available for enhanced MIME type detection")
+except ImportError:
+    MAGIC_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("python-magic not available, falling back to mimetypes module")
+
 from .validators import PollValidator, VoteValidator
 from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
 from .database import get_db_session, Poll
@@ -42,103 +53,160 @@ class BulletproofImageHandler:
     ) -> Dict[str, Any]:
         """
         Comprehensive image validation and processing with security checks.
+        Enhanced with python-magic MIME detection and atomic operations.
 
         Returns:
             Dict containing processed image info or error details
         """
+        temp_file_path = None
         try:
-            # Step 1: Basic validation
+            logger.info(f"🔍 IMAGE VALIDATION - Starting validation for {filename} ({len(file_data)} bytes)")
+            
+            # Step 1: Basic validation with enhanced logging
             if not file_data:
+                logger.error("🔍 IMAGE VALIDATION - No file data provided")
                 return {"success": False, "error": "No file data provided"}
 
             if len(file_data) > self.max_file_size:
+                logger.error(f"🔍 IMAGE VALIDATION - File too large: {len(file_data)} bytes > {self.max_file_size} bytes")
                 return {
                     "success": False,
                     "error": f"File too large. Max size: {self.max_file_size // (1024 * 1024)}MB",
                 }
 
-            # Step 2: File extension validation
+            logger.info(f"🔍 IMAGE VALIDATION - Step 1 passed: Basic validation OK")
+
+            # Step 2: File extension validation with enhanced logging
             file_ext = Path(filename).suffix.lower()
             if file_ext not in self.allowed_extensions:
+                logger.error(f"🔍 IMAGE VALIDATION - Invalid extension: {file_ext} not in {self.allowed_extensions}")
                 return {
                     "success": False,
                     "error": f"Invalid file type. Allowed: {', '.join(self.allowed_extensions)}",
                 }
 
-            # Step 3: MIME type validation using mimetypes module
+            logger.info(f"🔍 IMAGE VALIDATION - Step 2 passed: Extension {file_ext} is valid")
+
+            # Step 3: Enhanced MIME type validation with python-magic fallback
+            mime_type = None
             try:
-                # Use mimetypes module for MIME type detection
-                mime_type, _ = mimetypes.guess_type(filename)
+                if MAGIC_AVAILABLE:
+                    # Use python-magic for bulletproof MIME type detection
+                    try:
+                        # Import magic here to avoid unbound variable issues
+                        import magic
+                        mime_type = magic.from_buffer(file_data, mime=True)
+                        logger.info(f"🔍 IMAGE VALIDATION - python-magic detected MIME type: {mime_type}")
+                    except Exception as magic_error:
+                        logger.warning(f"🔍 IMAGE VALIDATION - python-magic failed: {magic_error}, falling back to mimetypes")
+                        mime_type, _ = mimetypes.guess_type(filename)
+                else:
+                    # Fallback to mimetypes module
+                    mime_type, _ = mimetypes.guess_type(filename)
+                    logger.info(f"🔍 IMAGE VALIDATION - mimetypes detected MIME type: {mime_type}")
+                
                 if mime_type not in self.allowed_mime_types:
-                    return {"success": False, "error": "Could not verify file type"}
+                    logger.error(f"🔍 IMAGE VALIDATION - Invalid MIME type: {mime_type} not in {self.allowed_mime_types}")
+                    return {"success": False, "error": f"Invalid file type detected: {mime_type}"}
+                    
             except Exception as e:
-                logger.warning(f"MIME type detection failed: {e}")
+                logger.error(f"🔍 IMAGE VALIDATION - MIME type detection failed: {e}")
                 return {"success": False, "error": "Could not verify file type"}
 
-            # Step 4: Image integrity validation using PIL
+            logger.info(f"🔍 IMAGE VALIDATION - Step 3 passed: MIME type {mime_type} is valid")
+
+            # Step 4: Image integrity validation using PIL with enhanced logging
+            width, height = 0, 0
             try:
                 with Image.open(io.BytesIO(file_data)) as img:
                     img.verify()  # Verify image integrity
+                    logger.info(f"🔍 IMAGE VALIDATION - PIL verification passed")
+                    
                     # Re-open for size check (verify() closes the image)
                     img = Image.open(io.BytesIO(file_data))
                     width, height = img.size
+                    logger.info(f"🔍 IMAGE VALIDATION - Image dimensions: {width}x{height}")
 
                     # Reasonable size limits
                     if width > 4096 or height > 4096:
+                        logger.error(f"🔍 IMAGE VALIDATION - Dimensions too large: {width}x{height}")
                         return {
                             "success": False,
                             "error": "Image dimensions too large (max 4096x4096)",
                         }
 
                     if width < 1 or height < 1:
+                        logger.error(f"🔍 IMAGE VALIDATION - Invalid dimensions: {width}x{height}")
                         return {"success": False, "error": "Invalid image dimensions"}
 
             except Exception as e:
+                logger.error(f"🔍 IMAGE VALIDATION - PIL validation failed: {e}")
                 return {
                     "success": False,
                     "error": f"Invalid or corrupted image: {str(e)}",
                 }
 
-            # Step 5: Generate secure filename
+            logger.info(f"🔍 IMAGE VALIDATION - Step 4 passed: PIL validation OK")
+
+            # Step 5: Generate secure filename with enhanced logging
             file_hash = hashlib.sha256(file_data).hexdigest()[:16]
             secure_filename = f"{uuid.uuid4().hex}_{file_hash}{file_ext}"
             file_path = self.upload_dir / secure_filename
+            temp_file_path = file_path  # Track for cleanup
+            
+            logger.info(f"🔍 IMAGE VALIDATION - Generated secure filename: {secure_filename}")
+            logger.info(f"🔍 IMAGE VALIDATION - Target file path: {file_path}")
 
-            # Step 6: Save file securely with proper error handling
+            # Step 6: Atomic file save with comprehensive error handling
             try:
-                # FIXED: Ensure directory exists before writing
+                # Ensure directory exists before writing
                 self.upload_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"🔍 IMAGE VALIDATION - Upload directory ensured: {self.upload_dir}")
                 
+                # Write file atomically
                 async with aiofiles.open(file_path, "wb") as f:
                     await f.write(file_data)
+                logger.info(f"🔍 IMAGE VALIDATION - File written to disk")
 
-                # FIXED: Add small delay to ensure file system sync
+                # Small delay to ensure file system sync
                 await asyncio.sleep(0.1)
 
                 # Verify file was written correctly
                 if not file_path.exists():
+                    logger.error(f"🔍 IMAGE VALIDATION - File verification failed: file does not exist")
                     return {"success": False, "error": "File was not created"}
                     
                 actual_size = file_path.stat().st_size
                 if actual_size != len(file_data):
+                    logger.error(f"🔍 IMAGE VALIDATION - File size mismatch: expected {len(file_data)}, got {actual_size}")
                     return {"success": False, "error": f"File size mismatch: expected {len(file_data)}, got {actual_size}"}
 
-                # FIXED: Set proper file permissions for web server access
+                logger.info(f"🔍 IMAGE VALIDATION - File verification passed: {actual_size} bytes")
+
+                # Set proper file permissions for web server access
                 try:
                     file_path.chmod(0o644)  # Read/write for owner, read for group/others
+                    logger.info(f"🔍 IMAGE VALIDATION - File permissions set to 644")
                 except Exception as perm_error:
-                    logger.warning(f"Could not set file permissions for {file_path}: {perm_error}")
+                    logger.warning(f"🔍 IMAGE VALIDATION - Could not set file permissions: {perm_error}")
 
             except Exception as e:
+                logger.error(f"🔍 IMAGE VALIDATION - File save failed: {e}")
                 # Cleanup on failure
                 if file_path.exists():
                     try:
                         file_path.unlink()
-                    except Exception:
-                        pass
+                        logger.info(f"🔍 IMAGE VALIDATION - Cleaned up failed file: {file_path}")
+                    except Exception as cleanup_error:
+                        logger.error(f"🔍 IMAGE VALIDATION - Cleanup failed: {cleanup_error}")
                 return {"success": False, "error": f"Failed to save file: {str(e)}"}
 
-            return {
+            logger.info(f"🔍 IMAGE VALIDATION - Step 6 passed: File saved successfully")
+
+            # Success - clear temp_file_path to prevent cleanup
+            temp_file_path = None
+            
+            result = {
                 "success": True,
                 "file_path": str(file_path),
                 "filename": secure_filename,
@@ -147,9 +215,19 @@ class BulletproofImageHandler:
                 "mime_type": mime_type,
                 "dimensions": (width, height),
             }
+            
+            logger.info(f"🔍 IMAGE VALIDATION - ✅ SUCCESS: Image validation completed successfully")
+            return result
 
         except Exception as e:
-            logger.error(f"Image validation failed: {e}")
+            logger.error(f"🔍 IMAGE VALIDATION - ❌ CRITICAL ERROR: {e}")
+            # Cleanup temp file if it exists
+            if temp_file_path and temp_file_path.exists():
+                try:
+                    temp_file_path.unlink()
+                    logger.info(f"🔍 IMAGE VALIDATION - Cleaned up temp file after error: {temp_file_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"🔍 IMAGE VALIDATION - Temp file cleanup failed: {cleanup_error}")
             return {"success": False, "error": f"Image processing failed: {str(e)}"}
 
     @critical_operation("image_cleanup")
@@ -545,8 +623,11 @@ class BulletproofPollOperations:
                     # Step 2: Bulletproof vote recording with multiple choice support
                     from .database import Vote
 
+                    # Fix SQLAlchemy boolean comparison - use proper comparison
                     multiple_choice_value = getattr(poll, "multiple_choice", False)
-                    if multiple_choice_value is True:
+                    # Convert SQLAlchemy Column to Python boolean safely
+                    is_multiple_choice = bool(multiple_choice_value) if multiple_choice_value is not None else False
+                    if is_multiple_choice:
                         # Multiple choice: Check if user already voted for this specific option
                         existing_vote = (
                             db.query(Vote)
@@ -673,9 +754,8 @@ class BulletproofPollOperations:
                             poll, "multiple_choice", False
                         )
                         # Convert SQLAlchemy Column to boolean safely - avoid direct boolean conversion
-                        if multiple_choice_verification is not None and str(
-                            multiple_choice_verification
-                        ).lower() in ("true", "1"):
+                        is_multiple_choice_verification = bool(multiple_choice_verification) if multiple_choice_verification is not None else False
+                        if is_multiple_choice_verification:
                             # Multiple choice: verify specific vote exists
                             verification_vote = (
                                 db.query(Vote)

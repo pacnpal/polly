@@ -307,7 +307,18 @@
 <script>
 // Initialize Edit Form functionality (HTMX compatible)
 (function() {
+    // Prevent multiple initializations
+    if (window.pollyEditFormInitialized) {
+        return;
+    }
+    window.pollyEditFormInitialized = true;
+
     function initializeEditForm() {
+        // Check if already initialized to prevent duplicate event listeners
+        if (document.getElementById('image-drop-zone')?.dataset.initialized === 'true') {
+            return;
+        }
+
         // Image upload functionality
         const imageDropZone = document.getElementById('image-drop-zone');
         const imageInput = document.getElementById('poll-image');
@@ -320,6 +331,8 @@
         const imageMessageSection = document.getElementById('image-message-section');
 
         if (imageDropZone && imageInput) {
+            // Mark as initialized
+            imageDropZone.dataset.initialized = 'true';
             // Click to browse
             imageDropZone.addEventListener('click', () => {
                 imageInput.click();
@@ -819,7 +832,7 @@
         const timezoneSelect = document.getElementById('timezone');
         const openTimeError = document.getElementById('open-time-error');
         const closeTimeError = document.getElementById('close-time-error');
-        const form = openTimeInput.closest('form');
+        const form = openTimeInput ? openTimeInput.closest('form') : null;
 
         function validateTimes() {
             let isValid = true;
