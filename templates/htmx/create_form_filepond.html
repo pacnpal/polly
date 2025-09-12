@@ -379,32 +379,18 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✅ CREATE FORM - Form handler initialized');
     }
     
-    // Initialize enhanced image upload with more detailed debugging
-    console.log('🔍 CREATE FORM - Starting enhanced image upload initialization');
-    console.log('🔍 CREATE FORM - window object:', typeof window);
-    console.log('🔍 CREATE FORM - PollyImageUpload class:', typeof window.PollyImageUpload);
-    console.log('🔍 CREATE FORM - Container element:', document.getElementById('enhanced-image-upload'));
-    
-    if (typeof window.PollyImageUpload === 'function') {
+    // Initialize enhanced image upload
+    if (window.PollyImageUpload) {
         try {
-            console.log('🔍 CREATE FORM - Creating PollyImageUpload instance...');
             const imageUpload = new window.PollyImageUpload();
-            console.log('🔍 CREATE FORM - Instance created, calling init...');
-            
-            const result = imageUpload.init('enhanced-image-upload', {
+            imageUpload.init('enhanced-image-upload', {
                 showImageMessage: true,
                 currentImagePath: null,
                 currentImageText: ''
             });
-            
-            console.log('✅ CREATE FORM - Enhanced image upload initialized successfully, result:', result);
         } catch (error) {
-            console.error('❌ CREATE FORM - Enhanced image upload initialization failed:', error);
-            console.error('❌ CREATE FORM - Error stack:', error.stack);
+            console.error('Enhanced image upload initialization failed:', error);
         }
-    } else {
-        console.error('❌ CREATE FORM - PollyImageUpload class not found or not a function');
-        console.error('❌ CREATE FORM - Available on window:', Object.keys(window).filter(k => k.includes('Polly')));
     }
     
     // Initialize file selection handling (fallback)
