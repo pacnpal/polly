@@ -135,7 +135,7 @@ async def update_closed_poll_embeds():
                         
                         # Also check open_time for correction
                         if fresh_poll.timezone in ['US/Eastern', 'America/New_York'] and fresh_poll.open_time:
-                            if fresh_poll.open_time.hour == 4 and fresh_poll.open_time.minute == 0:
+                            if fresh_poll.open_time.hour == 12 and fresh_poll.open_time.minute == 0:
                                 print(f"        🔧 CORRECTING TIME: Found 4:00:00 open time, changing to 12:00:00")
                                 # Create new datetime with corrected hour
                                 from datetime import datetime
