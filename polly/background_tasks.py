@@ -419,6 +419,7 @@ async def fix_closed_polls_discord_messages_on_startup():
     try:
         from .discord_bot import get_bot_instance
         from sqlalchemy.orm import joinedload
+        import discord
         
         logger.info("🔧 STARTUP FIX - Starting Discord message fix for existing closed polls")
         
@@ -449,31 +450,59 @@ async def fix_closed_polls_discord_messages_on_startup():
                 return
             
             success_count = 0
+            reaction_clear_count = 0
+            
             for poll in closed_polls:
                 poll_id = TypeSafeColumn.get_int(poll, "id")
                 poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
                 message_id = TypeSafeColumn.get_string(poll, "message_id")
+                channel_id = TypeSafeColumn.get_string(poll, "channel_id")
                 
                 logger.debug(f"🔄 STARTUP FIX - Checking poll {poll_id}: '{poll_name}' (Message: {message_id})")
                 
                 try:
                     # Update the Discord message to show final results
-                    success = await update_poll_message(bot, poll)
+                    message_updated = await update_poll_message(bot, poll)
                     
-                    if success:
+                    if message_updated:
                         logger.info(f"✅ STARTUP FIX - Successfully updated Discord message for poll {poll_id}")
                         success_count += 1
                     else:
                         logger.debug(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (may already be correct)")
+                    
+                    # Clear reactions from Discord message for closed polls
+                    if message_id and channel_id:
+                        try:
+                            channel = bot.get_channel(int(channel_id))
+                            if channel and isinstance(channel, discord.TextChannel):
+                                try:
+                                    message = await channel.fetch_message(int(message_id))
+                                    if message:
+                                        # Clear all reactions from the poll message
+                                        await message.clear_reactions()
+                                        logger.info(f"✅ STARTUP FIX - Cleared all reactions from Discord message for poll {poll_id}")
+                                        reaction_clear_count += 1
+                                    else:
+                                        logger.warning(f"⚠️ STARTUP FIX - Could not find message {message_id} for poll {poll_id}")
+                                except discord.NotFound:
+                                    logger.warning(f"⚠️ STARTUP FIX - Message {message_id} not found for poll {poll_id} (may have been deleted)")
+                                except discord.Forbidden:
+                                    logger.warning(f"⚠️ STARTUP FIX - No permission to clear reactions for poll {poll_id}")
+                                except Exception as reaction_error:
+                                    logger.error(f"❌ STARTUP FIX - Error clearing reactions for poll {poll_id}: {reaction_error}")
+                            else:
+                                logger.warning(f"⚠️ STARTUP FIX - Could not find or access channel {channel_id} for poll {poll_id}")
+                        except Exception as channel_error:
+                            logger.error(f"❌ STARTUP FIX - Error accessing channel for poll {poll_id}: {channel_error}")
                         
                 except Exception as e:
-                    logger.warning(f"⚠️ STARTUP FIX - Error updating poll {poll_id}: {e}")
+                    logger.warning(f"⚠️ STARTUP FIX - Error processing poll {poll_id}: {e}")
                     continue
             
-            if success_count > 0:
-                logger.info(f"🎉 STARTUP FIX - Successfully updated {success_count}/{len(closed_polls)} closed poll Discord messages")
+            if success_count > 0 or reaction_clear_count > 0:
+                logger.info(f"🎉 STARTUP FIX - Successfully updated {success_count}/{len(closed_polls)} closed poll Discord messages and cleared reactions from {reaction_clear_count} polls")
             else:
-                logger.info("✅ STARTUP FIX - All closed poll Discord messages appear to be already correct")
+                logger.info("✅ STARTUP FIX - All closed poll Discord messages and reactions appear to be already correct")
             
         except Exception as e:
             logger.error(f"❌ STARTUP FIX - Database error during Discord message fix: {e}")
