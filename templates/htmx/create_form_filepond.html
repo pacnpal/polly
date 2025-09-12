@@ -321,20 +321,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-        // Emoji picker functionality moved to static files
-
-        // Discord emoji functionality moved to static files
-
-        // Channel loading functionality moved to static files
-
-        // Time validation moved to static files
-
-        // Loading states and initialization moved to static files
-
-        // Checkbox functionality moved to static files
-
-        // Template data pre-filling functionality moved to static files
-})();
+// Re-initialize on HTMX content swaps
+document.addEventListener('htmx:afterSwap', function(event) {
+    // Re-initialize image upload functionality
+    if (window.PollyImageUpload) {
+        window.PollyImageUpload.init();
+    }
+    
+    // Re-initialize form handler functionality
+    if (window.PollyFormHandler) {
+        window.PollyFormHandler.init();
+    }
+});
 </script>
 
 <style>
