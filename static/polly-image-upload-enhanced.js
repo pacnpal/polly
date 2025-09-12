@@ -56,10 +56,13 @@ if (typeof window.PollyImageUpload === 'undefined') {
             </div>
         ` : '';
 
+        const showUploadZone = !this.options.currentImagePath || this.options.currentImagePath === 'null';
+        console.log('🔍 Upload zone visibility:', { currentImagePath: this.options.currentImagePath, showUploadZone });
+
         container.innerHTML = `
             ${currentImageHtml}
             
-            <div class="upload-zone" id="upload-zone" style="display: ${this.options.currentImagePath ? 'none' : 'block'};">
+            <div class="upload-zone" id="upload-zone" style="display: ${showUploadZone ? 'block' : 'none'};">
                 <div class="upload-content">
                     <i class="fas fa-cloud-upload-alt upload-icon"></i>
                     <div class="upload-text">
