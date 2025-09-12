@@ -13,8 +13,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="/static/polly-custom.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"></script>
-    <!-- Cloudflare Turnstile for passive bot detection -->
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
         .poll-card {
             transition: transform 0.2s;
@@ -309,16 +307,6 @@
     </script>
     {% endif %}
 
-    <!-- Non-interactive Turnstile for passive bot detection -->
-    {% if turnstile_enabled %}
-    <div class="turnstile-hidden">
-        <div class="cf-turnstile" 
-             data-sitekey="{{ turnstile_site_key }}" 
-             data-appearance="interaction-only"
-             data-execution="render">
-        </div>
-    </div>
-    {% endif %}
 
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay htmx-indicator">
