@@ -2491,7 +2491,11 @@ async def get_channels_htmx(
     current_user: DiscordUser = Depends(require_auth),
     preselect_last_channel: bool = True,
 ):
-    """Get channels for a server as HTML options for HTMX"""
+    """Get channels for a server as HTML options for HTMX with caching to prevent rate limiting"""
+    from .enhanced_cache_service import get_enhanced_cache_service
+
+    enhanced_cache = get_enhanced_cache_service()
+
     logger.debug(
         f"🔍 CHANNELS DEBUG - User {current_user.id} requesting channels for server {server_id}, preselect_last_channel={preselect_last_channel}"
     )
@@ -2499,6 +2503,48 @@ async def get_channels_htmx(
     if not server_id:
         logger.debug("🔍 CHANNELS DEBUG - No server_id provided")
         return '<option value="">Select a server first...</option>'
+
+    # Check cache first (5 minute TTL for channels to reduce Discord API calls)
+    cache_key = f"server_channels:{server_id}:{current_user.id}"
+    try:
+        redis_client = await enhanced_cache._get_redis()
+        if redis_client:
+            cached_channels = await redis_client.cache_get(cache_key)
+            if cached_channels:
+                logger.debug(f"🚀 CHANNELS CACHE HIT - Retrieved cached channels for server {server_id}")
+                
+                # Get user preferences for preselection
+                user_prefs = get_user_preferences(current_user.id)
+                last_channel_id = (
+                    user_prefs.get("last_channel_id") if preselect_last_channel else None
+                )
+                last_server_id = user_prefs.get("last_server_id")
+
+                # Only pre-select the last channel if we're loading the same server as last time
+                should_preselect = (
+                    preselect_last_channel
+                    and last_channel_id
+                    and last_server_id
+                    and str(server_id) == str(last_server_id)
+                )
+
+                # Rebuild options HTML with current preselection logic
+                options = '<option value="">Select a channel...</option>'
+                for channel in cached_channels.get("channels", []):
+                    escaped_channel_name = escape(channel["name"])
+                    selected = (
+                        "selected"
+                        if should_preselect and channel["id"] == last_channel_id
+                        else ""
+                    )
+                    options += f'<option value="{channel["id"]}" {selected}>#{escaped_channel_name}</option>'
+
+                return options
+    except Exception as e:
+        logger.warning(f"Error checking channels cache for server {server_id}: {e}")
+
+    # Cache miss - generate channels data
+    logger.debug(f"🔍 CHANNELS CACHE MISS - Generating channels for server {server_id}")
 
     try:
         user_guilds = await get_user_guilds_with_channels(bot, current_user.id)
@@ -2519,6 +2565,19 @@ async def get_channels_htmx(
         logger.debug(
             f"🔍 CHANNELS DEBUG - Found guild: {guild['name']} with {len(guild['channels'])} channels"
         )
+
+        # Cache the channels data for 5 minutes to reduce Discord API calls
+        try:
+            if redis_client:
+                cacheable_data = {
+                    "channels": guild["channels"],
+                    "guild_name": guild["name"],
+                    "cached_at": datetime.now().isoformat(),
+                }
+                await redis_client.cache_set(cache_key, cacheable_data, 300)  # 5 minutes
+                logger.debug(f"💾 CHANNELS CACHED - Stored channels for server {server_id} with 5min TTL")
+        except Exception as e:
+            logger.warning(f"Error caching channels for server {server_id}: {e}")
 
         # Get user preferences to potentially pre-select last used channel
         user_prefs = get_user_preferences(current_user.id)
@@ -2583,9 +2642,64 @@ async def get_roles_htmx(
     current_user: DiscordUser = Depends(require_auth),
     preselect_last_role: bool = True,
 ):
-    """Get roles for a server as HTML options for HTMX"""
+    """Get roles for a server as HTML options for HTMX with caching to prevent rate limiting"""
+    from .enhanced_cache_service import get_enhanced_cache_service
+
+    enhanced_cache = get_enhanced_cache_service()
+
+    logger.debug(
+        f"🔍 ROLES DEBUG - User {current_user.id} requesting roles for server {server_id}, preselect_last_role={preselect_last_role}"
+    )
+
     if not server_id:
+        logger.debug("🔍 ROLES DEBUG - No server_id provided")
         return '<option value="">Select a server first...</option>'
+
+    # Check cache first (5 minute TTL for roles to reduce Discord API calls)
+    cache_key = f"server_roles:{server_id}:{current_user.id}"
+    try:
+        redis_client = await enhanced_cache._get_redis()
+        if redis_client:
+            cached_roles = await redis_client.cache_get(cache_key)
+            if cached_roles:
+                logger.debug(f"🚀 ROLES CACHE HIT - Retrieved cached roles for server {server_id}")
+                
+                # Get user preferences for preselection
+                user_prefs = get_user_preferences(current_user.id)
+                last_role_id = (
+                    user_prefs.get("last_role_id") if preselect_last_role else None
+                )
+                last_server_id = user_prefs.get("last_server_id")
+
+                # Only pre-select the last role if we're loading the same server as last time
+                should_preselect = (
+                    preselect_last_role
+                    and last_role_id
+                    and last_server_id
+                    and str(server_id) == str(last_server_id)
+                )
+
+                # Rebuild options HTML with current preselection logic
+                options = '<option value="">Select a role (optional)...</option>'
+                for role in cached_roles.get("roles", []):
+                    escaped_role_name = escape(role["name"])
+                    selected = (
+                        "selected" if should_preselect and role["id"] == last_role_id else ""
+                    )
+
+                    # Add color indicator if role has a color
+                    color_indicator = ""
+                    if role.get("color") and role["color"] != "0":
+                        color_indicator = f'<span style="color: {role["color"]};">●</span> '
+
+                    options += f'<option value="{role["id"]}" {selected}>{color_indicator}@{escaped_role_name}</option>'
+
+                return options
+    except Exception as e:
+        logger.warning(f"Error checking roles cache for server {server_id}: {e}")
+
+    # Cache miss - generate roles data
+    logger.debug(f"🔍 ROLES CACHE MISS - Generating roles for server {server_id}")
 
     try:
         from .discord_utils import get_guild_roles
@@ -2593,7 +2707,22 @@ async def get_roles_htmx(
         roles = await get_guild_roles(bot, server_id)
 
         if not roles:
+            logger.debug(f"🔍 ROLES DEBUG - No mentionable roles found for server {server_id}")
             return '<option value="">No mentionable roles found...</option>'
+
+        logger.debug(f"🔍 ROLES DEBUG - Found {len(roles)} roles for server {server_id}")
+
+        # Cache the roles data for 5 minutes to reduce Discord API calls
+        try:
+            if redis_client:
+                cacheable_data = {
+                    "roles": roles,
+                    "cached_at": datetime.now().isoformat(),
+                }
+                await redis_client.cache_set(cache_key, cacheable_data, 300)  # 5 minutes
+                logger.debug(f"💾 ROLES CACHED - Stored roles for server {server_id} with 5min TTL")
+        except Exception as e:
+            logger.warning(f"Error caching roles for server {server_id}: {e}")
 
         # Get user preferences to potentially pre-select last used role
         user_prefs = get_user_preferences(current_user.id)
@@ -2606,6 +2735,10 @@ async def get_roles_htmx(
             and last_role_id
             and last_server_id
             and str(server_id) == str(last_server_id)
+        )
+
+        logger.debug(
+            f"🔍 ROLES DEBUG - Preselection logic: should_preselect={should_preselect}, last_role_id={last_role_id}, last_server_id={last_server_id}"
         )
 
         options = '<option value="">Select a role (optional)...</option>'
@@ -2624,10 +2757,12 @@ async def get_roles_htmx(
 
             options += f'<option value="{role["id"]}" {selected}>{color_indicator}@{escaped_role_name}</option>'
 
+        logger.debug(f"🔍 ROLES DEBUG - Returning {len(roles)} role options")
         return options
 
     except Exception as e:
-        logger.error(f"Error getting roles for server {server_id}: {e}")
+        logger.error(f"🔍 ROLES DEBUG - Error getting roles for server {server_id}: {e}")
+        logger.exception("Full traceback for roles error:")
         return '<option value="">Error loading roles...</option>'
 
 
