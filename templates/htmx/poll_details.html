@@ -57,12 +57,21 @@
                         </div>
                     </div>
 
-                    <!-- Poll Options and Results with Real-time Updates -->
+                    <!-- Poll Options and Results with Manual Refresh -->
                     <div class="mb-4">
-                        <h6 class="text-muted">Options & Results</h6>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="text-muted mb-0">Options & Results</h6>
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    hx-get="/htmx/poll/{{ poll.id }}/results-realtime"
+                                    hx-target="#poll-results-realtime"
+                                    hx-swap="innerHTML"
+                                    title="Refresh results">
+                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                            </button>
+                        </div>
                         <div id="poll-results-realtime"
                             hx-get="/htmx/poll/{{ poll.id }}/results-realtime"
-                            {% if poll.status == 'active' %}hx-trigger="load, every 10s"{% else %}hx-trigger="load"{% endif %}
+                            hx-trigger="load"
                             hx-swap="innerHTML">
                             <!-- Real-time results will be loaded here -->
                             {% set total_votes = poll.get_total_votes() %}

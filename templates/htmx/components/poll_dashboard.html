@@ -2,9 +2,16 @@
 <div class="card mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h6 class="card-title mb-0">
-            <i class="fas fa-chart-bar me-2"></i>Live Results Dashboard
+            <i class="fas fa-chart-bar me-2"></i>Results Dashboard
         </h6>
         <div class="btn-group" role="group">
+            <button type="button" class="btn btn-sm btn-outline-primary"
+                    hx-get="/htmx/poll/{{ poll.id }}/dashboard"
+                    hx-target="#poll-dashboard-container"
+                    hx-swap="innerHTML"
+                    title="Refresh dashboard">
+                <i class="fas fa-sync-alt me-1"></i>Refresh
+            </button>
             <a href="/htmx/poll/{{ poll.id }}/export-csv" download
                class="btn btn-sm btn-outline-success"
                title="Export to CSV"
@@ -12,7 +19,7 @@
                onclick="setTimeout(() => { this.style.opacity = '0.6'; setTimeout(() => { this.style.opacity = '1'; }, 1000); }, 100);">
                 <i class="fas fa-download me-1"></i>Export CSV
             </a>
-            <button type="button" class="btn btn-sm btn-outline-primary"
+            <button type="button" class="btn btn-sm btn-outline-secondary"
                     onclick="document.getElementById('poll-dashboard-table').scrollIntoView({behavior: 'smooth'})"
                     title="Scroll to table">
                 <i class="fas fa-table me-1"></i>View Table
@@ -150,25 +157,12 @@
         {% if vote_data %}
         <div class="mt-3 text-center">
             <small class="text-muted">
-                <i class="fas fa-sync-alt me-1"></i>
-                {% if poll.status == 'active' %}
-                Updates automatically every 10 seconds
-                {% else %}
-                Realtime updates stopped (poll is {{ poll.status }})
-                {% endif %}
+                <i class="fas fa-info-circle me-1"></i>
+                Click "Refresh" to update results manually
             </small>
         </div>
         {% endif %}
     </div>
-</div>
-
-<!-- Auto-refresh the dashboard every 5 seconds (only for active polls) -->
-{% if poll.status == 'active' %}
-<div hx-get="/htmx/poll/{{ poll.id }}/dashboard"
-     hx-trigger="every 10s"
-     hx-swap="innerHTML"
-     hx-target="#poll-dashboard-container"
-     class="auto-refresh-trigger">
 </div>
 
 <!-- JavaScript to handle progress bar widths from data attributes -->
@@ -181,4 +175,3 @@
         }
     });
 </script>
-{% endif %}
