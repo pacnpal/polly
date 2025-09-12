@@ -380,14 +380,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Initialize enhanced image upload
+    console.log('🔍 CREATE FORM - Checking PollyImageUpload availability:', !!window.PollyImageUpload);
+    console.log('🔍 CREATE FORM - Container exists:', !!document.getElementById('enhanced-image-upload'));
+    
     if (window.PollyImageUpload) {
-        const imageUpload = new window.PollyImageUpload();
-        imageUpload.init('enhanced-image-upload', {
-            showImageMessage: true,
-            currentImagePath: null,
-            currentImageText: ''
-        });
-        console.log('✅ CREATE FORM - Enhanced image upload initialized');
+        try {
+            const imageUpload = new window.PollyImageUpload();
+            imageUpload.init('enhanced-image-upload', {
+                showImageMessage: true,
+                currentImagePath: null,
+                currentImageText: ''
+            });
+            console.log('✅ CREATE FORM - Enhanced image upload initialized successfully');
+        } catch (error) {
+            console.error('❌ CREATE FORM - Enhanced image upload initialization failed:', error);
+        }
+    } else {
+        console.error('❌ CREATE FORM - PollyImageUpload class not found');
     }
     
     // Initialize file selection handling (fallback)

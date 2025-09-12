@@ -370,14 +370,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Initialize enhanced image upload
+    console.log('🔍 EDIT FORM - Checking PollyImageUpload availability:', !!window.PollyImageUpload);
+    console.log('🔍 EDIT FORM - Container exists:', !!document.getElementById('enhanced-image-upload'));
+    
     if (window.PollyImageUpload) {
-        const imageUpload = new window.PollyImageUpload();
-        imageUpload.init('enhanced-image-upload', {
-            showImageMessage: true,
-            currentImagePath: {% if poll.image_path %}'{{ poll.image_path }}'{% else %}null{% endif %},
-            currentImageText: '{{ poll.image_message_text|e if poll.image_message_text else "" }}'
-        });
-        console.log('✅ EDIT FORM - Enhanced image upload initialized');
+        try {
+            const imageUpload = new window.PollyImageUpload();
+            imageUpload.init('enhanced-image-upload', {
+                showImageMessage: true,
+                currentImagePath: {% if poll.image_path %}'{{ poll.image_path }}'{% else %}null{% endif %},
+                currentImageText: '{{ poll.image_message_text|e if poll.image_message_text else "" }}'
+            });
+            console.log('✅ EDIT FORM - Enhanced image upload initialized successfully');
+        } catch (error) {
+            console.error('❌ EDIT FORM - Enhanced image upload initialization failed:', error);
+        }
+    } else {
+        console.error('❌ EDIT FORM - PollyImageUpload class not found');
     }
 
     // Handle remove current image button (fallback)
