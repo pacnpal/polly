@@ -195,47 +195,42 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     poll_timezone = str(getattr(poll, "timezone", "UTC"))
     poll_id = getattr(poll, "id", "unknown")
     
-    logger.info(f"🔍 EMBED TIMEZONE DEBUG - Poll {poll_id}:")
-    logger.info(f"    📊 Poll status: {poll_status}")
-    logger.info(f"    🌍 Poll timezone field: '{poll_timezone}'")
+    logger.debug(f"🔍 EMBED TIMEZONE - Poll {poll_id}: status={poll_status}, timezone='{poll_timezone}'")
     
     # For closed polls, use close time; for others, use open time
     if poll_status == "closed":
         poll_timestamp = getattr(poll, "close_time", datetime.now(pytz.UTC))
-        logger.info(f"    📅 Using close_time: {poll_timestamp} (type: {type(poll_timestamp)})")
     else:
         poll_timestamp = getattr(poll, "open_time", datetime.now(pytz.UTC))
-        logger.info(f"    📅 Using open_time: {poll_timestamp} (type: {type(poll_timestamp)})")
     
-    logger.info(f"    📅 Original timestamp: {poll_timestamp}")
-    logger.info(f"    📅 Original timestamp tzinfo: {poll_timestamp.tzinfo}")
+    # Ensure timestamp is timezone-aware (should be UTC from database)
+    if poll_timestamp.tzinfo is None:
+        logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} has timezone-naive timestamp, assuming UTC")
+        poll_timestamp = pytz.UTC.localize(poll_timestamp)
     
-    # Convert timestamp to poll's timezone if specified
+    # Convert timestamp to poll's timezone for display if specified and different from UTC
     if poll_timezone and poll_timezone != "UTC":
         try:
-            logger.info(f"    🔄 Converting from timezone '{poll_timezone}' to display timezone...")
             # Validate and normalize timezone first
             from .utils import validate_and_normalize_timezone
             normalized_tz = validate_and_normalize_timezone(poll_timezone)
-            logger.info(f"    ✅ Normalized timezone: '{normalized_tz}'")
             
-            tz = pytz.timezone(normalized_tz)
-            logger.info(f"    ✅ Pytz timezone object: {tz}")
-            
-            # Convert to the poll's timezone for display
-            original_timestamp = poll_timestamp
-            poll_timestamp = poll_timestamp.astimezone(tz)
-            
-            logger.info(f"    🔄 Converted timestamp: {poll_timestamp}")
-            logger.info(f"    🔄 Converted timestamp tzinfo: {poll_timestamp.tzinfo}")
-            logger.info(f"    📊 Conversion: {original_timestamp} → {poll_timestamp}")
+            if normalized_tz != "UTC":
+                tz = pytz.timezone(normalized_tz)
+                # Convert to the poll's timezone for display
+                poll_timestamp = poll_timestamp.astimezone(tz)
+                logger.debug(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp converted to {normalized_tz}")
+            else:
+                logger.debug(f"ℹ️ EMBED TIMEZONE - Poll {poll_id} using UTC (normalized from {poll_timezone})")
             
         except Exception as e:
-            logger.error(f"    ❌ Could not convert timestamp to timezone {poll_timezone}: {e}")
-            logger.info(f"    ⚠️ Keeping original UTC time: {poll_timestamp}")
-            # Keep original UTC time if timezone conversion fails
+            logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} timezone conversion failed: {e}")
+            # Ensure we have a valid UTC timestamp as fallback
+            if poll_timestamp.tzinfo != pytz.UTC:
+                poll_timestamp = poll_timestamp.astimezone(pytz.UTC)
+            logger.info(f"⚠️ EMBED TIMEZONE - Poll {poll_id} using UTC fallback")
     else:
-        logger.info(f"    ℹ️ Using UTC timezone (no conversion needed)")
+        logger.debug(f"ℹ️ EMBED TIMEZONE - Poll {poll_id} using UTC timezone")
 
     embed = discord.Embed(
         title=f"{status_emoji} {str(getattr(poll, 'name', ''))}",
@@ -457,27 +452,48 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     if poll_status == "scheduled":
         # Only show opens time for scheduled polls, with timezone-specific time
         poll_timezone = str(getattr(poll, "timezone", "UTC"))
-        if poll_timezone and poll_timezone != "UTC":
-            try:
-                # Validate and normalize timezone first
-                from .utils import validate_and_normalize_timezone
+        try:
+            # Validate and normalize timezone first
+            from .utils import validate_and_normalize_timezone
 
-                normalized_tz = validate_and_normalize_timezone(poll_timezone)
+            normalized_tz = validate_and_normalize_timezone(poll_timezone)
+            
+            if normalized_tz != "UTC":
                 tz = pytz.timezone(normalized_tz)
-                local_open = poll.open_time.astimezone(tz)
+                # Ensure open_time is timezone-aware before conversion
+                open_time = poll.open_time
+                if open_time.tzinfo is None:
+                    open_time = pytz.UTC.localize(open_time)
+                local_open = open_time.astimezone(tz)
                 embed.add_field(
                     name=f"Opens ({normalized_tz})",
                     value=local_open.strftime("%Y-%m-%d %I:%M %p"),
                     inline=True,
                 )
-            except Exception as e:
-                logger.debug(f"Could not format timezone {poll_timezone}: {e}")
-                # Fallback to UTC
+            else:
+                # Use UTC formatting
+                open_time = poll.open_time
+                if open_time.tzinfo is None:
+                    open_time = pytz.UTC.localize(open_time)
                 embed.add_field(
                     name="Opens (UTC)",
-                    value=poll.open_time.strftime("%Y-%m-%d %I:%M %p"),
+                    value=open_time.strftime("%Y-%m-%d %I:%M %p"),
                     inline=True,
                 )
+        except Exception as e:
+            logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} open time formatting failed: {e}")
+            # Fallback to UTC
+            try:
+                open_time = poll.open_time
+                if open_time.tzinfo is None:
+                    open_time = pytz.UTC.localize(open_time)
+                embed.add_field(
+                    name="Opens (UTC)",
+                    value=open_time.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True,
+                )
+            except Exception as fallback_error:
+                logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} UTC fallback failed: {fallback_error}")
 
     # Show close time for scheduled and active polls only (not closed polls)
     if poll_status in ["scheduled", "active"]:
@@ -486,7 +502,13 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             # Use the new helper function to format closing time with Today/Tomorrow
             from .utils import format_poll_closing_time, validate_and_normalize_timezone
             
-            formatted_time = format_poll_closing_time(poll.close_time, poll_timezone)
+            # Ensure close_time is timezone-aware before formatting
+            close_time = poll.close_time
+            if close_time.tzinfo is None:
+                close_time = pytz.UTC.localize(close_time)
+                logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} close_time was timezone-naive, assumed UTC")
+            
+            formatted_time = format_poll_closing_time(close_time, poll_timezone)
             normalized_tz = validate_and_normalize_timezone(poll_timezone)
             
             embed.add_field(
@@ -495,13 +517,19 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                 inline=True,
             )
         except Exception as e:
-            logger.debug(f"Could not format closing time for timezone {poll_timezone}: {e}")
+            logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} close time formatting failed: {e}")
             # Fallback to UTC
-            embed.add_field(
-                name="Closes (UTC)",
-                value=poll.close_time.strftime("%Y-%m-%d %I:%M %p"),
-                inline=True,
-            )
+            try:
+                close_time = poll.close_time
+                if close_time.tzinfo is None:
+                    close_time = pytz.UTC.localize(close_time)
+                embed.add_field(
+                    name="Closes (UTC)",
+                    value=close_time.strftime("%Y-%m-%d %I:%M %p"),
+                    inline=True,
+                )
+            except Exception as fallback_error:
+                logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} close time UTC fallback failed: {fallback_error}")
 
     # Add poll info in footer without Poll ID
     embed.set_footer(text="Created by Polly")
@@ -1209,18 +1237,31 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
     poll_timezone = str(getattr(poll, "timezone", "UTC"))
     poll_close_time = getattr(poll, "close_time", datetime.now(pytz.UTC))
     
-    # Convert close time to poll's timezone if specified
+    # Ensure close_time is timezone-aware
+    if poll_close_time.tzinfo is None:
+        logger.warning(f"⚠️ RESULTS EMBED - Poll close_time was timezone-naive, assuming UTC")
+        poll_close_time = pytz.UTC.localize(poll_close_time)
+    
+    # Convert close time to poll's timezone if specified and different from UTC
     if poll_timezone and poll_timezone != "UTC":
         try:
             # Validate and normalize timezone first
             from .utils import validate_and_normalize_timezone
             normalized_tz = validate_and_normalize_timezone(poll_timezone)
-            tz = pytz.timezone(normalized_tz)
-            # Convert to the poll's timezone for display
-            poll_close_time = poll_close_time.astimezone(tz)
+            
+            if normalized_tz != "UTC":
+                tz = pytz.timezone(normalized_tz)
+                # Convert to the poll's timezone for display
+                poll_close_time = poll_close_time.astimezone(tz)
+                logger.debug(f"✅ RESULTS EMBED - Converted close time to {normalized_tz}")
+            else:
+                logger.debug(f"ℹ️ RESULTS EMBED - Using UTC (normalized from {poll_timezone})")
         except Exception as e:
-            logger.debug(f"Could not convert close time to timezone {poll_timezone}: {e}")
-            # Keep original UTC time if timezone conversion fails
+            logger.error(f"❌ RESULTS EMBED - Close time timezone conversion failed: {e}")
+            # Ensure we have a valid UTC timestamp as fallback
+            if poll_close_time.tzinfo != pytz.UTC:
+                poll_close_time = poll_close_time.astimezone(pytz.UTC)
+            logger.info(f"⚠️ RESULTS EMBED - Using UTC fallback")
 
     embed = discord.Embed(
         title=f"🏁 Poll Results: {poll_name}",
