@@ -11,7 +11,7 @@ COPY pyproject.toml uv.lock ./
 COPY polly/ ./polly/
 COPY templates/ ./templates/
 COPY static/ ./static/
-COPY migrate_database.py ./
+COPY *.py ./
 
 # Ensure all template directories exist
 RUN mkdir -p templates/htmx
