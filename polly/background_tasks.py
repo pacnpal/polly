@@ -462,6 +462,7 @@ async def fix_closed_polls_discord_messages_on_startup():
     try:
         from .discord_bot import get_bot_instance
         from sqlalchemy.orm import joinedload
+        from .enhanced_cache_service import get_enhanced_cache_service
         import discord
         
         logger.info("🔧 STARTUP FIX - Starting Discord message fix for existing closed polls")
@@ -474,6 +475,9 @@ async def fix_closed_polls_discord_messages_on_startup():
         if not bot.is_ready():
             logger.warning("⚠️ STARTUP FIX - Bot is not ready yet, skipping Discord message fix")
             return
+        
+        # Get enhanced cache service for rate limiting prevention
+        enhanced_cache = get_enhanced_cache_service()
         
         # Get all closed polls that have message IDs
         db = get_db_session()
@@ -495,52 +499,78 @@ async def fix_closed_polls_discord_messages_on_startup():
             success_count = 0
             reaction_clear_count = 0
             
-            for poll in closed_polls:
-                poll_id = TypeSafeColumn.get_int(poll, "id")
-                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
-                message_id = TypeSafeColumn.get_string(poll, "message_id")
-                channel_id = TypeSafeColumn.get_string(poll, "channel_id")
+            # Process polls in batches to respect rate limits
+            batch_size = 5  # Process 5 polls at a time
+            batch_delay = 2.0  # 2 second delay between batches
+            poll_delay = 0.5  # 0.5 second delay between individual polls
+            
+            for i in range(0, len(closed_polls), batch_size):
+                batch = closed_polls[i:i + batch_size]
+                logger.info(f"🔄 STARTUP FIX - Processing batch {i//batch_size + 1}/{(len(closed_polls) + batch_size - 1)//batch_size} ({len(batch)} polls)")
                 
-                logger.debug(f"🔄 STARTUP FIX - Checking poll {poll_id}: '{poll_name}' (Message: {message_id})")
-                
-                try:
-                    # Update the Discord message to show final results
-                    message_updated = await update_poll_message(bot, poll)
+                for poll in batch:
+                    poll_id = TypeSafeColumn.get_int(poll, "id")
+                    poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+                    message_id = TypeSafeColumn.get_string(poll, "message_id")
+                    channel_id = TypeSafeColumn.get_string(poll, "channel_id")
                     
-                    if message_updated:
-                        logger.info(f"✅ STARTUP FIX - Successfully updated Discord message for poll {poll_id}")
-                        success_count += 1
-                    else:
-                        logger.debug(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (may already be correct)")
+                    logger.debug(f"🔄 STARTUP FIX - Checking poll {poll_id}: '{poll_name}' (Message: {message_id})")
                     
-                    # Clear reactions from Discord message for closed polls
-                    if message_id and channel_id:
-                        try:
-                            channel = bot.get_channel(int(channel_id))
-                            if channel and isinstance(channel, discord.TextChannel):
-                                try:
-                                    message = await channel.fetch_message(int(message_id))
-                                    if message:
-                                        # Clear all reactions from the poll message
-                                        await message.clear_reactions()
-                                        logger.info(f"✅ STARTUP FIX - Cleared all reactions from Discord message for poll {poll_id}")
-                                        reaction_clear_count += 1
-                                    else:
-                                        logger.warning(f"⚠️ STARTUP FIX - Could not find message {message_id} for poll {poll_id}")
-                                except discord.NotFound:
-                                    logger.warning(f"⚠️ STARTUP FIX - Message {message_id} not found for poll {poll_id} (may have been deleted)")
-                                except discord.Forbidden:
-                                    logger.warning(f"⚠️ STARTUP FIX - No permission to clear reactions for poll {poll_id}")
-                                except Exception as reaction_error:
-                                    logger.error(f"❌ STARTUP FIX - Error clearing reactions for poll {poll_id}: {reaction_error}")
-                            else:
-                                logger.warning(f"⚠️ STARTUP FIX - Could not find or access channel {channel_id} for poll {poll_id}")
-                        except Exception as channel_error:
-                            logger.error(f"❌ STARTUP FIX - Error accessing channel for poll {poll_id}: {channel_error}")
+                    try:
+                        # Update the Discord message to show final results
+                        message_updated = await update_poll_message(bot, poll)
                         
-                except Exception as e:
-                    logger.warning(f"⚠️ STARTUP FIX - Error processing poll {poll_id}: {e}")
-                    continue
+                        if message_updated:
+                            logger.info(f"✅ STARTUP FIX - Successfully updated Discord message for poll {poll_id}")
+                            success_count += 1
+                        else:
+                            logger.debug(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (may already be correct)")
+                        
+                        # Small delay to prevent rate limiting on message updates
+                        await asyncio.sleep(0.2)
+                        
+                        # Clear reactions from Discord message for closed polls
+                        if message_id and channel_id:
+                            try:
+                                channel = bot.get_channel(int(channel_id))
+                                if channel and isinstance(channel, discord.TextChannel):
+                                    try:
+                                        message = await channel.fetch_message(int(message_id))
+                                        if message:
+                                            # Clear all reactions from the poll message
+                                            await message.clear_reactions()
+                                            logger.info(f"✅ STARTUP FIX - Cleared all reactions from Discord message for poll {poll_id}")
+                                            reaction_clear_count += 1
+                                        else:
+                                            logger.warning(f"⚠️ STARTUP FIX - Could not find message {message_id} for poll {poll_id}")
+                                    except discord.NotFound:
+                                        logger.warning(f"⚠️ STARTUP FIX - Message {message_id} not found for poll {poll_id} (may have been deleted)")
+                                    except discord.Forbidden:
+                                        logger.warning(f"⚠️ STARTUP FIX - No permission to clear reactions for poll {poll_id}")
+                                    except discord.HTTPException as http_error:
+                                        if http_error.status == 429:  # Rate limited
+                                            logger.warning(f"⚠️ STARTUP FIX - Rate limited while clearing reactions for poll {poll_id}, adding extra delay")
+                                            await asyncio.sleep(5.0)  # Extra delay for rate limit
+                                        else:
+                                            logger.error(f"❌ STARTUP FIX - HTTP error clearing reactions for poll {poll_id}: {http_error}")
+                                    except Exception as reaction_error:
+                                        logger.error(f"❌ STARTUP FIX - Error clearing reactions for poll {poll_id}: {reaction_error}")
+                                else:
+                                    logger.warning(f"⚠️ STARTUP FIX - Could not find or access channel {channel_id} for poll {poll_id}")
+                            except Exception as channel_error:
+                                logger.error(f"❌ STARTUP FIX - Error accessing channel for poll {poll_id}: {channel_error}")
+                            
+                    except Exception as e:
+                        logger.warning(f"⚠️ STARTUP FIX - Error processing poll {poll_id}: {e}")
+                        continue
+                    
+                    # Rate limiting delay between individual polls
+                    await asyncio.sleep(poll_delay)
+                
+                # Delay between batches to respect Discord rate limits
+                if i + batch_size < len(closed_polls):  # Don't delay after the last batch
+                    logger.debug(f"⏳ STARTUP FIX - Waiting {batch_delay}s before next batch to respect rate limits")
+                    await asyncio.sleep(batch_delay)
             
             if success_count > 0 or reaction_clear_count > 0:
                 logger.info(f"🎉 STARTUP FIX - Successfully updated {success_count}/{len(closed_polls)} closed poll Discord messages and cleared reactions from {reaction_clear_count} polls")
