@@ -2603,37 +2603,72 @@ async def remove_option_htmx():
 async def upload_image_htmx(
     request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
-    """Handle FilePond image upload via HTMX"""
+    """Handle HTMX image upload with progress tracking and validation"""
+    logger.info(f"🔍 HTMX IMAGE UPLOAD - User {current_user.id} starting image upload")
+    
     try:
         form_data = await request.form()
         image_file = form_data.get("image")
 
-        if (
-            not image_file
-            or not hasattr(image_file, "filename")
-            or not image_file.filename
-        ):
-            return {"error": "No image file provided"}, 400
+        logger.info(f"🔍 HTMX IMAGE UPLOAD - Image file received: {type(image_file)}")
+        logger.info(f"🔍 HTMX IMAGE UPLOAD - Has filename: {hasattr(image_file, 'filename') if image_file else False}")
+        
+        if not image_file or not hasattr(image_file, "filename") or not getattr(image_file, "filename", None):
+            logger.warning("🔍 HTMX IMAGE UPLOAD - No valid image file provided")
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Please select an image file"}
+            )
 
-        # Validate image file
+        filename = str(getattr(image_file, "filename", ""))
+        logger.info(f"🔍 HTMX IMAGE UPLOAD - Processing file: {filename}")
+
+        # Validate image file with comprehensive logging
         is_valid, error_msg, content = await validate_image_file(image_file)
 
         if not is_valid:
-            return {"error": error_msg}, 400
+            logger.warning(f"🔍 HTMX IMAGE UPLOAD - Validation failed: {error_msg}")
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": error_msg}
+            )
 
-        if content and image_file.filename:
-            image_path = await save_image_file(content, str(image_file.filename))
+        if content and filename:
+            # Save the image file
+            image_path = await save_image_file(content, filename)
             if image_path:
-                # Return the file path for FilePond to track
-                return {"success": True, "path": image_path}
+                logger.info(f"🔍 HTMX IMAGE UPLOAD - ✅ Image saved successfully: {image_path}")
+                
+                # Return success response with image preview
+                return templates.TemplateResponse(
+                    "htmx/components/image_upload_success.html",
+                    {
+                        "request": request,
+                        "image_path": image_path,
+                        "filename": filename,
+                        "file_size": len(content)
+                    }
+                )
             else:
-                return {"error": "Failed to save image file"}, 500
+                logger.error("🔍 HTMX IMAGE UPLOAD - Failed to save image file")
+                return templates.TemplateResponse(
+                    "htmx/components/inline_error.html",
+                    {"request": request, "message": "Failed to save image file"}
+                )
 
-        return {"error": "No valid image content"}, 400
+        logger.error("🔍 HTMX IMAGE UPLOAD - No valid image content")
+        return templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": "No valid image content"}
+        )
 
     except Exception as e:
-        logger.error(f"Error in FilePond image upload: {e}")
-        return {"error": "Server error processing image"}, 500
+        logger.error(f"🔍 HTMX IMAGE UPLOAD - ❌ Error: {e}")
+        logger.exception("Full traceback for HTMX image upload error:")
+        return templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": "Server error processing image"}
+        )
 
 
 async def remove_image_htmx(

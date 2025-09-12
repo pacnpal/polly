@@ -147,34 +147,40 @@
                 </div>
                 {% endif %}
 
-                <div class="image-upload-container">
-                    <div class="image-drop-zone" id="image-drop-zone">
-                        <div class="drop-zone-content">
-                            <i class="fas fa-cloud-upload-alt fa-2x text-primary mb-2"></i>
-                            <p class="mb-2">Drag & drop a new image here or click to browse</p>
-                            <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
-                        </div>
-                        <input type="file"
-                               class="form-control"
-                               style="opacity: 0; position: absolute; top: -9999px; left: -9999px; width: 1px; height: 1px;"
-                               name="image"
-                               id="poll-image"
-                               accept="image/jpeg,image/png,image/gif,image/webp">
-                        <!-- Hidden input to ensure image field is always present in form data -->
-                        <input type="hidden" name="image_present" value="1">
-                    </div>
-                    <div id="image-preview" class="mt-3" style="display: none;">
-                        <div class="card" style="max-width: 300px;">
-                            <img id="preview-img" class="card-img-top" style="max-height: 200px; object-fit: cover;" alt="New image preview">
-                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
-                                <small class="text-muted" id="image-info">New Image Preview</small>
-                                <button type="button" class="btn btn-sm btn-outline-danger" id="remove-image">
-                                    <i class="fas fa-times"></i>
-                                </button>
+                <!-- HTMX File Upload Form -->
+                <form id='image-upload-form' hx-encoding='multipart/form-data' hx-post='/htmx/upload-image'
+                      hx-target='#image-upload-result' hx-swap='innerHTML'>
+                    <div class="image-upload-container">
+                        <div class="image-drop-zone" onclick="document.getElementById('poll-image').click();">
+                            <div class="drop-zone-content">
+                                <i class="fas fa-cloud-upload-alt fa-2x text-primary mb-2"></i>
+                                <p class="mb-2">Click to select a new image</p>
+                                <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
                             </div>
                         </div>
+                        <input type="file" 
+                               name="image" 
+                               id="poll-image"
+                               accept="image/jpeg,image/png,image/gif,image/webp"
+                               style="display: none;"
+                               onchange="this.form.dispatchEvent(new Event('submit'));">
+                        
+                        <!-- HTMX Upload Progress Bar -->
+                        <div id="image-upload-progress" class="mt-3" style="display: none;">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-upload me-2 text-primary"></i>
+                                <span class="text-muted">Uploading image...</span>
+                            </div>
+                            <progress id='image-progress' value='0' max='100' class="w-100"></progress>
+                            <small class="text-muted d-block mt-1">
+                                <span id="progress-text">0%</span>
+                            </small>
+                        </div>
                     </div>
-                </div>
+                </form>
+                
+                <!-- Upload Result Container -->
+                <div id="image-upload-result" class="mt-3"></div>
 
                 <!-- Optional: Image Message Text -->
                 <div id="image-message-section" class="mt-3" style="display: {% if poll.image_path or poll.image_message_text %}block{% else %}none{% endif %};">
@@ -188,6 +194,9 @@
                               placeholder="Add a message to display with your image...">{{ poll.image_message_text or '' }}</textarea>
                     <small class="text-muted">This text will appear with the image before the poll</small>
                 </div>
+                
+                <!-- Hidden input to store uploaded image path for main form -->
+                <input type="hidden" name="uploaded_image_path" id="uploaded-image-path" value="">
             </div>
 
             <div class="mb-3">
@@ -308,22 +317,39 @@
 <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
 
 <!-- Load static JavaScript files -->
-<script src="/static/polly-image-upload.js"></script>
 <script src="/static/polly-form-handler.js"></script>
 
 <script>
 // Global variables for template data
 window.DEFAULT_EMOJIS = {{ default_emojis|tojson }};
 
+// HTMX Progress Bar Handler for Image Upload
+htmx.on('#image-upload-form', 'htmx:xhr:progress', function(evt) {
+    const progressBar = htmx.find('#image-progress');
+    const progressText = htmx.find('#progress-text');
+    const progressDiv = htmx.find('#image-upload-progress');
+    
+    if (progressBar && progressText && progressDiv) {
+        const percentage = Math.round((evt.detail.loaded / evt.detail.total) * 100);
+        progressBar.setAttribute('value', percentage);
+        progressText.textContent = percentage + '%';
+        progressDiv.style.display = 'block';
+    }
+});
+
+// Hide progress bar when upload completes
+htmx.on('#image-upload-form', 'htmx:afterRequest', function(evt) {
+    const progressDiv = htmx.find('#image-upload-progress');
+    if (progressDiv) {
+        setTimeout(() => {
+            progressDiv.style.display = 'none';
+        }, 1000);
+    }
+});
+
 // Initialize edit form functionality
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🔧 EDIT FORM - Initializing with static files');
-    
-    // Initialize image upload functionality
-    if (window.PollyImageUpload) {
-        window.PollyImageUpload.init();
-        console.log('✅ EDIT FORM - Image upload initialized');
-    }
     
     // Initialize form handler functionality  
     if (window.PollyFormHandler) {
@@ -335,11 +361,6 @@ document.addEventListener('DOMContentLoaded', function() {
 // Re-initialize on HTMX content swaps
 document.addEventListener('htmx:afterSwap', function(event) {
     console.log('🔧 EDIT FORM - HTMX afterSwap detected, re-initializing');
-    
-    // Re-initialize image upload functionality
-    if (window.PollyImageUpload) {
-        window.PollyImageUpload.init();
-    }
     
     // Re-initialize form handler functionality
     if (window.PollyFormHandler) {

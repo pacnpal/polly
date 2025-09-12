@@ -237,19 +237,21 @@ window.PollyImageUpload = (function() {
 
         debugLog('File validation passed, showing preview');
         
-        // Show upload progress indicator
-        showImageUploadProgress('Preparing image preview...');
+        // Show HTMX upload progress bar
+        showHTMXUploadProgress();
 
         // Show preview
         const reader = new FileReader();
         reader.onload = (e) => {
             debugLog('FileReader loaded successfully');
+            // Hide progress and show preview
+            hideHTMXUploadProgress();
             showImagePreview(e.target.result, file.name, file.size);
         };
         
         reader.onerror = (e) => {
             console.error('FileReader error:', e);
-            hideImageUploadProgress();
+            hideHTMXUploadProgress();
             showImageError('Failed to read image file. Please try again.');
         };
         
