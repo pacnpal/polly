@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Polly</title>
+    <title>Dashboard - Polly (Debug)</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/static/polly_favicon.png">
     <link rel="icon" type="image/png" sizes="64x64" href="/static/polly_icon_64.png">
     <link rel="icon" type="image/png" sizes="128x128" href="/static/polly_icon_128.png">
@@ -15,6 +15,68 @@
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"></script>
     <!-- Cloudflare Turnstile for passive bot detection -->
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <!-- DEBUG VERSION: Automatically load polly-debug.js -->
+    <script src="/static/polly-debug.js"></script>
+    <!-- Pass debug mode to JavaScript -->
+    <script>
+        const POLLY_DEBUG = {{ POLLY_DEBUG|lower }};
+        
+        // Debug script loader function
+        function loadDebugScript() {
+            if (document.getElementById('polly-debug-script')) {
+                console.log('Debug script already loaded');
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.id = 'polly-debug-script';
+            script.src = '/static/polly-debug.js';
+            script.onload = function() {
+                console.log('✅ Polly Debug script loaded successfully');
+                const toggleBtn = document.getElementById('debug-toggle-btn');
+                if (toggleBtn) {
+                    toggleBtn.innerHTML = '<i class="fas fa-bug me-1"></i>Debug: ON';
+                    toggleBtn.classList.remove('btn-outline-secondary');
+                    toggleBtn.classList.add('btn-success');
+                }
+            };
+            script.onerror = function() {
+                console.error('❌ Failed to load Polly Debug script');
+                const toggleBtn = document.getElementById('debug-toggle-btn');
+                if (toggleBtn) {
+                    toggleBtn.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Debug: ERROR';
+                    toggleBtn.classList.remove('btn-outline-secondary');
+                    toggleBtn.classList.add('btn-danger');
+                }
+            };
+            document.head.appendChild(script);
+        }
+        
+        // Debug script unloader function
+        function unloadDebugScript() {
+            const script = document.getElementById('polly-debug-script');
+            if (script) {
+                script.remove();
+                console.log('🗑️ Polly Debug script unloaded');
+                const toggleBtn = document.getElementById('debug-toggle-btn');
+                if (toggleBtn) {
+                    toggleBtn.innerHTML = '<i class="fas fa-bug me-1"></i>Debug: OFF';
+                    toggleBtn.classList.remove('btn-success', 'btn-danger');
+                    toggleBtn.classList.add('btn-outline-secondary');
+                }
+            }
+        }
+        
+        // Toggle debug script
+        function toggleDebugScript() {
+            const script = document.getElementById('polly-debug-script');
+            if (script) {
+                unloadDebugScript();
+            } else {
+                loadDebugScript();
+            }
+        }
+    </script>
     <style>
         .poll-card {
             transition: transform 0.2s;
@@ -117,9 +179,27 @@
         .row {
             overflow: visible !important;
         }
+        /* Debug version indicator */
+        .debug-indicator {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #dc3545;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            z-index: 1050;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body class="bg-light" hx-boost="true">
+    <!-- Debug version indicator -->
+    <div class="debug-indicator">
+        <i class="fas fa-bug me-1"></i>DEBUG VERSION
+    </div>
+    
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">
