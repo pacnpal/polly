@@ -59,7 +59,7 @@ if (typeof window.PollyImageUpload === 'undefined') {
         container.innerHTML = `
             ${currentImageHtml}
             
-            <div class="upload-zone" id="upload-zone">
+            <div class="upload-zone" id="upload-zone" style="display: ${this.options.currentImagePath ? 'none' : 'block'};">
                 <div class="upload-content">
                     <i class="fas fa-cloud-upload-alt upload-icon"></i>
                     <div class="upload-text">
@@ -257,10 +257,16 @@ if (typeof window.PollyImageUpload === 'undefined') {
         const currentImagePreview = container.querySelector('#current-image-preview');
         const removeCurrentFlag = container.querySelector('#remove-current-image-flag');
         const imageMessageSection = container.querySelector('#image-message-section');
+        const uploadZone = container.querySelector('#upload-zone');
 
         // Hide current image
         if (currentImagePreview) {
             currentImagePreview.style.display = 'none';
+        }
+
+        // Show upload zone when current image is removed
+        if (uploadZone) {
+            uploadZone.style.display = 'block';
         }
 
         // Set removal flag
