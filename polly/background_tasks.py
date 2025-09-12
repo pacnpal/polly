@@ -474,9 +474,16 @@ async def run_static_content_recovery_on_startup():
             f"📊 SCHEDULER RESTORE - Found {len(scheduled_polls)} scheduled polls to restore"
         )
 
-        if not scheduled_polls:
+        # CRITICAL FIX: Also get active polls that may need to be closed
+        logger.debug("🔍 SCHEDULER RESTORE - Querying database for active polls that may need closing")
+        active_polls = db.query(Poll).filter(Poll.status == "active").all()
+        logger.info(
+            f"📊 SCHEDULER RESTORE - Found {len(active_polls)} active polls to check for closure"
+        )
+
+        if not scheduled_polls and not active_polls:
             logger.info(
-                "✅ SCHEDULER RESTORE - No scheduled polls found, restoration complete"
+                "✅ SCHEDULER RESTORE - No scheduled or active polls found, restoration complete"
             )
             return
 
@@ -607,13 +614,102 @@ async def run_static_content_recovery_on_startup():
                     f"Full traceback for poll {poll_id} restoration error:"
                 )
 
+        # CRITICAL FIX: Process active polls that may need to be closed
+        active_immediate_closes = 0
+        active_restored_count = 0
+
+        for poll in active_polls:
+            try:
+                poll_id = TypeSafeColumn.get_int(poll, "id")
+                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+
+                logger.info(
+                    f"🔄 SCHEDULER RESTORE - Processing active poll {poll_id}: '{poll_name}'"
+                )
+                logger.debug(
+                    f"Active poll {poll_id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}"
+                )
+
+                # Get poll times as actual datetime objects using TypeSafeColumn
+                poll_close_time = poll.close_time
+
+                # Ensure we have valid datetime objects
+                if not isinstance(poll_close_time, datetime):
+                    logger.error(
+                        f"❌ SCHEDULER RESTORE - Invalid close_time datetime object for active poll {poll_id}"
+                    )
+                    continue
+
+                # Ensure poll times are timezone-aware for comparison
+                if poll_close_time.tzinfo is None:
+                    poll_close_time = pytz.UTC.localize(poll_close_time)
+                    logger.debug(
+                        f"🕐 SCHEDULER RESTORE - Localized naive close_time to UTC for active poll {poll_id}"
+                    )
+
+                # Check if active poll should be closed
+                if poll_close_time <= now:
+                    # Active poll should have already closed
+                    time_overdue = (now - poll_close_time).total_seconds()
+                    logger.warning(
+                        f"⏰ SCHEDULER RESTORE - Active poll {poll_id} close time is {time_overdue:.0f} seconds overdue, closing now"
+                    )
+
+                    try:
+                        await close_poll(poll_id)
+                        active_immediate_closes += 1
+                        logger.info(
+                            f"✅ SCHEDULER RESTORE - Successfully closed overdue active poll {poll_id}"
+                        )
+                    except Exception as close_exc:
+                        logger.error(
+                            f"❌ SCHEDULER RESTORE - Exception closing active poll {poll_id}: {close_exc}"
+                        )
+                        logger.exception(f"Full traceback for active poll {poll_id} closing:")
+                else:
+                    # Active poll still has time left - schedule it to close
+                    time_until_close = (poll_close_time - now).total_seconds()
+                    logger.info(
+                        f"📅 SCHEDULER RESTORE - Scheduling active poll {poll_id} to close in {time_until_close:.0f} seconds at {poll_close_time}"
+                    )
+
+                    # Use timezone-aware scheduler for restoration
+                    tz_scheduler = TimezoneAwareScheduler(scheduler)
+                    poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
+
+                    success_close = tz_scheduler.schedule_poll_closing(
+                        poll_id, poll_close_time, poll_timezone, close_poll
+                    )
+                    if success_close:
+                        logger.debug(
+                            f"✅ SCHEDULER RESTORE - Scheduled closing job for active poll {poll_id}"
+                        )
+                    else:
+                        logger.error(
+                            f"❌ SCHEDULER RESTORE - Failed to schedule closing for active poll {poll_id}"
+                        )
+
+                active_restored_count += 1
+                logger.debug(
+                    f"✅ SCHEDULER RESTORE - Completed processing active poll {poll_id}"
+                )
+
+            except Exception as e:
+                poll_id = TypeSafeColumn.get_int(poll, "id", 0) if poll else 0
+                logger.error(
+                    f"❌ SCHEDULER RESTORE - Error processing active poll {poll_id}: {e}"
+                )
+                logger.exception(
+                    f"Full traceback for active poll {poll_id} restoration error:"
+                )
+
         # Log final restoration summary
         logger.info("🎉 SCHEDULER RESTORE - Restoration complete!")
         logger.info(
-            f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} polls processed"
+            f"📊 SCHEDULER RESTORE - Summary: {restored_count}/{len(scheduled_polls)} scheduled polls processed, {active_restored_count}/{len(active_polls)} active polls processed"
         )
         logger.info(
-            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} closed"
+            f"📊 SCHEDULER RESTORE - Immediate actions: {immediate_closes} scheduled polls closed, {active_immediate_closes} active polls closed"
         )
 
         # Debug current scheduler jobs
