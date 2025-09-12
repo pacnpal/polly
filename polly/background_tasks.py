@@ -407,8 +407,83 @@ async def restore_scheduled_jobs():
     # First, clean up polls whose messages have been deleted
     await cleanup_polls_with_deleted_messages()
     
+    # Fix Discord messages for existing closed polls that may not have been updated properly
+    await fix_closed_polls_discord_messages_on_startup()
+    
     # Run static content recovery for existing closed polls
     await run_static_content_recovery_on_startup()
+
+
+async def fix_closed_polls_discord_messages_on_startup():
+    """Fix Discord messages for existing closed polls that may not have been updated properly"""
+    try:
+        from .discord_bot import get_bot_instance
+        from sqlalchemy.orm import joinedload
+        
+        logger.info("🔧 STARTUP FIX - Starting Discord message fix for existing closed polls")
+        
+        bot = get_bot_instance()
+        if not bot:
+            logger.warning("⚠️ STARTUP FIX - Bot instance not available, skipping Discord message fix")
+            return
+        
+        if not bot.is_ready():
+            logger.warning("⚠️ STARTUP FIX - Bot is not ready yet, skipping Discord message fix")
+            return
+        
+        # Get all closed polls that have message IDs
+        db = get_db_session()
+        try:
+            closed_polls = (
+                db.query(Poll)
+                .options(joinedload(Poll.votes))
+                .filter(Poll.status == 'closed')
+                .filter(Poll.message_id.isnot(None))
+                .all()
+            )
+            
+            logger.info(f"📊 STARTUP FIX - Found {len(closed_polls)} closed polls with message IDs to check")
+            
+            if not closed_polls:
+                logger.info("✅ STARTUP FIX - No closed polls found that need Discord message fixing")
+                return
+            
+            success_count = 0
+            for poll in closed_polls:
+                poll_id = TypeSafeColumn.get_int(poll, "id")
+                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+                message_id = TypeSafeColumn.get_string(poll, "message_id")
+                
+                logger.debug(f"🔄 STARTUP FIX - Checking poll {poll_id}: '{poll_name}' (Message: {message_id})")
+                
+                try:
+                    # Update the Discord message to show final results
+                    success = await update_poll_message(bot, poll)
+                    
+                    if success:
+                        logger.info(f"✅ STARTUP FIX - Successfully updated Discord message for poll {poll_id}")
+                        success_count += 1
+                    else:
+                        logger.debug(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (may already be correct)")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ STARTUP FIX - Error updating poll {poll_id}: {e}")
+                    continue
+            
+            if success_count > 0:
+                logger.info(f"🎉 STARTUP FIX - Successfully updated {success_count}/{len(closed_polls)} closed poll Discord messages")
+            else:
+                logger.info("✅ STARTUP FIX - All closed poll Discord messages appear to be already correct")
+            
+        except Exception as e:
+            logger.error(f"❌ STARTUP FIX - Database error during Discord message fix: {e}")
+        finally:
+            db.close()
+        
+    except Exception as e:
+        logger.error(f"❌ STARTUP FIX - Error during Discord message fix: {e}")
+        # Don't fail startup if fix fails
+        logger.info("🔄 STARTUP FIX - Continuing startup despite Discord message fix failure")
 
 
 async def run_static_content_recovery_on_startup():
