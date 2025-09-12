@@ -102,60 +102,88 @@ async def update_closed_poll_embeds():
                             failed_count += 1
                             continue
                         
-                        # DETAILED TIMEZONE DEBUG LOGGING
+                        # FORCE EASTERN TIMEZONE FOR ALL POLLS
                         print(f"    🔍 TIMEZONE DEBUG - Poll {poll_id}:")
                         print(f"        📅 Original open_time: {fresh_poll.open_time} (type: {type(fresh_poll.open_time)})")
                         print(f"        📅 Original close_time: {fresh_poll.close_time} (type: {type(fresh_poll.close_time)})")
-                        print(f"        🌍 Poll timezone field: '{fresh_poll.timezone}'")
+                        print(f"        🌍 Original timezone field: '{fresh_poll.timezone}'")
                         print(f"        📊 Poll status: '{fresh_poll.status}'")
                         
-                        # TIME CORRECTION: Fix 4:00:00 times to 00:00:00 for Eastern timezone polls
-                        time_corrected = False
-                        if fresh_poll.timezone in ['US/Eastern', 'America/New_York'] and fresh_poll.close_time:
-                            if fresh_poll.close_time.hour == 12 and fresh_poll.close_time.minute == 0:
-                                print(f"        🔧 CORRECTING TIME: Found 4:00:00 close time, changing to 00:00:00")
-                                # Create new datetime with corrected hour
-                                from datetime import datetime
-                                corrected_close_time = fresh_poll.close_time.replace(hour=00)
-                                
-                                # Update the database with corrected time
-                                from sqlalchemy import text
-                                fresh_db.execute(
-                                    text("UPDATE polls SET close_time = :new_time WHERE id = :poll_id"),
-                                    {"new_time": corrected_close_time, "poll_id": poll_id}
-                                )
-                                fresh_db.commit()
-                                
-                                # Update the poll object
-                                fresh_poll.close_time = corrected_close_time
-                                time_corrected = True
-                                print(f"        ✅ CORRECTED: {fresh_poll.close_time} (changed from 4:00:00 to 12:00:00)")
-                            else:
-                                print(f"        ℹ️ No time correction needed (close time is {fresh_poll.close_time.hour}:{fresh_poll.close_time.minute:02d})")
+                        # FORCE ALL POLLS TO USE EASTERN TIMEZONE
+                        import pytz
+                        from datetime import datetime
+                        from sqlalchemy import text
                         
-                        # Also check open_time for correction
-                        if fresh_poll.timezone in ['US/Eastern', 'America/New_York'] and fresh_poll.open_time:
-                            if fresh_poll.open_time.hour == 12 and fresh_poll.open_time.minute == 0:
-                                print(f"        🔧 CORRECTING TIME: Found 4:00:00 open time, changing to 12:00:00")
-                                # Create new datetime with corrected hour
-                                from datetime import datetime
-                                corrected_open_time = fresh_poll.open_time.replace(hour=00)
-                                
-                                # Update the database with corrected time
-                                from sqlalchemy import text
+                        eastern_tz = pytz.timezone('America/New_York')
+                        updates_made = False
+                        
+                        # Force timezone to Eastern
+                        if fresh_poll.timezone != 'America/New_York':
+                            print(f"        🔧 FORCING TIMEZONE: Changing from '{fresh_poll.timezone}' to 'America/New_York'")
+                            fresh_db.execute(
+                                text("UPDATE polls SET timezone = :new_timezone WHERE id = :poll_id"),
+                                {"new_timezone": "America/New_York", "poll_id": poll_id}
+                            )
+                            fresh_poll.timezone = "America/New_York"
+                            updates_made = True
+                        
+                        # Fix timezone-naive timestamps by making them timezone-aware in Eastern
+                        if fresh_poll.open_time and fresh_poll.open_time.tzinfo is None:
+                            print(f"        🔧 FIXING TIMEZONE-NAIVE open_time: {fresh_poll.open_time}")
+                            # Assume the naive datetime is already in Eastern time and make it timezone-aware
+                            aware_open_time = eastern_tz.localize(fresh_poll.open_time)
+                            fresh_db.execute(
+                                text("UPDATE polls SET open_time = :new_time WHERE id = :poll_id"),
+                                {"new_time": aware_open_time, "poll_id": poll_id}
+                            )
+                            fresh_poll.open_time = aware_open_time
+                            updates_made = True
+                            print(f"        ✅ FIXED open_time: {fresh_poll.open_time} (now timezone-aware in Eastern)")
+                        
+                        if fresh_poll.close_time and fresh_poll.close_time.tzinfo is None:
+                            print(f"        🔧 FIXING TIMEZONE-NAIVE close_time: {fresh_poll.close_time}")
+                            # Assume the naive datetime is already in Eastern time and make it timezone-aware
+                            aware_close_time = eastern_tz.localize(fresh_poll.close_time)
+                            fresh_db.execute(
+                                text("UPDATE polls SET close_time = :new_time WHERE id = :poll_id"),
+                                {"new_time": aware_close_time, "poll_id": poll_id}
+                            )
+                            fresh_poll.close_time = aware_close_time
+                            updates_made = True
+                            print(f"        ✅ FIXED close_time: {fresh_poll.close_time} (now timezone-aware in Eastern)")
+                        
+                        # If timestamps are already timezone-aware but not in Eastern, convert them
+                        if fresh_poll.open_time and fresh_poll.open_time.tzinfo is not None:
+                            if fresh_poll.open_time.tzinfo != eastern_tz:
+                                print(f"        🔧 CONVERTING open_time to Eastern: {fresh_poll.open_time}")
+                                # Convert to Eastern time
+                                eastern_open_time = fresh_poll.open_time.astimezone(eastern_tz)
                                 fresh_db.execute(
                                     text("UPDATE polls SET open_time = :new_time WHERE id = :poll_id"),
-                                    {"new_time": corrected_open_time, "poll_id": poll_id}
+                                    {"new_time": eastern_open_time, "poll_id": poll_id}
                                 )
-                                fresh_db.commit()
-                                
-                                # Update the poll object
-                                fresh_poll.open_time = corrected_open_time
-                                time_corrected = True
-                                print(f"        ✅ CORRECTED: {fresh_poll.open_time} (changed from 4:00:00 to 00:00:00)")
+                                fresh_poll.open_time = eastern_open_time
+                                updates_made = True
+                                print(f"        ✅ CONVERTED open_time: {fresh_poll.open_time} (now in Eastern)")
                         
-                        if time_corrected:
-                            print(f"        🎯 TIME CORRECTION APPLIED - Database updated with corrected times")
+                        if fresh_poll.close_time and fresh_poll.close_time.tzinfo is not None:
+                            if fresh_poll.close_time.tzinfo != eastern_tz:
+                                print(f"        🔧 CONVERTING close_time to Eastern: {fresh_poll.close_time}")
+                                # Convert to Eastern time
+                                eastern_close_time = fresh_poll.close_time.astimezone(eastern_tz)
+                                fresh_db.execute(
+                                    text("UPDATE polls SET close_time = :new_time WHERE id = :poll_id"),
+                                    {"new_time": eastern_close_time, "poll_id": poll_id}
+                                )
+                                fresh_poll.close_time = eastern_close_time
+                                updates_made = True
+                                print(f"        ✅ CONVERTED close_time: {fresh_poll.close_time} (now in Eastern)")
+                        
+                        if updates_made:
+                            fresh_db.commit()
+                            print(f"        🎯 EASTERN TIMEZONE ENFORCEMENT COMPLETE - Database updated")
+                        else:
+                            print(f"        ✅ Poll already has proper Eastern timezone configuration")
                         
                         # Test timezone validation
                         try:
@@ -216,6 +244,9 @@ async def update_closed_poll_embeds():
             print("   - Removed outdated anonymous poll messages")
             print("   - Removed close time information for closed polls")
             print("   - Kept essential results, winner, and poll type info")
+            print("   - FORCED all polls to use Eastern timezone (America/New_York)")
+            print("   - FIXED all timezone-naive timestamps to be timezone-aware")
+            print("   - CONVERTED all timestamps to Eastern timezone")
             
         except Exception as e:
             print(f"❌ Database error: {e}")
