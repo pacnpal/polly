@@ -3,7 +3,9 @@
  * Modern, condensed interface with immediate preview functionality
  */
 
-class PollyImageUpload {
+// Only declare the class if it doesn't already exist
+if (typeof window.PollyImageUpload === 'undefined') {
+    class PollyImageUpload {
     constructor() {
         this.uploadEndpoint = '/htmx/upload-image';
         this.maxFileSize = 8 * 1024 * 1024; // 8MB
@@ -315,12 +317,13 @@ class PollyImageUpload {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
-}
+    }
 
-// Create global instance
-window.PollyImageUpload = PollyImageUpload;
+    // Create global instance
+    window.PollyImageUpload = PollyImageUpload;
 
-// Export for module usage
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = PollyImageUpload;
+    // Export for module usage
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = PollyImageUpload;
+    }
 }
