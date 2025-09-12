@@ -78,21 +78,43 @@ async def update_closed_poll_embeds():
                 message_id = poll.message_id
                 server_name = poll.server_name or "Unknown Server"
                 channel_name = poll.channel_name or "Unknown Channel"
+                poll_timezone = poll.timezone or "UTC"
                 
                 print(f"[{i}/{len(closed_polls)}] 🔄 Poll {poll_id}: '{poll_name}'")
                 print(f"    📍 {server_name} → #{channel_name}")
                 print(f"    💬 Message ID: {message_id}")
+                print(f"    🌍 Timezone: {poll_timezone}")
                 
                 try:
-                    # Update the Discord message with the new cleaned-up embed format
-                    success = await update_poll_message(bot, poll)
-                    
-                    if success:
-                        print(f"    ✅ Successfully updated embed (removed duplicates & clutter)")
-                        updated_count += 1
-                    else:
-                        print(f"    ❌ Failed to update embed (message may not exist)")
-                        failed_count += 1
+                    # Refresh poll from database to ensure all fields are properly loaded
+                    # and the poll object is attached to an active database session
+                    fresh_db = get_db_session()
+                    try:
+                        fresh_poll = (
+                            fresh_db.query(Poll)
+                            .options(joinedload(Poll.votes))
+                            .filter(Poll.id == poll_id)
+                            .first()
+                        )
+                        
+                        if not fresh_poll:
+                            print(f"    ❌ Poll {poll_id} not found in database refresh")
+                            failed_count += 1
+                            continue
+                        
+                        # Update the Discord message with the new cleaned-up embed format
+                        # using the fresh poll object with active database session
+                        success = await update_poll_message(bot, fresh_poll)
+                        
+                        if success:
+                            print(f"    ✅ Successfully updated embed (removed duplicates & clutter, timezone: {fresh_poll.timezone})")
+                            updated_count += 1
+                        else:
+                            print(f"    ❌ Failed to update embed (message may not exist)")
+                            failed_count += 1
+                            
+                    finally:
+                        fresh_db.close()
                         
                 except Exception as e:
                     print(f"    ❌ Error updating poll: {e}")
