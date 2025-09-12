@@ -20,30 +20,41 @@ This will:
 
 ## Step 2: Fix the Existing Closed Poll
 
-After the deployment is complete, you have two options to fix the existing poll:
+After the deployment is complete, you have several options to fix the existing poll:
 
-### Option A: Use the Fix Script (Recommended)
+### Option A: Use the Standalone Fix Script (Recommended)
 
-1. Copy the fix script to your remote server:
-```bash
-# If you're on the remote server, the script should already be there after git pull
-# Make it executable
-chmod +x fix_existing_poll.py
-```
-
-2. Run the fix script:
+1. Run the standalone fix script that creates its own bot connection:
 ```bash
 # Run the script to update existing closed polls
 python fix_existing_poll.py
 ```
 
-### Option B: Manual Fix via Docker
-
-If the script doesn't work, you can run it inside the Docker container:
-
+Or inside Docker:
 ```bash
 # Execute the fix script inside the running Polly container
 docker compose exec polly python /app/fix_existing_poll.py
+```
+
+### Option B: Use the Simple Fix Script (While Polly is Running)
+
+If Polly is already running, you can use the simpler script that connects to the existing bot:
+
+```bash
+# Fix all closed polls
+python fix_poll_simple.py
+
+# Or fix a specific poll by ID
+python fix_poll_simple.py 1
+```
+
+Or inside Docker:
+```bash
+# Fix all closed polls
+docker compose exec polly python /app/fix_poll_simple.py
+
+# Or fix a specific poll by ID  
+docker compose exec polly python /app/fix_poll_simple.py 1
 ```
 
 ### Option C: Manual Database Fix
@@ -55,13 +66,15 @@ If you need to manually trigger the fix, you can run this command:
 docker compose exec polly python -c "
 import asyncio
 from polly.database import get_db_session, Poll
-from polly.discord_bot import bot
+from polly.discord_bot import get_bot_instance
 from polly.discord_utils import update_poll_message
 from sqlalchemy.orm import joinedload
 
 async def fix_poll():
-    if not bot.is_ready():
-        await bot.wait_until_ready()
+    bot = get_bot_instance()
+    if not bot or not bot.is_ready():
+        print('Bot not ready')
+        return
     
     db = get_db_session()
     try:
