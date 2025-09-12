@@ -3298,10 +3298,26 @@ async def create_poll_htmx(
             for i, error in enumerate(validation_errors):
                 logger.error(f"Validation error {i + 1}: {error}")
                 print(f"🔍 VALIDATION ERROR {i + 1}: {error}")
-            # Return a 400 status code to trigger client-side validation
-            from fastapi import HTTPException
-
-            raise HTTPException(status_code=400, detail="Validation failed")
+            
+            # Create user-friendly error message from validation errors
+            error_messages = []
+            for error in validation_errors:
+                field_name = error.get("field_name", "Field")
+                message = error.get("message", "Invalid value")
+                suggestion = error.get("suggestion", "")
+                
+                error_line = f"**{field_name}**: {message}"
+                if suggestion:
+                    error_line += f" - {suggestion}"
+                error_messages.append(error_line)
+            
+            combined_error_message = "Please fix the following issues:\n\n" + "\n\n".join(error_messages)
+            
+            # Return inline error template instead of HTTPException
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": combined_error_message},
+            )
 
         # Use unified emoji processor for consistent handling
         unified_processor = get_unified_emoji_processor(bot)
@@ -4748,10 +4764,30 @@ async def update_poll_htmx(
             logger.info(
                 f"Poll update validation failed for poll {poll_id}: {len(validation_errors)} errors"
             )
-            # Return a 400 status code to trigger client-side validation
-            from fastapi import HTTPException
-
-            raise HTTPException(status_code=400, detail="Validation failed")
+            # Log each validation error for debugging
+            for i, error in enumerate(validation_errors):
+                logger.error(f"Validation error {i + 1}: {error}")
+                print(f"🔍 VALIDATION ERROR {i + 1}: {error}")
+            
+            # Create user-friendly error message from validation errors
+            error_messages = []
+            for error in validation_errors:
+                field_name = error.get("field_name", "Field")
+                message = error.get("message", "Invalid value")
+                suggestion = error.get("suggestion", "")
+                
+                error_line = f"**{field_name}**: {message}"
+                if suggestion:
+                    error_line += f" - {suggestion}"
+                error_messages.append(error_line)
+            
+            combined_error_message = "Please fix the following issues:\n\n" + "\n\n".join(error_messages)
+            
+            # Return inline error template instead of HTTPException
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": combined_error_message},
+            )
 
         # Extract validated data
         name = validated_data["name"]
