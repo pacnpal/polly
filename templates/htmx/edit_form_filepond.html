@@ -319,27 +319,68 @@
 // Global variables for template data
 window.DEFAULT_EMOJIS = {{ default_emojis|tojson }};
 
+// HTMX file upload progress tracking
+htmx.on('#image-upload-form', 'htmx:xhr:progress', function(evt) {
+    const progress = htmx.find('#upload-progress');
+    progress.style.display = 'block';
+    progress.setAttribute('value', evt.detail.loaded/evt.detail.total * 100);
+});
+
+// Handle successful image upload
+htmx.on('#image-upload-form', 'htmx:afterRequest', function(evt) {
+    const progress = htmx.find('#upload-progress');
+    progress.style.display = 'none';
+    
+    if (evt.detail.xhr.status === 200) {
+        const response = JSON.parse(evt.detail.xhr.responseText);
+        if (response.success) {
+            // Store uploaded image path
+            document.getElementById('uploaded-image-path').value = response.image_path;
+            
+            // Show image preview
+            const preview = document.getElementById('image-preview');
+            const previewImg = document.getElementById('preview-image');
+            const imageInfo = document.getElementById('image-info');
+            
+            previewImg.src = '/' + response.image_path;
+            imageInfo.textContent = response.filename || 'Uploaded Image';
+            preview.style.display = 'block';
+            
+            // Show image message section
+            document.getElementById('image-message-section').style.display = 'block';
+            
+            // Hide upload form
+            document.getElementById('image-upload-form').style.display = 'none';
+        } else {
+            alert('Upload failed: ' + (response.error || 'Unknown error'));
+        }
+    } else {
+        alert('Upload failed. Please try again.');
+    }
+});
+
+// Handle image removal
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'remove-image' || e.target.parentElement.id === 'remove-image') {
+        // Clear uploaded image
+        document.getElementById('uploaded-image-path').value = '';
+        document.getElementById('image-preview').style.display = 'none';
+        document.getElementById('image-message-section').style.display = 'none';
+        document.getElementById('image-upload-form').style.display = 'block';
+        
+        // Reset form
+        document.getElementById('image-upload-form').reset();
+    }
+});
+
 // Initialize edit form functionality
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔧 EDIT FORM - Initializing with Uppy');
+    console.log('🔧 EDIT FORM - Initializing with HTMX file upload');
     
     // Initialize form handler functionality  
     if (window.PollyFormHandler) {
         window.PollyFormHandler.init();
         console.log('✅ EDIT FORM - Form handler initialized');
-    }
-
-    // Initialize Uppy upload handler
-    if (window.PollyUppyUpload) {
-        window.PollyUppyUpload.init().then(uppy => {
-            if (uppy) {
-                console.log('✅ EDIT FORM - Uppy initialized successfully');
-            } else {
-                console.log('⚠️ EDIT FORM - Uppy failed, using fallback');
-            }
-        }).catch(error => {
-            console.error('❌ EDIT FORM - Uppy initialization failed:', error);
-        });
     }
 
     // Handle remove current image button
