@@ -182,6 +182,22 @@ async def update_closed_poll_embeds():
                         if updates_made:
                             fresh_db.commit()
                             print(f"        🎯 EASTERN TIMEZONE ENFORCEMENT COMPLETE - Database updated")
+                            
+                            # CRITICAL: Refresh the poll object after database updates to ensure
+                            # it has the updated timezone-aware timestamps
+                            print(f"        🔄 REFRESHING poll object after timezone updates...")
+                            fresh_poll = (
+                                fresh_db.query(Poll)
+                                .options(joinedload(Poll.votes))
+                                .filter(Poll.id == poll_id)
+                                .first()
+                            )
+                            if fresh_poll:
+                                print(f"        ✅ Poll object refreshed with updated timestamps")
+                                print(f"        📅 Refreshed open_time: {fresh_poll.open_time} (tzinfo: {fresh_poll.open_time.tzinfo if fresh_poll.open_time else None})")
+                                print(f"        📅 Refreshed close_time: {fresh_poll.close_time} (tzinfo: {fresh_poll.close_time.tzinfo if fresh_poll.close_time else None})")
+                            else:
+                                print(f"        ❌ Failed to refresh poll object after timezone updates")
                         else:
                             print(f"        ✅ Poll already has proper Eastern timezone configuration")
                         

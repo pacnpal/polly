@@ -203,10 +203,29 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     else:
         poll_timestamp = getattr(poll, "open_time", datetime.now(pytz.UTC))
     
-    # Ensure timestamp is timezone-aware (should be UTC from database)
+    # Ensure timestamp is timezone-aware - if naive, assume it's in the poll's timezone
     if poll_timestamp.tzinfo is None:
-        logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} has timezone-naive timestamp, assuming UTC")
-        poll_timestamp = pytz.UTC.localize(poll_timestamp)
+        logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} has timezone-naive timestamp, localizing to poll timezone")
+        
+        # Try to use the poll's timezone first, fallback to UTC
+        try:
+            if poll_timezone and poll_timezone != "UTC":
+                from .utils import validate_and_normalize_timezone
+                normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                if normalized_tz != "UTC":
+                    tz = pytz.timezone(normalized_tz)
+                    poll_timestamp = tz.localize(poll_timestamp)
+                    logger.info(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp localized to {normalized_tz}")
+                else:
+                    poll_timestamp = pytz.UTC.localize(poll_timestamp)
+                    logger.info(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp localized to UTC (normalized)")
+            else:
+                poll_timestamp = pytz.UTC.localize(poll_timestamp)
+                logger.info(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp localized to UTC (default)")
+        except Exception as localize_error:
+            logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} localization failed: {localize_error}")
+            poll_timestamp = pytz.UTC.localize(poll_timestamp)
+            logger.info(f"⚠️ EMBED TIMEZONE - Poll {poll_id} using UTC fallback")
     
     # Convert timestamp to poll's timezone for display if specified and different from UTC
     if poll_timezone and poll_timezone != "UTC":
