@@ -8,9 +8,9 @@ set -e
 echo "🚀 Quick Polly Update"
 echo "===================="
 
-# Check if docker compose.yml exists
-if [ ! -f "docker compose.yml" ]; then
-    echo "❌ docker compose.yml not found! Make sure you're in the project root."
+# Check if docker-compose.yml exists
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ docker-compose.yml not found! Make sure you're in the project root."
     exit 1
 fi
 
