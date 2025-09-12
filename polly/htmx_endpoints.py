@@ -461,12 +461,24 @@ async def close_poll_htmx(
         channel_id = TypeSafeColumn.get_string(poll, "channel_id")
         ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
 
-        # Update poll status to closed
+        # Update poll status to closed and set close time to now
+        current_time = datetime.now(pytz.UTC)
         setattr(poll, "status", "closed")
-        setattr(poll, "updated_at", datetime.now(pytz.UTC))
+        setattr(poll, "close_time", current_time)  # Update close time to now
+        setattr(poll, "updated_at", current_time)
         db.commit()
 
-        logger.info(f"Poll {poll_id} closed by user {current_user.id}")
+        logger.info(f"Poll {poll_id} closed by user {current_user.id} at {current_time}")
+
+        # Remove the scheduled closing job since poll is now closed
+        try:
+            from .background_tasks import get_scheduler
+            scheduler = get_scheduler()
+            if scheduler:
+                scheduler.remove_job(f"close_poll_{poll_id}")
+                logger.info(f"Removed scheduled closing job for manually closed poll {poll_id}")
+        except Exception as e:
+            logger.debug(f"Job close_poll_{poll_id} not found or already removed: {e}")
 
         # Generate static content for the closed poll (same as automatic closure)
         try:
@@ -3191,23 +3203,24 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
                 open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
                 close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
 
-                # Validate times
+                # Validate times using the poll's timezone
                 now = datetime.now(pytz.UTC)
-                next_minute = now.replace(second=0, microsecond=0) + timedelta(
-                    minutes=1
-                )
+                
+                # Get the user's timezone for proper validation
+                user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
+                now_in_user_tz = now.astimezone(user_tz)
+                
+                # Calculate next full minute in user's timezone, then convert to UTC for comparison
+                next_minute_user_tz = now_in_user_tz.replace(second=0, microsecond=0) + timedelta(minutes=1)
+                next_minute_utc = next_minute_user_tz.astimezone(pytz.UTC)
 
-                if open_dt < next_minute:
-                    user_tz = pytz.timezone(
-                        validate_and_normalize_timezone(timezone_str)
-                    )
-                    next_minute_local = next_minute.astimezone(user_tz)
-                    suggested_time = next_minute_local.strftime("%I:%M %p")
+                if open_dt < next_minute_utc:
+                    suggested_time = next_minute_user_tz.strftime("%I:%M %p")
                     validation_errors.append(
                         {
                             "field_name": "Open Time",
-                            "message": "Must be scheduled for at least the next minute",
-                            "suggestion": f"Try {suggested_time} or later to give the system time to process",
+                            "message": "Must be scheduled for at least the next full minute",
+                            "suggestion": f"Try {suggested_time} or later in your timezone ({timezone_str})",
                         }
                     )
                 elif close_dt <= open_dt:
