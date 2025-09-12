@@ -97,31 +97,7 @@ async def close_poll(poll_id: int):
             logger.error(f"❌ CLOSE POLL {poll_id} - Bulletproof closure exception: {error_msg}")
             return
 
-        # STEP 3: Clear reactions from Discord message
-        if message_id and channel_id:
-            try:
-                channel = bot.get_channel(int(channel_id))
-                if channel and isinstance(channel, discord.TextChannel):
-                    try:
-                        message = await channel.fetch_message(int(message_id))
-                        if message:
-                            # Clear all reactions from the poll message
-                            await message.clear_reactions()
-                            logger.info(f"✅ CLOSE POLL {poll_id} - Cleared all reactions from Discord message")
-                        else:
-                            logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find message {message_id}")
-                    except discord.NotFound:
-                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - Message {message_id} not found (may have been deleted)")
-                    except discord.Forbidden:
-                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - No permission to clear reactions")
-                    except Exception as reaction_error:
-                        logger.error(f"❌ CLOSE POLL {poll_id} - Error clearing reactions: {reaction_error}")
-                else:
-                    logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find or access channel {channel_id}")
-            except Exception as channel_error:
-                logger.error(f"❌ CLOSE POLL {poll_id} - Error accessing channel: {channel_error}")
-
-        # STEP 4: Get fresh poll data and update the existing message to show it's closed
+        # STEP 3: Get fresh poll data and update the existing message to show it's closed FIRST
         db = get_db_session()
         try:
             from sqlalchemy.orm import joinedload
@@ -133,12 +109,40 @@ async def close_poll(poll_id: int):
                 .first()
             )
             if fresh_poll:
-                # Update the poll embed to show it's closed with final results
+                # Update the poll embed to show it's closed with final results BEFORE clearing reactions
                 try:
                     await update_poll_message(bot, fresh_poll)
                     logger.info(f"✅ CLOSE POLL {poll_id} - Updated poll message to show closed status with final results")
                 except Exception as update_error:
                     logger.error(f"❌ CLOSE POLL {poll_id} - Error updating poll message: {update_error}")
+                    # Continue with closure process even if message update fails
+
+            # STEP 4: Clear reactions from Discord message AFTER updating the embed
+            if message_id and channel_id:
+                try:
+                    channel = bot.get_channel(int(channel_id))
+                    if channel and isinstance(channel, discord.TextChannel):
+                        try:
+                            message = await channel.fetch_message(int(message_id))
+                            if message:
+                                # Clear all reactions from the poll message
+                                await message.clear_reactions()
+                                logger.info(f"✅ CLOSE POLL {poll_id} - Cleared all reactions from Discord message")
+                            else:
+                                logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find message {message_id}")
+                        except discord.NotFound:
+                            logger.warning(f"⚠️ CLOSE POLL {poll_id} - Message {message_id} not found (may have been deleted)")
+                        except discord.Forbidden:
+                            logger.warning(f"⚠️ CLOSE POLL {poll_id} - No permission to clear reactions")
+                        except Exception as reaction_error:
+                            logger.error(f"❌ CLOSE POLL {poll_id} - Error clearing reactions: {reaction_error}")
+                    else:
+                        logger.warning(f"⚠️ CLOSE POLL {poll_id} - Could not find or access channel {channel_id}")
+                except Exception as channel_error:
+                    logger.error(f"❌ CLOSE POLL {poll_id} - Error accessing channel: {channel_error}")
+
+            # Continue with fresh_poll processing for role ping notifications
+            if fresh_poll:
 
                 # Send role ping notification if enabled and configured for poll closure
                 ping_role_enabled = TypeSafeColumn.get_bool(fresh_poll, "ping_role_enabled", False)

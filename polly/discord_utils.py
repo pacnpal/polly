@@ -1035,37 +1035,63 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
 
 async def update_poll_message(bot: commands.Bot, poll: Poll):
     """Update poll message with current results and send role ping notification for status changes"""
+    poll_id = getattr(poll, "id", "unknown")
     try:
+        logger.info(f"🔄 UPDATE MESSAGE - Starting update for poll {poll_id}")
+        
         poll_message_id = getattr(poll, "message_id", None)
         if not poll_message_id:
+            logger.error(f"❌ UPDATE MESSAGE - Poll {poll_id} has no message_id")
             return False
 
         poll_channel_id = getattr(poll, "channel_id", None)
+        if not poll_channel_id:
+            logger.error(f"❌ UPDATE MESSAGE - Poll {poll_id} has no channel_id")
+            return False
+            
+        logger.debug(f"🔍 UPDATE MESSAGE - Poll {poll_id}: message_id={poll_message_id}, channel_id={poll_channel_id}")
+        
         channel = bot.get_channel(int(str(poll_channel_id)))
         if not channel:
+            logger.error(f"❌ UPDATE MESSAGE - Channel {poll_channel_id} not found for poll {poll_id}")
             return False
 
         # Ensure we have a text channel
         if not isinstance(channel, discord.TextChannel):
+            logger.error(f"❌ UPDATE MESSAGE - Channel {poll_channel_id} is not a text channel for poll {poll_id}")
             return False
+
+        logger.debug(f"✅ UPDATE MESSAGE - Found channel {channel.name} for poll {poll_id}")
 
         try:
             message = await channel.fetch_message(int(str(poll_message_id)))
+            logger.debug(f"✅ UPDATE MESSAGE - Found message {poll_message_id} for poll {poll_id}")
         except discord.NotFound:
-            logger.warning(f"Poll message {poll_message_id} not found")
+            logger.error(f"❌ UPDATE MESSAGE - Poll message {poll_message_id} not found for poll {poll_id}")
+            return False
+        except Exception as fetch_error:
+            logger.error(f"❌ UPDATE MESSAGE - Error fetching message {poll_message_id} for poll {poll_id}: {fetch_error}")
             return False
 
         # Update embed - ALWAYS show results for closed polls, regardless of anonymity
         poll_status = str(getattr(poll, "status", "unknown"))
+        logger.info(f"📊 UPDATE MESSAGE - Poll {poll_id} status: {poll_status}")
+        
         if poll_status == "closed":
             # For closed polls, ALWAYS show results (both anonymous and non-anonymous)
             show_results = True
+            logger.info(f"🏁 UPDATE MESSAGE - Poll {poll_id} is closed, FORCING show_results=True")
         else:
             # For active/scheduled polls, respect the should_show_results logic
             show_results = bool(poll.should_show_results())
+            logger.debug(f"📈 UPDATE MESSAGE - Poll {poll_id} is {poll_status}, show_results={show_results}")
         
+        logger.info(f"🎨 UPDATE MESSAGE - Creating embed for poll {poll_id} with show_results={show_results}")
         embed = await create_poll_embed(poll, show_results=show_results)
+        
+        logger.info(f"📝 UPDATE MESSAGE - Editing message {poll_message_id} for poll {poll_id}")
         await message.edit(embed=embed)
+        logger.info(f"✅ UPDATE MESSAGE - Successfully updated message for poll {poll_id}")
 
         # Send role ping notification for poll status changes (if enabled and configured)
         ping_role_enabled = getattr(poll, "ping_role_enabled", False)
