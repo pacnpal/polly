@@ -404,14 +404,57 @@ async def restore_scheduled_jobs():
     """
     logger.info("🔄 SCHEDULER RESTORE - Starting restore_scheduled_jobs")
 
-    # First, clean up polls whose messages have been deleted
-    await cleanup_polls_with_deleted_messages()
-    
-    # Fix Discord messages for existing closed polls that may not have been updated properly
-    await fix_closed_polls_discord_messages_on_startup()
-    
-    # Run static content recovery for existing closed polls
-    await run_static_content_recovery_on_startup()
+    # Schedule Discord-dependent tasks to run after bot is ready
+    asyncio.create_task(run_discord_dependent_startup_tasks())
+
+
+async def run_discord_dependent_startup_tasks():
+    """Run Discord-dependent startup tasks after bot is ready"""
+    try:
+        from .discord_bot import get_bot_instance
+        
+        logger.info("⏳ DISCORD STARTUP - Waiting for bot to be ready before running Discord-dependent tasks")
+        
+        # Wait for bot to be ready with timeout
+        max_wait_time = 60  # 60 seconds timeout
+        wait_interval = 2   # Check every 2 seconds
+        total_waited = 0
+        
+        while total_waited < max_wait_time:
+            bot = get_bot_instance()
+            if bot and bot.is_ready():
+                logger.info(f"✅ DISCORD STARTUP - Bot is ready after {total_waited} seconds, starting Discord-dependent tasks")
+                break
+            
+            await asyncio.sleep(wait_interval)
+            total_waited += wait_interval
+            
+            if total_waited % 10 == 0:  # Log every 10 seconds
+                logger.info(f"⏳ DISCORD STARTUP - Still waiting for bot to be ready ({total_waited}/{max_wait_time}s)")
+        
+        # Check if we timed out
+        bot = get_bot_instance()
+        if not bot or not bot.is_ready():
+            logger.error(f"❌ DISCORD STARTUP - Bot not ready after {max_wait_time} seconds, skipping Discord-dependent tasks")
+            return
+        
+        # Now run the Discord-dependent tasks
+        logger.info("🚀 DISCORD STARTUP - Running Discord-dependent startup tasks")
+        
+        # First, clean up polls whose messages have been deleted
+        await cleanup_polls_with_deleted_messages()
+        
+        # Fix Discord messages for existing closed polls that may not have been updated properly
+        await fix_closed_polls_discord_messages_on_startup()
+        
+        # Run static content recovery for existing closed polls
+        await run_static_content_recovery_on_startup()
+        
+        logger.info("🎉 DISCORD STARTUP - All Discord-dependent startup tasks completed")
+        
+    except Exception as e:
+        logger.error(f"❌ DISCORD STARTUP - Error in Discord-dependent startup tasks: {e}")
+        logger.exception("Full traceback for Discord startup error:")
 
 
 async def fix_closed_polls_discord_messages_on_startup():
