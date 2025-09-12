@@ -145,18 +145,30 @@ window.PollyImageUpload = (function() {
         e.preventDefault();
         e.stopPropagation();
         debugLog('Drop zone clicked');
+        console.log('🔍 IMAGE UPLOAD - Drop zone clicked!'); // Always log this
         
         const elements = getElements();
+        debugLog('Elements check:', {
+            imageInput: !!elements.imageInput,
+            hasClickMethod: elements.imageInput && typeof elements.imageInput.click === 'function'
+        });
+        
         try {
             if (elements.imageInput && typeof elements.imageInput.click === 'function') {
                 debugLog('Triggering file input click');
+                console.log('🔍 IMAGE UPLOAD - Triggering file input click'); // Always log this
                 elements.imageInput.click();
             } else {
                 console.error('File input not available or no click method');
+                console.error('🔍 IMAGE UPLOAD - File input not available:', {
+                    imageInput: elements.imageInput,
+                    hasClick: elements.imageInput && typeof elements.imageInput.click === 'function'
+                });
                 showImageError('File upload not available. Please refresh the page and try again.');
             }
         } catch (error) {
             console.error('Error opening file browser:', error);
+            console.error('🔍 IMAGE UPLOAD - Error opening file browser:', error);
             showImageError('Error opening file browser. Please try again.');
         }
     }
@@ -245,6 +257,8 @@ window.PollyImageUpload = (function() {
         if (elements.imagePreview) {
             elements.imagePreview.classList.remove('image-preview-hidden');
             elements.imagePreview.style.display = 'block';
+            // Force override the !important CSS rule
+            elements.imagePreview.style.setProperty('display', 'block', 'important');
         }
         
         if (elements.imageDropZone) {
@@ -254,6 +268,8 @@ window.PollyImageUpload = (function() {
         if (elements.imageMessageSection) {
             elements.imageMessageSection.classList.remove('image-message-section-hidden');
             elements.imageMessageSection.style.display = 'block';
+            // Force override the !important CSS rule
+            elements.imageMessageSection.style.setProperty('display', 'block', 'important');
         }
         
         // Hide progress indicator and show success
@@ -274,6 +290,8 @@ window.PollyImageUpload = (function() {
         if (elements.imagePreview) {
             elements.imagePreview.classList.add('image-preview-hidden');
             elements.imagePreview.style.display = 'none';
+            // Force override any inline styles
+            elements.imagePreview.style.setProperty('display', 'none', 'important');
         }
         
         if (elements.imageDropZone) {
@@ -283,6 +301,8 @@ window.PollyImageUpload = (function() {
         if (elements.imageMessageSection) {
             elements.imageMessageSection.classList.add('image-message-section-hidden');
             elements.imageMessageSection.style.display = 'none';
+            // Force override any inline styles
+            elements.imageMessageSection.style.setProperty('display', 'none', 'important');
         }
         
         if (elements.previewImg) {
@@ -309,10 +329,11 @@ window.PollyImageUpload = (function() {
     return {
         init: function() {
             debugLog('Initializing image upload functionality');
+            console.log('🔍 IMAGE UPLOAD - Starting initialization'); // Always log this
             
             const elements = getElements();
             
-            debugLog('Elements found:', {
+            const elementStatus = {
                 imageDropZone: !!elements.imageDropZone,
                 imageInput: !!elements.imageInput,
                 imagePreview: !!elements.imagePreview,
@@ -320,16 +341,21 @@ window.PollyImageUpload = (function() {
                 imageInfo: !!elements.imageInfo,
                 removeImageBtn: !!elements.removeImageBtn,
                 imageMessageSection: !!elements.imageMessageSection
-            });
+            };
+            
+            debugLog('Elements found:', elementStatus);
+            console.log('🔍 IMAGE UPLOAD - Elements found:', elementStatus); // Always log this
 
             if (!elements.imageDropZone || !elements.imageInput) {
                 debugLog('Image upload elements not found, skipping initialization');
+                console.log('🔍 IMAGE UPLOAD - Required elements missing, skipping initialization');
                 return false;
             }
 
             // Check if already initialized to prevent duplicate event listeners
             if (elements.imageDropZone.dataset.initialized === 'true') {
                 debugLog('Drop zone already initialized, skipping');
+                console.log('🔍 IMAGE UPLOAD - Already initialized, skipping');
                 return false;
             }
             
@@ -337,19 +363,27 @@ window.PollyImageUpload = (function() {
             elements.imageDropZone.dataset.initialized = 'true';
             
             debugLog('Setting up event listeners');
+            console.log('🔍 IMAGE UPLOAD - Setting up event listeners');
             
-            // Event listeners
+            // Event listeners with enhanced debugging
             elements.imageDropZone.addEventListener('click', handleDropZoneClick);
             elements.imageDropZone.addEventListener('dragover', handleDragOver);
             elements.imageDropZone.addEventListener('dragleave', handleDragLeave);
             elements.imageDropZone.addEventListener('drop', handleDrop);
             elements.imageInput.addEventListener('change', handleFileInputChange);
             
+            // Test click handler immediately
+            console.log('🔍 IMAGE UPLOAD - Testing drop zone click handler setup');
+            console.log('🔍 IMAGE UPLOAD - Drop zone element:', elements.imageDropZone);
+            console.log('🔍 IMAGE UPLOAD - Drop zone classes:', elements.imageDropZone.className);
+            console.log('🔍 IMAGE UPLOAD - Drop zone style:', elements.imageDropZone.style.cssText);
+            
             if (elements.removeImageBtn) {
                 elements.removeImageBtn.addEventListener('click', clearImagePreview);
             }
             
             debugLog('Image upload initialization complete');
+            console.log('🔍 IMAGE UPLOAD - Initialization complete!');
             return true;
         },
         
