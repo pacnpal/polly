@@ -193,25 +193,49 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
     # Get the appropriate timestamp based on poll status and timezone
     poll_timezone = str(getattr(poll, "timezone", "UTC"))
+    poll_id = getattr(poll, "id", "unknown")
+    
+    logger.info(f"🔍 EMBED TIMEZONE DEBUG - Poll {poll_id}:")
+    logger.info(f"    📊 Poll status: {poll_status}")
+    logger.info(f"    🌍 Poll timezone field: '{poll_timezone}'")
     
     # For closed polls, use close time; for others, use open time
     if poll_status == "closed":
         poll_timestamp = getattr(poll, "close_time", datetime.now(pytz.UTC))
+        logger.info(f"    📅 Using close_time: {poll_timestamp} (type: {type(poll_timestamp)})")
     else:
         poll_timestamp = getattr(poll, "open_time", datetime.now(pytz.UTC))
+        logger.info(f"    📅 Using open_time: {poll_timestamp} (type: {type(poll_timestamp)})")
+    
+    logger.info(f"    📅 Original timestamp: {poll_timestamp}")
+    logger.info(f"    📅 Original timestamp tzinfo: {poll_timestamp.tzinfo}")
     
     # Convert timestamp to poll's timezone if specified
     if poll_timezone and poll_timezone != "UTC":
         try:
+            logger.info(f"    🔄 Converting from timezone '{poll_timezone}' to display timezone...")
             # Validate and normalize timezone first
             from .utils import validate_and_normalize_timezone
             normalized_tz = validate_and_normalize_timezone(poll_timezone)
+            logger.info(f"    ✅ Normalized timezone: '{normalized_tz}'")
+            
             tz = pytz.timezone(normalized_tz)
+            logger.info(f"    ✅ Pytz timezone object: {tz}")
+            
             # Convert to the poll's timezone for display
+            original_timestamp = poll_timestamp
             poll_timestamp = poll_timestamp.astimezone(tz)
+            
+            logger.info(f"    🔄 Converted timestamp: {poll_timestamp}")
+            logger.info(f"    🔄 Converted timestamp tzinfo: {poll_timestamp.tzinfo}")
+            logger.info(f"    📊 Conversion: {original_timestamp} → {poll_timestamp}")
+            
         except Exception as e:
-            logger.debug(f"Could not convert timestamp to timezone {poll_timezone}: {e}")
+            logger.error(f"    ❌ Could not convert timestamp to timezone {poll_timezone}: {e}")
+            logger.info(f"    ⚠️ Keeping original UTC time: {poll_timestamp}")
             # Keep original UTC time if timezone conversion fails
+    else:
+        logger.info(f"    ℹ️ Using UTC timezone (no conversion needed)")
 
     embed = discord.Embed(
         title=f"{status_emoji} {str(getattr(poll, 'name', ''))}",

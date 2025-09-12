@@ -102,12 +102,44 @@ async def update_closed_poll_embeds():
                             failed_count += 1
                             continue
                         
+                        # DETAILED TIMEZONE DEBUG LOGGING
+                        print(f"    🔍 TIMEZONE DEBUG - Poll {poll_id}:")
+                        print(f"        📅 Original open_time: {fresh_poll.open_time} (type: {type(fresh_poll.open_time)})")
+                        print(f"        📅 Original close_time: {fresh_poll.close_time} (type: {type(fresh_poll.close_time)})")
+                        print(f"        🌍 Poll timezone field: '{fresh_poll.timezone}'")
+                        print(f"        📊 Poll status: '{fresh_poll.status}'")
+                        
+                        # Test timezone validation
+                        try:
+                            from polly.utils import validate_and_normalize_timezone
+                            if fresh_poll.timezone:
+                                normalized_tz = validate_and_normalize_timezone(fresh_poll.timezone)
+                                print(f"        ✅ Normalized timezone: '{normalized_tz}'")
+                                
+                                import pytz
+                                tz = pytz.timezone(normalized_tz)
+                                print(f"        ✅ Pytz timezone object: {tz}")
+                                
+                                # Test conversion of close_time to poll timezone
+                                if fresh_poll.close_time:
+                                    converted_time = fresh_poll.close_time.astimezone(tz)
+                                    print(f"        🔄 Close time in poll timezone: {converted_time}")
+                                    print(f"        🔄 Close time timezone info: {converted_time.tzinfo}")
+                                else:
+                                    print(f"        ⚠️ No close_time available")
+                            else:
+                                print(f"        ⚠️ No timezone field set, will use UTC")
+                        except Exception as tz_error:
+                            print(f"        ❌ Timezone validation error: {tz_error}")
+                        
                         # Update the Discord message with the new cleaned-up embed format
                         # using the fresh poll object with active database session
+                        print(f"    🔄 Calling update_poll_message...")
                         success = await update_poll_message(bot, fresh_poll)
                         
                         if success:
-                            print(f"    ✅ Successfully updated embed (removed duplicates & clutter, timezone: {fresh_poll.timezone})")
+                            print(f"    ✅ Successfully updated embed (removed duplicates & clutter)")
+                            print(f"        🌍 Final timezone used: {fresh_poll.timezone}")
                             updated_count += 1
                         else:
                             print(f"    ❌ Failed to update embed (message may not exist)")
