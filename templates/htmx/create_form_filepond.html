@@ -297,8 +297,6 @@
 <!-- Emoji Picker Element -->
 <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
 
-<!-- Cloudflare Turnstile -->
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
 <script>
 // Initialize Create Form functionality (HTMX compatible)
@@ -331,17 +329,13 @@
             imageDropZone.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('🔍 IMAGE UPLOAD DEBUG - Drop zone clicked, triggering file input');
                 try {
                     if (imageInput && typeof imageInput.click === 'function') {
                         imageInput.click();
-                        console.log('🔍 IMAGE UPLOAD DEBUG - File input click triggered successfully');
                     } else {
-                        console.error('🔍 IMAGE UPLOAD DEBUG - File input not available or click method missing');
                         showImageError('File upload not available. Please refresh the page and try again.');
                     }
                 } catch (error) {
-                    console.error('🔍 IMAGE UPLOAD DEBUG - Error triggering file input:', error);
                     showImageError('Error opening file browser. Please try again.');
                 }
             });
@@ -382,31 +376,22 @@
             }
 
             function handleImageFile(file) {
-                console.log('🔍 IMAGE UPLOAD DEBUG - Starting file validation');
-                console.log('🔍 IMAGE UPLOAD DEBUG - File name:', file.name);
-                console.log('🔍 IMAGE UPLOAD DEBUG - File type:', file.type);
-                console.log('🔍 IMAGE UPLOAD DEBUG - File size:', file.size, 'bytes');
-                
                 // Clear any previous errors
                 clearImageError();
                 
                 // Validate file type
                 const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
                 if (!allowedTypes.includes(file.type)) {
-                    console.log('🔍 IMAGE UPLOAD DEBUG - File type validation failed');
                     showImageError('Invalid file type. Please select a JPEG, PNG, GIF, or WebP image.');
                     return;
                 }
-                console.log('🔍 IMAGE UPLOAD DEBUG - File type validation passed');
 
                 // Validate file size (8MB)
                 const maxSize = 8 * 1024 * 1024;
                 if (file.size > maxSize) {
-                    console.log('🔍 IMAGE UPLOAD DEBUG - File size validation failed');
                     showImageError(`File too large. Maximum size is 8MB. Your file is ${formatFileSize(file.size)}.`);
                     return;
                 }
-                console.log('🔍 IMAGE UPLOAD DEBUG - File size validation passed');
 
                 // Show upload progress indicator
                 showImageUploadProgress('Preparing image preview...');
@@ -414,7 +399,6 @@
                 // Show preview
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    console.log('🔍 IMAGE UPLOAD DEBUG - FileReader loaded successfully');
                     previewImg.src = e.target.result;
                     imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
                     
@@ -428,11 +412,9 @@
                     // Hide progress indicator and show success
                     hideImageUploadProgress();
                     showImageUploadStatus('success', 'Image loaded successfully! Ready to create poll.');
-                    console.log('🔍 IMAGE UPLOAD DEBUG - Image preview setup complete');
                 };
                 
                 reader.onerror = (e) => {
-                    console.error('🔍 IMAGE UPLOAD DEBUG - FileReader error:', e);
                     hideImageUploadProgress();
                     showImageError('Failed to read image file. Please try again.');
                 };
@@ -441,7 +423,6 @@
             }
 
             function clearImagePreview() {
-                console.log('🔍 IMAGE UPLOAD DEBUG - Clearing image preview');
                 imageInput.value = '';
                 
                 // Add CSS classes back and hide elements
@@ -460,8 +441,6 @@
                 if (statusDiv) {
                     statusDiv.innerHTML = '';
                 }
-                
-                console.log('🔍 IMAGE UPLOAD DEBUG - Image preview cleared');
             }
 
             function clearImageError() {
@@ -469,12 +448,9 @@
                 if (errorDiv) {
                     errorDiv.innerHTML = '';
                 }
-                console.log('🔍 IMAGE UPLOAD DEBUG - Cleared previous image errors');
             }
 
             function showImageError(message) {
-                console.log('🔍 IMAGE UPLOAD DEBUG - Showing error:', message);
-                
                 // Create or update error message
                 let errorDiv = document.getElementById('image-error');
                 if (!errorDiv) {
@@ -503,8 +479,6 @@
             }
 
             function showImageUploadProgress(message) {
-                console.log('🔍 IMAGE UPLOAD DEBUG - Showing progress:', message);
-                
                 // Create or update progress indicator
                 let progressDiv = document.getElementById('image-upload-progress');
                 if (!progressDiv) {
@@ -529,12 +503,9 @@
                 if (progressDiv) {
                     progressDiv.innerHTML = '';
                 }
-                console.log('🔍 IMAGE UPLOAD DEBUG - Hidden upload progress indicator');
             }
 
             function showImageUploadStatus(type, message) {
-                console.log('🔍 IMAGE UPLOAD DEBUG - Showing status:', type, message);
-                
                 // Create or update status message
                 let statusDiv = document.getElementById('image-upload-status');
                 if (!statusDiv) {
@@ -644,9 +615,6 @@
                     const hiddenInput = currentEmojiButton.closest('.input-group').querySelector(`input[name="emoji${optionNumber}"]`);
                     if (hiddenInput) {
                         hiddenInput.value = emoji;
-                        PollyDebug.debug(`✅ Emoji picker - Updated emoji${optionNumber} to: ${emoji}`);
-                    } else {
-                        PollyDebug.warn(`Emoji picker - Could not find hidden input for emoji${optionNumber}`);
                     }
                     
                     // Hide the picker
@@ -690,7 +658,7 @@
                     }
                 })
                 .catch(error => {
-                    PollyDebug.error('Error loading Discord emojis:', error);
+                    console.error('Error loading Discord emojis:', error);
                     updateDiscordEmojiDropdowns([]);
                 });
         }
