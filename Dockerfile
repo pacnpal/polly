@@ -10,7 +10,6 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY polly/ ./polly/
 COPY templates/ ./templates/
-COPY static/ ./static/
 COPY *.py ./
 
 # Ensure all template directories exist
@@ -27,8 +26,8 @@ EXPOSE 8000
 
 # User change
 RUN adduser --disabled-password --gecos "" polly
-RUN chown -R polly:polly /app/static/uploads /app/logs /app/data /app/static /app
-RUN chmod -R 755 /app/static/uploads /app/logs /app/data /app/static
+RUN chown -R polly:polly /app/logs /app/data /app
+RUN chmod -R 755 /app/logs /app/data /app
 USER polly
 
 # Create entrypoint script
