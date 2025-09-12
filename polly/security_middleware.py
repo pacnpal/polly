@@ -111,9 +111,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self.get_client_ip(request) if hasattr(request, "client") else "unknown"
             )
             try:
-                err_msg = str(e)
+                # Safely extract error message, avoiding problematic characters
+                err_msg = repr(str(e)[:200])  # Limit length and use repr for safety
             except Exception:
-                err_msg = "<unprintable exception>"
+                err_msg = "unprintable_exception"
             logger.error(f"Rate limiting middleware error from {client_ip}: {err_msg}")
 
             # Continue processing the request rather than crashing

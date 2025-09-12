@@ -70,10 +70,10 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         except Exception as e:
             try:
-                # Avoid issues with special characters by stringifying safely
-                err_msg = str(e)
+                # Safely extract error message, avoiding problematic characters
+                err_msg = repr(str(e)[:200])  # Limit length and use repr for safety
             except Exception:
-                err_msg = "<unprintable exception>"
+                err_msg = "unprintable_exception"
             logger.error(f"Authentication middleware error: {err_msg}")
             # Continue processing rather than crashing
             return await call_next(request)

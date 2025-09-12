@@ -153,7 +153,9 @@ class TurnstileSecurityMiddleware(BaseHTTPMiddleware):
                 try:
                     form_data = await request.form()
                     turnstile_token = form_data.get("cf-turnstile-response")
-                except:
+                except Exception as form_error:
+                    # Log form parsing errors safely
+                    logger.warning(f"Failed to parse form data from {client_ip}: form parsing error")
                     pass
 
             # Also check headers (for AJAX requests and passive tokens)
@@ -191,10 +193,12 @@ class TurnstileSecurityMiddleware(BaseHTTPMiddleware):
                 )
 
         except Exception as e:
-            # Don't crash on security middleware errors
+            # Don't crash on security middleware errors - handle safely
+            client_ip = self.get_client_ip(request) if hasattr(request, 'client') else "unknown"
             try:
-                err_msg = str(e)
+                # Safely extract error message, avoiding problematic characters
+                err_msg = repr(str(e)[:200])  # Limit length and use repr for safety
             except Exception:
-                err_msg = "<unprintable exception>"
-            logger.error(f"Turnstile middleware error: {err_msg}")
+                err_msg = "unprintable_exception"
+            logger.error(f"Turnstile middleware error from {client_ip}: {err_msg}")
             return await call_next(request)
