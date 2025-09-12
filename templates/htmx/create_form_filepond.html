@@ -154,11 +154,13 @@
                             <p class="mb-2">Drag & drop an image here or click to browse</p>
                             <small class="text-muted">Max 8MB • JPEG, PNG, GIF, WebP</small>
                         </div>
-                        <input type="file" 
-                               class="form-control d-none" 
-                               name="image" 
+                        <input type="file"
+                               class="form-control d-none"
+                               name="image"
                                id="poll-image"
                                accept="image/jpeg,image/png,image/gif,image/webp">
+                        <!-- Hidden input to ensure image field is always present in form data -->
+                        <input type="hidden" name="image_present" value="1">
                     </div>
                     <div id="image-preview" class="mt-3 image-preview-hidden">
                         <div class="card image-preview-card">
@@ -325,9 +327,23 @@
         if (imageDropZone && imageInput) {
             // Mark as initialized
             imageDropZone.dataset.initialized = 'true';
-            // Click to browse
-            imageDropZone.addEventListener('click', () => {
-                imageInput.click();
+            // Click to browse - with better error handling
+            imageDropZone.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🔍 IMAGE UPLOAD DEBUG - Drop zone clicked, triggering file input');
+                try {
+                    if (imageInput && typeof imageInput.click === 'function') {
+                        imageInput.click();
+                        console.log('🔍 IMAGE UPLOAD DEBUG - File input click triggered successfully');
+                    } else {
+                        console.error('🔍 IMAGE UPLOAD DEBUG - File input not available or click method missing');
+                        showImageError('File upload not available. Please refresh the page and try again.');
+                    }
+                } catch (error) {
+                    console.error('🔍 IMAGE UPLOAD DEBUG - Error triggering file input:', error);
+                    showImageError('Error opening file browser. Please try again.');
+                }
             });
 
             // Drag and drop functionality

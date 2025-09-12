@@ -159,6 +159,8 @@
                                name="image"
                                id="poll-image"
                                accept="image/jpeg,image/png,image/gif,image/webp">
+                        <!-- Hidden input to ensure image field is always present in form data -->
+                        <input type="hidden" name="image_present" value="1">
                     </div>
                     <div id="image-preview" class="mt-3" style="display: none;">
                         <div class="card" style="max-width: 300px;">
@@ -333,9 +335,23 @@
         if (imageDropZone && imageInput) {
             // Mark as initialized
             imageDropZone.dataset.initialized = 'true';
-            // Click to browse
-            imageDropZone.addEventListener('click', () => {
-                imageInput.click();
+            // Click to browse - with better error handling
+            imageDropZone.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Drop zone clicked, triggering file input');
+                try {
+                    if (imageInput && typeof imageInput.click === 'function') {
+                        imageInput.click();
+                        console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File input click triggered successfully');
+                    } else {
+                        console.error('🔍 IMAGE UPLOAD DEBUG (EDIT) - File input not available or click method missing');
+                        showImageError('File upload not available. Please refresh the page and try again.');
+                    }
+                } catch (error) {
+                    console.error('🔍 IMAGE UPLOAD DEBUG (EDIT) - Error triggering file input:', error);
+                    showImageError('Error opening file browser. Please try again.');
+                }
             });
 
             // Drag and drop functionality
