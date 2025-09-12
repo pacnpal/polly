@@ -65,7 +65,7 @@ class PollyImageUpload {
                         <small>JPEG, PNG, GIF, WebP • Max 8MB</small>
                     </div>
                 </div>
-                <input type="file" id="file-input" accept="image/jpeg,image/png,image/gif,image/webp" style="display: none;">
+                <input type="file" id="file-input" name="image" accept="image/jpeg,image/png,image/gif,image/webp" style="display: none;">
             </div>
 
             <div class="upload-preview" id="upload-preview" style="display: none;">
@@ -77,40 +77,16 @@ class PollyImageUpload {
                             <span id="preview-filesize"></span>
                         </div>
                         <div class="preview-actions">
-                            <button type="button" class="btn btn-sm btn-success" id="upload-btn">
-                                <i class="fas fa-upload"></i> Upload
-                            </button>
                             <button type="button" class="btn btn-sm btn-outline-light" id="cancel-btn">
-                                <i class="fas fa-times"></i>
+                                <i class="fas fa-times"></i> Remove
                             </button>
                         </div>
-                    </div>
-                    <div class="upload-progress" id="upload-progress" style="display: none;">
-                        <div class="progress">
-                            <div class="progress-bar" id="progress-bar"></div>
-                        </div>
-                        <small id="progress-text">Uploading...</small>
-                    </div>
-                </div>
-            </div>
-
-            <div class="uploaded-preview" id="uploaded-preview" style="display: none;">
-                <div class="success-card">
-                    <img id="uploaded-image" alt="Uploaded image" class="uploaded-img">
-                    <div class="success-overlay">
-                        <div class="success-info">
-                            <i class="fas fa-check-circle text-success"></i>
-                            <span>Image uploaded successfully</span>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-outline-light" id="remove-uploaded">
-                            <i class="fas fa-trash"></i> Remove
-                        </button>
                     </div>
                 </div>
             </div>
 
             ${this.options.showImageMessage ? `
-                <div class="image-message-section" id="image-message-section" style="display: ${this.options.currentImagePath || this.uploadedImagePath ? 'block' : 'none'};">
+                <div class="image-message-section" id="image-message-section" style="display: ${this.options.currentImagePath || this.currentFile ? 'block' : 'none'};">
                     <label for="image-message-text" class="form-label">
                         <i class="fas fa-comment me-1"></i>Message with Image (Optional)
                     </label>
@@ -124,7 +100,6 @@ class PollyImageUpload {
             ` : ''}
 
             <!-- Hidden inputs for form submission -->
-            <input type="hidden" id="uploaded-image-path" name="uploaded_image_path" value="${this.uploadedImagePath || ''}">
             <input type="hidden" id="remove-current-image-flag" name="remove_current_image" value="false">
         `;
     }
@@ -135,9 +110,7 @@ class PollyImageUpload {
     setupEventHandlers(container) {
         const uploadZone = container.querySelector('#upload-zone');
         const fileInput = container.querySelector('#file-input');
-        const uploadBtn = container.querySelector('#upload-btn');
         const cancelBtn = container.querySelector('#cancel-btn');
-        const removeUploadedBtn = container.querySelector('#remove-uploaded');
         const removeCurrentBtn = container.querySelector('#remove-current-image');
 
         // Click to browse
@@ -170,28 +143,19 @@ class PollyImageUpload {
             
             const files = e.dataTransfer.files;
             if (files.length > 0) {
+                // Set the file to the input element for form submission
+                const dt = new DataTransfer();
+                dt.items.add(files[0]);
+                fileInput.files = dt.files;
+                
                 this.handleFileSelection(files[0], container);
             }
         });
-
-        // Upload button
-        if (uploadBtn) {
-            uploadBtn.addEventListener('click', () => {
-                this.uploadFile(container);
-            });
-        }
 
         // Cancel button
         if (cancelBtn) {
             cancelBtn.addEventListener('click', () => {
                 this.cancelUpload(container);
-            });
-        }
-
-        // Remove uploaded image
-        if (removeUploadedBtn) {
-            removeUploadedBtn.addEventListener('click', () => {
-                this.removeUploadedImage(container);
             });
         }
 
@@ -241,6 +205,7 @@ class PollyImageUpload {
         const previewImage = container.querySelector('#preview-image');
         const previewFilename = container.querySelector('#preview-filename');
         const previewFilesize = container.querySelector('#preview-filesize');
+        const imageMessageSection = container.querySelector('#image-message-section');
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -250,155 +215,35 @@ class PollyImageUpload {
             
             uploadZone.style.display = 'none';
             uploadPreview.style.display = 'block';
+            
+            // Show image message section when file is selected
+            if (imageMessageSection) {
+                imageMessageSection.style.display = 'block';
+            }
         };
         reader.readAsDataURL(file);
     }
 
     /**
-     * Upload the selected file
-     */
-    async uploadFile(container) {
-        if (!this.currentFile) return;
-
-        const uploadBtn = container.querySelector('#upload-btn');
-        const cancelBtn = container.querySelector('#cancel-btn');
-        const uploadProgress = container.querySelector('#upload-progress');
-        const progressBar = container.querySelector('#progress-bar');
-        const progressText = container.querySelector('#progress-text');
-
-        try {
-            // Show progress
-            uploadBtn.style.display = 'none';
-            cancelBtn.style.display = 'none';
-            uploadProgress.style.display = 'block';
-
-            const formData = new FormData();
-            formData.append('image', this.currentFile);
-
-            const xhr = new XMLHttpRequest();
-            
-            // Progress tracking
-            xhr.upload.addEventListener('progress', (e) => {
-                if (e.lengthComputable) {
-                    const percentComplete = (e.loaded / e.total) * 100;
-                    progressBar.style.width = percentComplete + '%';
-                    progressText.textContent = `Uploading... ${Math.round(percentComplete)}%`;
-                }
-            });
-
-            // Upload completion
-            xhr.addEventListener('load', () => {
-                if (xhr.status === 200) {
-                    const response = JSON.parse(xhr.responseText);
-                    if (response.success) {
-                        this.handleUploadSuccess(response.image_path, container);
-                    } else {
-                        this.handleUploadError(response.error || 'Upload failed', container);
-                    }
-                } else {
-                    this.handleUploadError('Upload failed', container);
-                }
-            });
-
-            xhr.addEventListener('error', () => {
-                this.handleUploadError('Upload failed', container);
-            });
-
-            xhr.open('POST', this.uploadEndpoint);
-            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-            xhr.send(formData);
-
-        } catch (error) {
-            console.error('Upload error:', error);
-            this.handleUploadError('Upload failed', container);
-        }
-    }
-
-    /**
-     * Handle successful upload
-     */
-    handleUploadSuccess(imagePath, container) {
-        this.uploadedImagePath = imagePath;
-        
-        const uploadPreview = container.querySelector('#upload-preview');
-        const uploadedPreview = container.querySelector('#uploaded-preview');
-        const uploadedImage = container.querySelector('#uploaded-image');
-        const hiddenInput = container.querySelector('#uploaded-image-path');
-        const imageMessageSection = container.querySelector('#image-message-section');
-
-        // Update UI
-        uploadedImage.src = `/${imagePath}`;
-        uploadPreview.style.display = 'none';
-        uploadedPreview.style.display = 'block';
-
-        // Update hidden input
-        if (hiddenInput) {
-            hiddenInput.value = imagePath;
-        }
-
-        // Show image message section
-        if (imageMessageSection) {
-            imageMessageSection.style.display = 'block';
-        }
-
-        this.showAlert('success', 'Image uploaded successfully!');
-    }
-
-    /**
-     * Handle upload error
-     */
-    handleUploadError(errorMessage, container) {
-        const uploadBtn = container.querySelector('#upload-btn');
-        const cancelBtn = container.querySelector('#cancel-btn');
-        const uploadProgress = container.querySelector('#upload-progress');
-
-        // Reset UI
-        uploadBtn.style.display = 'inline-block';
-        cancelBtn.style.display = 'inline-block';
-        uploadProgress.style.display = 'none';
-
-        this.showAlert('error', errorMessage);
-    }
-
-    /**
-     * Cancel upload and return to upload zone
+     * Cancel preview and return to upload zone
      */
     cancelUpload(container) {
         const uploadZone = container.querySelector('#upload-zone');
         const uploadPreview = container.querySelector('#upload-preview');
         const fileInput = container.querySelector('#file-input');
+        const imageMessageSection = container.querySelector('#image-message-section');
 
         uploadPreview.style.display = 'none';
         uploadZone.style.display = 'block';
         fileInput.value = '';
         this.currentFile = null;
-    }
 
-    /**
-     * Remove uploaded image
-     */
-    removeUploadedImage(container) {
-        const uploadZone = container.querySelector('#upload-zone');
-        const uploadedPreview = container.querySelector('#uploaded-preview');
-        const hiddenInput = container.querySelector('#uploaded-image-path');
-        const imageMessageSection = container.querySelector('#image-message-section');
-        const imageMessageText = container.querySelector('#image-message-text');
-
-        // Reset UI
-        uploadedPreview.style.display = 'none';
-        uploadZone.style.display = 'block';
-
-        // Clear data
-        this.uploadedImagePath = null;
-        if (hiddenInput) {
-            hiddenInput.value = '';
-        }
-
-        // Hide image message section if no current image
-        if (imageMessageSection && !this.options.currentImagePath) {
-            imageMessageSection.style.display = 'none';
-            if (imageMessageText) {
-                imageMessageText.value = '';
+        // Show image message section and show it if current image exists
+        if (imageMessageSection) {
+            if (this.options.currentImagePath) {
+                imageMessageSection.style.display = 'block';
+            } else {
+                imageMessageSection.style.display = 'none';
             }
         }
     }
