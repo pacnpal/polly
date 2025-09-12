@@ -461,7 +461,7 @@ async def close_poll_htmx(
         channel_id = TypeSafeColumn.get_string(poll, "channel_id")
         ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
 
-        # Update poll status to closed and set close time to now
+        # Update poll status to closed and set close time to now (timezone-aware)
         current_time = datetime.now(pytz.UTC)
         setattr(poll, "status", "closed")
         setattr(poll, "close_time", current_time)  # Update close time to now

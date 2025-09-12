@@ -685,7 +685,7 @@ async def run_static_content_recovery_on_startup():
                     f"🔄 SCHEDULER RESTORE - Processing poll {poll_id}: '{poll_name}'"
                 )
                 logger.debug(
-                    f"Poll {poll_id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}"
+                    f"Poll {poll_id} details: open_time={poll.open_time_aware}, close_time={poll.close_time_aware}, status={poll.status}"
                 )
 
                 # Get poll times as actual datetime objects using TypeSafeColumn
@@ -808,7 +808,7 @@ async def run_static_content_recovery_on_startup():
                     f"🔄 SCHEDULER RESTORE - Processing active poll {poll_id}: '{poll_name}'"
                 )
                 logger.debug(
-                    f"Active poll {poll_id} details: open_time={poll.open_time}, close_time={poll.close_time}, status={poll.status}"
+                    f"Active poll {poll_id} details: open_time={poll.open_time_aware}, close_time={poll.close_time_aware}, status={poll.status}"
                 )
 
                 # Get poll times as actual datetime objects using TypeSafeColumn

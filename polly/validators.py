@@ -654,8 +654,8 @@ class VoteValidator:
         # Check if poll has expired
         now = datetime.now(pytz.UTC)
 
-        # Ensure poll.close_time is timezone-aware for comparison
-        poll_close_time = getattr(poll, "close_time", None)
+        # Use timezone-aware property for comparison
+        poll_close_time = poll.close_time_aware
         if poll_close_time and poll_close_time.tzinfo is None:
             # If poll close time is naive, assume it's in UTC
             poll_close_time = pytz.UTC.localize(poll_close_time)
@@ -716,8 +716,8 @@ class SchedulerValidator:
             raise ValidationError("Poll must have at least 2 options")
 
         now = datetime.now(pytz.UTC)
-        poll_open_time = getattr(poll, "open_time", None)
-        poll_close_time = getattr(poll, "close_time", None)
+        poll_open_time = poll.open_time_aware
+        poll_close_time = poll.close_time_aware
         poll_status = str(poll.status)
 
         if poll_open_time and poll_open_time <= now and poll_status == "scheduled":

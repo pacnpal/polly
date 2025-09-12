@@ -664,7 +664,7 @@ class PollErrorHandler:
                         now = datetime.now(pytz.UTC)
 
                         # Reschedule opening if needed
-                        poll_open_time = getattr(poll, "open_time", None)
+                        poll_open_time = poll.open_time_aware
                         if (
                             str(poll.status) == "scheduled"
                             and poll_open_time
@@ -677,7 +677,7 @@ class PollErrorHandler:
                             main_bot = get_bot_instance()
                             scheduler.add_job(
                                 post_poll_to_channel,
-                                DateTrigger(run_date=poll.open_time),
+                                DateTrigger(run_date=poll.open_time_aware),
                                 args=[main_bot, poll],
                                 id=f"open_poll_{poll.id}",
                                 replace_existing=True,
@@ -685,7 +685,7 @@ class PollErrorHandler:
                             logger.info(f"Rescheduled opening for poll {poll_id}")
 
                         # Reschedule closing if needed
-                        poll_close_time = getattr(poll, "close_time", None)
+                        poll_close_time = poll.close_time_aware
                         if (
                             str(poll.status) in ["scheduled", "active"]
                             and poll_close_time is not None
@@ -696,7 +696,7 @@ class PollErrorHandler:
 
                             scheduler.add_job(
                                 close_poll,
-                                DateTrigger(run_date=poll.close_time),
+                                DateTrigger(run_date=poll.close_time_aware),
                                 args=[poll.id],
                                 id=f"close_poll_{poll.id}",
                                 replace_existing=True,
@@ -881,8 +881,8 @@ class DatabaseHealthChecker:
         ):
             issues.append("Missing server or channel ID")
 
-        poll_open_time = getattr(poll, "open_time", None)
-        poll_close_time = getattr(poll, "close_time", None)
+        poll_open_time = poll.open_time_aware
+        poll_close_time = poll.close_time_aware
         if poll_open_time is None or poll_close_time is None:
             issues.append("Missing timing information")
         elif poll_close_time <= poll_open_time:

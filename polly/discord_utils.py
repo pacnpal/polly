@@ -198,34 +198,17 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     logger.debug(f"🔍 EMBED TIMEZONE - Poll {poll_id}: status={poll_status}, timezone='{poll_timezone}'")
     
     # For closed polls, use close time; for others, use open time
+    # Use the timezone-aware properties from the Poll model
     if poll_status == "closed":
-        poll_timestamp = getattr(poll, "close_time", datetime.now(pytz.UTC))
+        poll_timestamp = poll.close_time_aware
     else:
-        poll_timestamp = getattr(poll, "open_time", datetime.now(pytz.UTC))
+        poll_timestamp = poll.open_time_aware
     
-    # Ensure timestamp is timezone-aware - if naive, assume it's in the poll's timezone
-    if poll_timestamp.tzinfo is None:
-        logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} has timezone-naive timestamp, localizing to poll timezone")
-        
-        # Try to use the poll's timezone first, fallback to UTC
-        try:
-            if poll_timezone and poll_timezone != "UTC":
-                from .utils import validate_and_normalize_timezone
-                normalized_tz = validate_and_normalize_timezone(poll_timezone)
-                if normalized_tz != "UTC":
-                    tz = pytz.timezone(normalized_tz)
-                    poll_timestamp = tz.localize(poll_timestamp)
-                    logger.info(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp localized to {normalized_tz}")
-                else:
-                    poll_timestamp = pytz.UTC.localize(poll_timestamp)
-                    logger.info(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp localized to UTC (normalized)")
-            else:
-                poll_timestamp = pytz.UTC.localize(poll_timestamp)
-                logger.info(f"✅ EMBED TIMEZONE - Poll {poll_id} timestamp localized to UTC (default)")
-        except Exception as localize_error:
-            logger.error(f"❌ EMBED TIMEZONE - Poll {poll_id} localization failed: {localize_error}")
-            poll_timestamp = pytz.UTC.localize(poll_timestamp)
-            logger.info(f"⚠️ EMBED TIMEZONE - Poll {poll_id} using UTC fallback")
+    # The timestamp should now always be timezone-aware thanks to the Poll model properties
+    # This check should no longer be needed, but keeping as a safety net
+    if poll_timestamp and poll_timestamp.tzinfo is None:
+        logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} has timezone-naive timestamp, localizing to UTC")
+        poll_timestamp = pytz.UTC.localize(poll_timestamp)
     
     # Convert timestamp to poll's timezone for display if specified and different from UTC
     if poll_timezone and poll_timezone != "UTC":
@@ -479,10 +462,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             
             if normalized_tz != "UTC":
                 tz = pytz.timezone(normalized_tz)
-                # Ensure open_time is timezone-aware before conversion
-                open_time = poll.open_time
-                if open_time.tzinfo is None:
-                    open_time = pytz.UTC.localize(open_time)
+                # Use timezone-aware property instead of raw database field
+                open_time = poll.open_time_aware
                 local_open = open_time.astimezone(tz)
                 embed.add_field(
                     name=f"Opens ({normalized_tz})",
@@ -490,10 +471,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     inline=True,
                 )
             else:
-                # Use UTC formatting
-                open_time = poll.open_time
-                if open_time.tzinfo is None:
-                    open_time = pytz.UTC.localize(open_time)
+                # Use UTC formatting with timezone-aware property
+                open_time = poll.open_time_aware
                 embed.add_field(
                     name="Opens (UTC)",
                     value=open_time.strftime("%Y-%m-%d %I:%M %p"),
@@ -521,11 +500,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             # Use the new helper function to format closing time with Today/Tomorrow
             from .utils import format_poll_closing_time, validate_and_normalize_timezone
             
-            # Ensure close_time is timezone-aware before formatting
-            close_time = poll.close_time
-            if close_time.tzinfo is None:
-                close_time = pytz.UTC.localize(close_time)
-                logger.warning(f"⚠️ EMBED TIMEZONE - Poll {poll_id} close_time was timezone-naive, assumed UTC")
+            # Use timezone-aware property instead of raw database field
+            close_time = poll.close_time_aware
             
             formatted_time = format_poll_closing_time(close_time, poll_timezone)
             normalized_tz = validate_and_normalize_timezone(poll_timezone)
@@ -1254,7 +1230,7 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
 
     # Use poll's close time in the correct timezone for the timestamp
     poll_timezone = str(getattr(poll, "timezone", "UTC"))
-    poll_close_time = getattr(poll, "close_time", datetime.now(pytz.UTC))
+    poll_close_time = poll.close_time_aware
     
     # Ensure close_time is timezone-aware - if naive, assume it's in the poll's timezone
     if poll_close_time.tzinfo is None:

@@ -18,6 +18,8 @@ from sqlalchemy.sql import func
 from typing import List, Optional
 from decouple import config
 import json
+import pytz
+from datetime import datetime
 
 
 class TypeSafeColumn:
@@ -57,9 +59,14 @@ class TypeSafeColumn:
 
     @staticmethod
     def get_datetime(obj, column_name: str, default: Optional[object] = None):
-        """Safely get datetime value from SQLAlchemy column"""
+        """Safely get datetime value from SQLAlchemy column, ensuring timezone-aware result"""
         try:
             value = getattr(obj, column_name, default)
+            if value is not None and isinstance(value, datetime):
+                # If the datetime is timezone-naive, assume it's UTC (our storage format)
+                if value.tzinfo is None:
+                    return pytz.UTC.localize(value)
+                return value
             return value if value is not None else default
         except AttributeError:
             return default
@@ -181,6 +188,24 @@ class Poll(Base):
         if not bool(self.anonymous):
             return True
         return self.status == "closed"
+
+    @property
+    def open_time_aware(self):
+        """Get open_time as timezone-aware datetime (UTC if naive)"""
+        if self.open_time and isinstance(self.open_time, datetime):
+            if self.open_time.tzinfo is None:
+                return pytz.UTC.localize(self.open_time)
+            return self.open_time
+        return self.open_time
+
+    @property
+    def close_time_aware(self):
+        """Get close_time as timezone-aware datetime (UTC if naive)"""
+        if self.close_time and isinstance(self.close_time, datetime):
+            if self.close_time.tzinfo is None:
+                return pytz.UTC.localize(self.close_time)
+            return self.close_time
+        return self.close_time
 
 
 class Vote(Base):

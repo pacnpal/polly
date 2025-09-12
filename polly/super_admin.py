@@ -276,7 +276,7 @@ class SuperAdminService:
             
             # Update poll status
             poll.status = "closed"
-            poll.close_time = datetime.now(pytz.UTC)
+            setattr(poll, "close_time", datetime.now(pytz.UTC))
             db_session.commit()
             
             logger.info(f"Super admin {admin_user_id} force closed poll {poll_id}")
@@ -413,8 +413,8 @@ class SuperAdminService:
                 "anonymous": poll.anonymous,
                 "multiple_choice": poll.multiple_choice,
                 "max_choices": poll.max_choices,
-                "open_time": poll.open_time,
-                "close_time": poll.close_time,
+                "open_time": poll.open_time_aware,
+                "close_time": poll.close_time_aware,
                 "timezone": poll.timezone,
                 "image_path": poll.image_path,
                 "image_message_text": poll.image_message_text,
@@ -470,15 +470,15 @@ class SuperAdminService:
             # Update datetime fields
             if "open_time" in poll_data and poll_data["open_time"]:
                 new_open_time = poll_data["open_time"]
-                if new_open_time != poll.open_time:
-                    changes.append(f"open_time: {poll.open_time} → {new_open_time}")
-                    poll.open_time = new_open_time
+                if new_open_time != poll.open_time_aware:
+                    changes.append(f"open_time: {poll.open_time_aware} → {new_open_time}")
+                    setattr(poll, "open_time", new_open_time)
             
             if "close_time" in poll_data and poll_data["close_time"]:
                 new_close_time = poll_data["close_time"]
-                if new_close_time != poll.close_time:
-                    changes.append(f"close_time: {poll.close_time} → {new_close_time}")
-                    poll.close_time = new_close_time
+                if new_close_time != poll.close_time_aware:
+                    changes.append(f"close_time: {poll.close_time_aware} → {new_close_time}")
+                    setattr(poll, "close_time", new_close_time)
             
             # Update string fields
             string_fields = ["timezone", "image_path", "image_message_text", "ping_role_name", "ping_role_id"]
