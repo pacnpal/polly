@@ -215,12 +215,12 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         timestamp=poll_open_time,
     )
 
-    # Add poll options
-    option_text = ""
-    if show_results:
+    # For closed polls, use a cleaner layout without duplicates
+    if poll_status == "closed" and show_results:
         # Show results with enhanced progress bars and percentages
         results = poll.get_results()
         total_votes = poll.get_total_votes()
+        option_text = ""
 
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
@@ -244,19 +244,18 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             option_text += f"`{bar}` **{votes}** votes (**{percentage:.1f}%**)\n\n"
 
         embed.add_field(
-            name="📊 Results" if poll_status == "closed" else "📈 Live Results",
-            value=option_text or "No votes yet",
+            name="📊 Results",
+            value=option_text or "No votes cast",
             inline=False,
         )
 
-        # Enhanced total votes display
-        if total_votes > 0:
-            embed.add_field(
-                name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
-            )
+        # Single total votes display (no duplicate)
+        embed.add_field(
+            name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
+        )
 
         # Winner announcement for closed polls
-        if poll_status == "closed" and total_votes > 0:
+        if total_votes > 0:
             winners = poll.get_winner()
             if winners:
                 if len(winners) == 1:
@@ -291,97 +290,139 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                         )
                         winner_text += f"{winner_emoji} {winner_option} ({winner_votes} votes, {winner_percentage:.1f}%)\n"
                     embed.add_field(name="🏆 Winners", value=winner_text, inline=True)
-        elif poll_status == "closed":
+        else:
             # Show "No votes cast" for closed polls with no votes
             embed.add_field(name="🏆 Winner", value="No votes cast", inline=True)
 
-        # Add poll type information for closed polls (same as the old results message)
-        if poll_status == "closed":
-            poll_anonymous = bool(getattr(poll, "anonymous", False))
-            poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+        # Add poll type information for closed polls (consolidated, no duplicates)
+        poll_anonymous = bool(getattr(poll, "anonymous", False))
+        poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
 
-            poll_type = []
-            if poll_anonymous:
-                poll_type.append("🔒 Anonymous")
-            if poll_multiple_choice:
-                poll_type.append("☑️ Multiple Choice")
+        poll_type = []
+        if poll_anonymous:
+            poll_type.append("🔒 Anonymous")
+        if poll_multiple_choice:
+            poll_type.append("☑️ Multiple Choice")
 
-            if poll_type:
-                embed.add_field(name="📋 Poll Type", value=" • ".join(poll_type), inline=False)
+        if poll_type:
+            embed.add_field(name="📋 Poll Type", value=" • ".join(poll_type), inline=False)
+
+        # No voting instructions for closed polls
+        # No duplicate anonymous poll information for closed polls
+
+    elif show_results:
+        # Active/scheduled polls with results
+        results = poll.get_results()
+        total_votes = poll.get_total_votes()
+        option_text = ""
+
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            votes = results.get(i, 0)
+            percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+
+            # Create enhanced progress bar with better visual representation
+            bar_length = 15  # Longer bar for better granularity
+            filled = int((percentage / 100) * bar_length)
+
+            # Use different characters for better visual appeal
+            if filled == 0:
+                bar = "░" * bar_length
+            else:
+                # Use gradient-like characters for better visual appeal
+                full_blocks = filled
+                bar = "█" * full_blocks + "░" * (bar_length - full_blocks)
+
+            # Format the option with enhanced styling
+            option_text += f"{emoji} **{option}**\n"
+            option_text += f"`{bar}` **{votes}** votes (**{percentage:.1f}%**)\n\n"
+
+        embed.add_field(
+            name="📈 Live Results",
+            value=option_text or "No votes yet",
+            inline=False,
+        )
+
+        # Enhanced total votes display
+        if total_votes > 0:
+            embed.add_field(
+                name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
+            )
+
+        # Add choice limit information for active/scheduled polls
+        poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+        if poll_multiple_choice:
+            # For multiple choice, use configurable max_choices or fall back to total options
+            max_choices = getattr(poll, "max_choices", None)
+            if max_choices and max_choices > 0:
+                num_choices = max_choices
+            else:
+                # Fallback to total number of options if max_choices not set
+                num_choices = len(poll.options)
+            choice_info = f"🔢 You may make up to **{num_choices} choices** in this poll"
+        else:
+            choice_info = "🔢 You may make **1 choice** in this poll"
+            
+        embed.add_field(value=choice_info, inline=False)
+
+        # Always show total votes for active polls
+        total_votes = poll.get_total_votes()
+
+        poll_anonymous = bool(getattr(poll, "anonymous", False))
+        if poll_anonymous:
+            # Enhanced anonymous poll display
+            embed.add_field(
+                name="🔒 Anonymous Poll",
+                value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
+                inline=False,
+            )
+        else:
+            # For non-anonymous polls, ALWAYS show live results with percentages
+            if total_votes > 0:
+                # Show live vote breakdown for non-anonymous polls
+                results = poll.get_results()
+                live_results_text = ""
+
+                for i, option in enumerate(poll.options):
+                    emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+                    votes = results.get(i, 0)
+                    percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+
+                    # Shorter progress bar for live results
+                    bar_length = 10
+                    filled = int((percentage / 100) * bar_length)
+                    bar = "█" * filled + "░" * (bar_length - filled)
+
+                    live_results_text += (
+                        f"{emoji} **{option}** `{bar}` **{votes}** ({percentage:.1f}%)\n"
+                    )
+
+                embed.add_field(
+                    name="📈 Live Results", value=live_results_text, inline=False
+                )
+
+                embed.add_field(
+                    name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
+                )
+            else:
+                # Even with 0 votes, show the structure for non-anonymous polls
+                results_text = ""
+                for i, option in enumerate(poll.options):
+                    emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+                    bar = "░" * 10  # Empty bar
+                    results_text += f"{emoji} **{option}** `{bar}` **0** (0.0%)\n"
+
+                embed.add_field(
+                    name="📈 Live Results", value=results_text, inline=False
+                )
     else:
         # Just show options without results
+        option_text = ""
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
             option_text += f"{emoji} **{option}**\n"
 
         embed.add_field(name="📝 Options", value=option_text, inline=False)
-
-    # Add choice limit information for all polls
-    poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
-    if poll_multiple_choice:
-        # For multiple choice, use configurable max_choices or fall back to total options
-        max_choices = getattr(poll, "max_choices", None)
-        if max_choices and max_choices > 0:
-            num_choices = max_choices
-        else:
-            # Fallback to total number of options if max_choices not set
-            num_choices = len(poll.options)
-        choice_info = f"🔢 You may make up to **{num_choices} choices** in this poll"
-    else:
-        choice_info = "🔢 You may make **1 choice** in this poll"
-        
-    embed.add_field(name="ℹ️ How to Vote", value=choice_info, inline=False)
-
-    # Always show total votes for active polls
-    total_votes = poll.get_total_votes()
-
-    poll_anonymous = bool(getattr(poll, "anonymous", False))
-    if poll_anonymous:
-        # Enhanced anonymous poll display
-        embed.add_field(
-            name="🔒 Anonymous Poll",
-            value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
-            inline=False,
-        )
-    else:
-        # For non-anonymous polls, ALWAYS show live results with percentages
-        if total_votes > 0:
-            # Show live vote breakdown for non-anonymous polls
-            results = poll.get_results()
-            live_results_text = ""
-
-            for i, option in enumerate(poll.options):
-                emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-                votes = results.get(i, 0)
-                percentage = (votes / total_votes * 100) if total_votes > 0 else 0
-
-                # Shorter progress bar for live results
-                bar_length = 10
-                filled = int((percentage / 100) * bar_length)
-                bar = "█" * filled + "░" * (bar_length - filled)
-
-                live_results_text += (
-                    f"{emoji} **{option}** `{bar}` **{votes}** ({percentage:.1f}%)\n"
-                )
-
-            embed.add_field(
-                name="📈 Live Results", value=live_results_text, inline=False
-            )
-
-            embed.add_field(
-                name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True
-            )
-        else:
-            # Even with 0 votes, show the structure for non-anonymous polls
-            results_text = ""
-            for i, option in enumerate(poll.options):
-                emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-                bar = "░" * 10  # Empty bar
-                results_text += f"{emoji} **{option}** `{bar}` **0** (0.0%)\n"
-
-            embed.add_field(
-                name="📈 Live Results", value=results_text, inline=False
-            )
 
     # Add timing information with timezone support
     if poll_status == "scheduled":
@@ -409,7 +450,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     inline=True,
                 )
 
-    # Show close time for scheduled and active polls
+    # Show close time for scheduled and active polls only (not closed polls)
     if poll_status in ["scheduled", "active"]:
         poll_timezone = str(getattr(poll, "timezone", "UTC"))
         try:
