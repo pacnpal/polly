@@ -18,7 +18,9 @@ class PollyUppyUpload {
      */
     async init(options = {}) {
         // Import Uppy modules dynamically
-        const { Uppy, Dashboard, XHRUpload } = await import('https://releases.transloadit.com/uppy/v5.1.1/uppy.min.mjs');
+        const { Uppy } = await import('https://cdn.jsdelivr.net/npm/@uppy/core@3.8.0/+esm');
+        const { Dashboard } = await import('https://cdn.jsdelivr.net/npm/@uppy/dashboard@3.7.4/+esm');
+        const { XHRUpload } = await import('https://cdn.jsdelivr.net/npm/@uppy/xhr-upload@3.6.6/+esm');
         
         // Merge default options with provided options
         const config = {
