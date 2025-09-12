@@ -361,12 +361,12 @@ document.addEventListener('click', function(e) {
 
 // Initialize edit form functionality
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔧 EDIT FORM - Initializing');
+   // console.log('🔧 EDIT FORM - Initializing');
     
     // Initialize form handler functionality  
     if (window.PollyFormHandler) {
         window.PollyFormHandler.init();
-        console.log('✅ EDIT FORM - Form handler initialized');
+        // console.log('✅ EDIT FORM - Form handler initialized');
     }
 
     // Initialize enhanced image upload
@@ -429,7 +429,7 @@ document.addEventListener('htmx:afterSwap', function(event) {
             currentImagePath: {% if poll.image_path %}'{{ poll.image_path }}'{% else %}null{% endif %},
             currentImageText: '{{ poll.image_message_text|e if poll.image_message_text else "" }}'
         });
-        console.log('✅ EDIT FORM - Enhanced image upload re-initialized after HTMX swap');
+        // console.log('✅ EDIT FORM - Enhanced image upload re-initialized after HTMX swap');
     }
     
     // Re-initialize file selection handling (fallback)

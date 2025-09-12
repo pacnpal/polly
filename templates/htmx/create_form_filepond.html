@@ -368,7 +368,7 @@ document.addEventListener('click', function(e) {
 
 // Initialize form functionality
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔧 CREATE FORM - Initializing');
+  //  console.log('🔧 CREATE FORM - Initializing');
     
     // Initialize form handler functionality
     if (window.PollyFormHandler) {
@@ -376,7 +376,7 @@ document.addEventListener('DOMContentLoaded', function() {
             isTemplate: {{ is_template|default(false)|tojson }},
             templateData: {% if template_data %}{{ template_data|tojson }}{% else %}null{% endif %}
         });
-        console.log('✅ CREATE FORM - Form handler initialized');
+        //console.log('✅ CREATE FORM - Form handler initialized');
     }
     
     // Initialize enhanced image upload
@@ -413,7 +413,7 @@ document.addEventListener('htmx:afterSwap', function(event) {
             currentImagePath: null,
             currentImageText: ''
         });
-        console.log('✅ CREATE FORM - Enhanced image upload re-initialized after HTMX swap');
+       // console.log('✅ CREATE FORM - Enhanced image upload re-initialized after HTMX swap');
     }
     
     // Re-initialize file selection handling (fallback)
