@@ -401,7 +401,19 @@ document.addEventListener('htmx:afterSwap', function(event) {
         window.PollyFormHandler.init();
     }
     
-    // Re-initialize file selection handling
+    // Re-initialize enhanced image upload if container exists
+    const uploadContainer = document.getElementById('enhanced-image-upload');
+    if (uploadContainer && window.PollyImageUpload) {
+        const imageUpload = new window.PollyImageUpload();
+        imageUpload.init('enhanced-image-upload', {
+            showImageMessage: true,
+            currentImagePath: null,
+            currentImageText: ''
+        });
+        console.log('✅ CREATE FORM - Enhanced image upload re-initialized after HTMX swap');
+    }
+    
+    // Re-initialize file selection handling (fallback)
     setTimeout(handleFileSelection, 100);
 });
 </script>
