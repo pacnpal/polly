@@ -401,8 +401,12 @@
                     console.log('🔍 IMAGE UPLOAD DEBUG - FileReader loaded successfully');
                     previewImg.src = e.target.result;
                     imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+                    
+                    // Remove CSS classes that force display:none and show elements
+                    imagePreview.classList.remove('image-preview-hidden');
                     imagePreview.style.display = 'block';
                     imageDropZone.style.display = 'none';
+                    imageMessageSection.classList.remove('image-message-section-hidden');
                     imageMessageSection.style.display = 'block';
                     
                     // Hide progress indicator and show success
@@ -421,13 +425,27 @@
             }
 
             function clearImagePreview() {
+                console.log('🔍 IMAGE UPLOAD DEBUG - Clearing image preview');
                 imageInput.value = '';
+                
+                // Add CSS classes back and hide elements
+                imagePreview.classList.add('image-preview-hidden');
                 imagePreview.style.display = 'none';
                 imageDropZone.style.display = 'block';
+                imageMessageSection.classList.add('image-message-section-hidden');
                 imageMessageSection.style.display = 'none';
+                
                 previewImg.src = '';
                 imageInfo.textContent = '';
                 document.getElementById('image-message-text').value = '';
+                
+                // Clear any status messages
+                const statusDiv = document.getElementById('image-upload-status');
+                if (statusDiv) {
+                    statusDiv.innerHTML = '';
+                }
+                
+                console.log('🔍 IMAGE UPLOAD DEBUG - Image preview cleared');
             }
 
             function clearImageError() {
