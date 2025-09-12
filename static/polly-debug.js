@@ -199,17 +199,17 @@ window.PollyDebug = (function() {
 if (PollyDebug.enabled && typeof htmx !== 'undefined') {
     // Wait for DOM to be ready before adding event listeners
     function addHTMXEventListeners() {
-        // Wait for document.body to be available
-        if (!document.body) {
-            // If body is not available, wait and try again
-            setTimeout(addHTMXEventListeners, 100);
-            return;
-        }
-        
-        const targetElement = document.body;
-        
-        // Log HTMX requests
-        targetElement.addEventListener('htmx:beforeRequest', function(evt) {
+        try {
+            // Ensure document and body are available
+            if (!document || !document.body) {
+                setTimeout(addHTMXEventListeners, 100);
+                return;
+            }
+            
+            const targetElement = document.body;
+            
+            // Log HTMX requests
+            targetElement.addEventListener('htmx:beforeRequest', function(evt) {
             PollyDebug.htmx('Request starting:', {
                 method: evt.detail.xhr.method || 'GET',
                 url: evt.detail.requestConfig.path,
@@ -254,6 +254,11 @@ if (PollyDebug.enabled && typeof htmx !== 'undefined') {
                 contentLength: evt.detail.serverResponse.length + ' chars'
             });
         });
+        } catch (error) {
+            console.warn('PollyDebug: Error setting up HTMX event listeners:', error);
+            // Retry after a longer delay if there was an error
+            setTimeout(addHTMXEventListeners, 500);
+        }
     }
     
     // Add event listeners when DOM is ready
