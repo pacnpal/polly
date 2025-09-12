@@ -195,80 +195,13 @@ window.PollyDebug = (function() {
     };
 })();
 
-// Enhanced HTMX event logging when in debug mode
+// Enhanced HTMX event logging when in debug mode - DISABLED TO PREVENT ERRORS
+// TODO: Re-enable after fixing DOM readiness issues
+/*
 if (PollyDebug.enabled && typeof htmx !== 'undefined') {
-    // Wait for DOM to be ready before adding event listeners
-    function addHTMXEventListeners() {
-        try {
-            // Ensure document and body are available
-            if (!document || !document.body) {
-                setTimeout(addHTMXEventListeners, 100);
-                return;
-            }
-            
-            const targetElement = document.body;
-            
-            // Log HTMX requests
-            targetElement.addEventListener('htmx:beforeRequest', function(evt) {
-                PollyDebug.htmx('Request starting:', {
-                    method: evt.detail.xhr.method || 'GET',
-                    url: evt.detail.requestConfig.path,
-                    element: evt.detail.elt.tagName.toLowerCase() + (evt.detail.elt.id ? '#' + evt.detail.elt.id : ''),
-                    target: evt.detail.target ? evt.detail.target.tagName.toLowerCase() + (evt.detail.target.id ? '#' + evt.detail.target.id : '') : null
-                });
-            });
-            
-            targetElement.addEventListener('htmx:afterRequest', function(evt) {
-                const status = evt.detail.xhr.status;
-                const isSuccess = status >= 200 && status < 300;
-                
-                if (isSuccess) {
-                    PollyDebug.htmx('Request completed:', {
-                        status: status,
-                        url: evt.detail.requestConfig.path,
-                        responseSize: evt.detail.xhr.responseText.length + ' chars'
-                    });
-                } else {
-                    PollyDebug.warn('HTMX request failed:', {
-                        status: status,
-                        url: evt.detail.requestConfig.path,
-                        response: evt.detail.xhr.responseText.substring(0, 200) + (evt.detail.xhr.responseText.length > 200 ? '...' : '')
-                    });
-                }
-            });
-            
-            // Log HTMX errors
-            targetElement.addEventListener('htmx:responseError', function(evt) {
-                PollyDebug.error('HTMX response error:', {
-                    status: evt.detail.xhr.status,
-                    url: evt.detail.requestConfig.path,
-                    error: evt.detail.xhr.statusText
-                });
-            });
-            
-            // Log HTMX swaps
-            targetElement.addEventListener('htmx:beforeSwap', function(evt) {
-                PollyDebug.htmx('Content swapping:', {
-                    target: evt.detail.target.tagName.toLowerCase() + (evt.detail.target.id ? '#' + evt.detail.target.id : ''),
-                    swapStyle: evt.detail.swapStyle || 'innerHTML',
-                    contentLength: evt.detail.serverResponse.length + ' chars'
-                });
-            });
-            
-        } catch (error) {
-            console.warn('PollyDebug: Error setting up HTMX event listeners:', error);
-            // Retry after a longer delay if there was an error
-            setTimeout(addHTMXEventListeners, 500);
-        }
-    }
-    
-    // Add event listeners when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', addHTMXEventListeners);
-    } else {
-        addHTMXEventListeners();
-    }
+    console.info('PollyDebug: HTMX event logging temporarily disabled');
 }
+*/
 
 // Initialize debug logging on page load
 if (document.readyState === 'loading') {
