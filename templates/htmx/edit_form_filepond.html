@@ -339,17 +339,13 @@
             imageDropZone.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Drop zone clicked, triggering file input');
                 try {
                     if (imageInput && typeof imageInput.click === 'function') {
                         imageInput.click();
-                        console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File input click triggered successfully');
                     } else {
-                        console.error('🔍 IMAGE UPLOAD DEBUG (EDIT) - File input not available or click method missing');
                         showImageError('File upload not available. Please refresh the page and try again.');
                     }
                 } catch (error) {
-                    console.error('🔍 IMAGE UPLOAD DEBUG (EDIT) - Error triggering file input:', error);
                     showImageError('Error opening file browser. Please try again.');
                 }
             });
@@ -400,31 +396,22 @@
             }
 
             function handleImageFile(file) {
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Starting file validation');
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File name:', file.name);
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File type:', file.type);
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File size:', file.size, 'bytes');
-                
                 // Clear any previous errors
                 clearImageError();
                 
                 // Validate file type
                 const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
                 if (!allowedTypes.includes(file.type)) {
-                    console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File type validation failed');
                     showImageError('Invalid file type. Please select a JPEG, PNG, GIF, or WebP image.');
                     return;
                 }
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File type validation passed');
 
                 // Validate file size (8MB)
                 const maxSize = 8 * 1024 * 1024;
                 if (file.size > maxSize) {
-                    console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File size validation failed');
                     showImageError(`File too large. Maximum size is 8MB. Your file is ${formatFileSize(file.size)}.`);
                     return;
                 }
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - File size validation passed');
 
                 // Show upload progress indicator
                 showImageUploadProgress('Preparing image preview...');
@@ -432,7 +419,6 @@
                 // Show preview
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - FileReader loaded successfully');
                     previewImg.src = e.target.result;
                     imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
                     
@@ -452,11 +438,9 @@
                     // Hide progress indicator and show success
                     hideImageUploadProgress();
                     showImageUploadStatus('success', 'New image loaded successfully! Ready to update poll.');
-                    console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Image preview setup complete');
                 };
                 
                 reader.onerror = (e) => {
-                    console.error('🔍 IMAGE UPLOAD DEBUG (EDIT) - FileReader error:', e);
                     hideImageUploadProgress();
                     showImageError('Failed to read image file. Please try again.');
                 };
@@ -465,7 +449,6 @@
             }
 
             function clearImagePreview() {
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Clearing image preview');
                 imageInput.value = '';
                 
                 // Remove CSS classes that force display:none and show elements
@@ -491,7 +474,6 @@
                 // Clear any status messages
                 clearImageError();
                 hideImageUploadProgress();
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Image preview cleared successfully');
             }
 
             function clearImageError() {
@@ -511,7 +493,6 @@
             }
 
             function showImageError(message) {
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Showing error:', message);
                 clearImageError(); // Clear any existing errors first
                 
                 // Create or update error message
@@ -542,8 +523,6 @@
             }
 
             function showImageUploadProgress(message) {
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Showing progress:', message);
-                
                 // Create or update progress message
                 let progressDiv = document.getElementById('image-upload-progress');
                 if (!progressDiv) {
@@ -571,8 +550,6 @@
             }
 
             function showImageUploadStatus(type, message) {
-                console.log('🔍 IMAGE UPLOAD DEBUG (EDIT) - Showing status:', type, message);
-                
                 // Create or update status message
                 let statusDiv = document.getElementById('image-upload-status');
                 if (!statusDiv) {
