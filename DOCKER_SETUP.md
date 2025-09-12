@@ -72,26 +72,26 @@ volumes:
 
 ```bash
 # Build and start services
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f polly
+docker compose logs -f polly
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 ### Development
 
 ```bash
 # Build and start development environment
-docker-compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml up -d
 
 # View logs with live updates
-docker-compose -f docker-compose.dev.yml logs -f polly
+docker compose -f docker-compose.dev.yml logs -f polly
 
 # Stop development environment
-docker-compose -f docker-compose.dev.yml down
+docker compose -f docker-compose.dev.yml down
 ```
 
 ## Security Features
@@ -205,4 +205,4 @@ docker run --rm -v polly_polly_db:/data -v $(pwd):/backup alpine tar xzf /backup
 docker volume prune
 
 # Remove all project volumes (DESTRUCTIVE)
-docker-compose down -v
+docker compose down -v
