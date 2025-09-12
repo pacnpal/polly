@@ -3,20 +3,15 @@ set -e
 
 echo "Starting Polly Discord Bot..."
 
-# Ensure directories exist and have proper permissions
-echo "Setting up directories and permissions..."
-mkdir -p static/uploads logs data || true
-chmod 755 static 2>/dev/null || echo "Warning: Could not change static directory permissions (mounted volume)"
-chmod 755 static/uploads 2>/dev/null || echo "Warning: Could not change uploads directory permissions (mounted volume)"  
-chmod 755 logs 2>/dev/null || echo "Warning: Could not change logs directory permissions (mounted volume)"
-chmod 755 data 2>/dev/null || echo "Warning: Could not change data directory permissions (mounted volume)"
+# Ensure directories exist (volumes will be mounted here)
+echo "Setting up directories..."
+mkdir -p static/uploads static/avatars static/images static/polls logs data db || true
 
-# Ensure the application can write to these directories
-# chown -R $(id -u):$(id -g) /app static/uploads logs data 
+# Create cache directory for uv
+mkdir -p .cache
 
 # Run database migration if needed
 echo "Running database migration..."
-mkdir .cache
 uv run migrate_database.py
 
 # Running final dependency checks

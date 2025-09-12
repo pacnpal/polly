@@ -7,45 +7,59 @@
 *.md
 docs/
 DOCKER_DEV_GUIDE.md
+DOCKER_SETUP.md
+README.md
+DEPLOYMENT.md
+DEBUG_MODE_INTEGRATION.md
+POLL_URL_GENERATOR.md
+ROLE_PING_CACHING_IMPLEMENTATION.md
+
+# Environment files
+.env
+.env.*
 
 # Development files
-.env.example
 .pytest_cache/
 .ruff_cache/
 .cache/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-
-# Test files
-test_*.py
-*_test.py
-tests/
-
-# Development scripts
-scripts/
-demo_*.py
-
-# Build artifacts
-build/
-dist/
-*.egg-info/
-
-# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS files
-.DS_Store
-Thumbs.db
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+build/
+dist/
+*.egg-info/
+.venv/
+polly-venv/
+
+# Test files and directories
+test_*.py
+*_test.py
+tests/
+pytest.ini
+
+# Development and demo scripts
+scripts/
+demo_*.py
+fix_*.py
+add_*.py
+*_test.py
+datetime_validation_test.py
+simple_*.py
+force_regenerate_all_static.py
+generate_poll_url_redis.py
+security_monitor.py
+run_migration.py
+discord_emoji_validator.py*
 
 # Logs (these will be mounted as volumes)
 logs/
@@ -55,9 +69,24 @@ logs/
 db/
 *.db
 *.db-*
+*.db.backup
 
 # Data directories (these will be mounted as volumes)  
 data/
+
+# Static files that will be mounted as volumes
+static/uploads/
+static/avatars/
+static/images/
+static/polls/
+
+# Deprecated and backup files
+deprecated/
+*.backup*
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Node modules (if any)
 node_modules/
@@ -69,3 +98,25 @@ Dockerfile.*
 # Temporary files
 tmp/
 temp/
+
+# Nginx configuration (handled separately)
+nginx/
+nginx.conf
+nginx-*.conf
+nginx-*.sh
+nginx-*.md
+
+# Deployment files
+deploy
+deploy.sh
+*.service
+Makefile
+
+# JSON examples and context
+json/
+cline_docs/
+context_portal/
+
+# Polly database files in root
+polly.db*
+polls.db*

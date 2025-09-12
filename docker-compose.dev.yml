@@ -1,12 +1,12 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: polly-redis
+    container_name: polly-redis-dev
     ports:
       - "6340:6379"
     command: redis-server --requirepass ${REDIS_PASSWORD:-polly_redis_pass}
     volumes:
-      - redis_data:/data
+      - redis_data_dev:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-polly_redis_pass}", "ping"]
@@ -14,14 +14,13 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      - polly-network
+      - polly-network-dev
 
   polly:
     build: 
       context: .
       dockerfile: Dockerfile
-    container_name: polly-app
-    # Only expose to localhost - not accessible from external network
+    container_name: polly-app-dev
     ports:
       - "127.0.0.1:8000:8000"
     env_file:
@@ -36,15 +35,19 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
+      - DEBUG=true
     volumes:
+      # Development volumes - live code mounting
+      - ./polly:/app/polly:ro
+      - ./templates:/app/templates:ro
+      - ./migrate_database.py:/app/migrate_database.py:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./uv.lock:/app/uv.lock:ro
       # Persistent data volumes
-      - polly_db:/app/db
-      - polly_data:/app/data
-      - polly_logs:/app/logs
-      - polly_static:/app/static
-      # Development volumes (comment out for production)
-      # - ./templates:/app/templates:ro
-      # - ./polly:/app/polly:ro
+      - ./db:/app/db
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./static:/app/static
     restart: unless-stopped
     depends_on:
       redis:
@@ -56,21 +59,13 @@ services:
       retries: 3
       start_period: 30s
     networks:
-      - polly-network
+      - polly-network-dev
     user: "1000:1000"
 
 volumes:
-  polly_db:
-    driver: local
-  polly_data:
-    driver: local
-  polly_logs:
-    driver: local
-  polly_static:
-    driver: local
-  redis_data:
+  redis_data_dev:
     driver: local
 
 networks:
-  polly-network:
+  polly-network-dev:
     driver: bridge
