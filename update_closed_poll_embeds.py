@@ -112,11 +112,11 @@ async def update_closed_poll_embeds():
                         # TIME CORRECTION: Fix 4:00:00 times to 00:00:00 for Eastern timezone polls
                         time_corrected = False
                         if fresh_poll.timezone in ['US/Eastern', 'America/New_York'] and fresh_poll.close_time:
-                            if fresh_poll.close_time.hour == 4 and fresh_poll.close_time.minute == 0:
+                            if fresh_poll.close_time.hour == 12 and fresh_poll.close_time.minute == 0:
                                 print(f"        🔧 CORRECTING TIME: Found 4:00:00 close time, changing to 00:00:00")
                                 # Create new datetime with corrected hour
                                 from datetime import datetime
-                                corrected_close_time = fresh_poll.close_time.replace(hour=12)
+                                corrected_close_time = fresh_poll.close_time.replace(hour=00)
                                 
                                 # Update the database with corrected time
                                 from sqlalchemy import text
