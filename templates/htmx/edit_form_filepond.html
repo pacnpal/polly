@@ -369,24 +369,32 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('✅ EDIT FORM - Form handler initialized');
     }
 
-    // Initialize enhanced image upload
-    console.log('🔍 EDIT FORM - Checking PollyImageUpload availability:', !!window.PollyImageUpload);
-    console.log('🔍 EDIT FORM - Container exists:', !!document.getElementById('enhanced-image-upload'));
+    // Initialize enhanced image upload with more detailed debugging
+    console.log('🔍 EDIT FORM - Starting enhanced image upload initialization');
+    console.log('🔍 EDIT FORM - window object:', typeof window);
+    console.log('🔍 EDIT FORM - PollyImageUpload class:', typeof window.PollyImageUpload);
+    console.log('🔍 EDIT FORM - Container element:', document.getElementById('enhanced-image-upload'));
     
-    if (window.PollyImageUpload) {
+    if (typeof window.PollyImageUpload === 'function') {
         try {
+            console.log('🔍 EDIT FORM - Creating PollyImageUpload instance...');
             const imageUpload = new window.PollyImageUpload();
-            imageUpload.init('enhanced-image-upload', {
+            console.log('🔍 EDIT FORM - Instance created, calling init...');
+            
+            const result = imageUpload.init('enhanced-image-upload', {
                 showImageMessage: true,
                 currentImagePath: {% if poll.image_path %}'{{ poll.image_path }}'{% else %}null{% endif %},
                 currentImageText: '{{ poll.image_message_text|e if poll.image_message_text else "" }}'
             });
-            console.log('✅ EDIT FORM - Enhanced image upload initialized successfully');
+            
+            console.log('✅ EDIT FORM - Enhanced image upload initialized successfully, result:', result);
         } catch (error) {
             console.error('❌ EDIT FORM - Enhanced image upload initialization failed:', error);
+            console.error('❌ EDIT FORM - Error stack:', error.stack);
         }
     } else {
-        console.error('❌ EDIT FORM - PollyImageUpload class not found');
+        console.error('❌ EDIT FORM - PollyImageUpload class not found or not a function');
+        console.error('❌ EDIT FORM - Available on window:', Object.keys(window).filter(k => k.includes('Polly')));
     }
 
     // Handle remove current image button (fallback)
