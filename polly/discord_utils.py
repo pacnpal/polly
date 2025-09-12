@@ -1256,10 +1256,29 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
     poll_timezone = str(getattr(poll, "timezone", "UTC"))
     poll_close_time = getattr(poll, "close_time", datetime.now(pytz.UTC))
     
-    # Ensure close_time is timezone-aware
+    # Ensure close_time is timezone-aware - if naive, assume it's in the poll's timezone
     if poll_close_time.tzinfo is None:
-        logger.warning(f"⚠️ RESULTS EMBED - Poll close_time was timezone-naive, assuming UTC")
-        poll_close_time = pytz.UTC.localize(poll_close_time)
+        logger.warning(f"⚠️ RESULTS EMBED - Poll close_time was timezone-naive, localizing to poll timezone")
+        
+        # Try to use the poll's timezone first, fallback to UTC
+        try:
+            if poll_timezone and poll_timezone != "UTC":
+                from .utils import validate_and_normalize_timezone
+                normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                if normalized_tz != "UTC":
+                    tz = pytz.timezone(normalized_tz)
+                    poll_close_time = tz.localize(poll_close_time)
+                    logger.info(f"✅ RESULTS EMBED - Poll close_time localized to {normalized_tz}")
+                else:
+                    poll_close_time = pytz.UTC.localize(poll_close_time)
+                    logger.info(f"✅ RESULTS EMBED - Poll close_time localized to UTC (normalized)")
+            else:
+                poll_close_time = pytz.UTC.localize(poll_close_time)
+                logger.info(f"✅ RESULTS EMBED - Poll close_time localized to UTC (default)")
+        except Exception as localize_error:
+            logger.error(f"❌ RESULTS EMBED - Poll close_time localization failed: {localize_error}")
+            poll_close_time = pytz.UTC.localize(poll_close_time)
+            logger.info(f"⚠️ RESULTS EMBED - Poll close_time using UTC fallback")
     
     # Convert close time to poll's timezone if specified and different from UTC
     if poll_timezone and poll_timezone != "UTC":
