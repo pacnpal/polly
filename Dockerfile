@@ -24,6 +24,9 @@ RUN adduser --disabled-password --gecos "" --uid 1000 polly
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
+# Change ownership of the app directory to polly user
+RUN chown -R polly:polly /app
+
 # Switch to non-root user
 USER polly
 
