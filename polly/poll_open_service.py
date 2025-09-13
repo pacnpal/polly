@@ -159,7 +159,7 @@ class PollOpeningService:
                     ping_role_name = TypeSafeColumn.get_string(fresh_poll, "ping_role_name", "Unknown Role")
                     
                     # Check if we should ping role on poll opening
-                    if ping_role_enabled and ping_role_id and reason in ["scheduled", "reopen"]:
+                    if ping_role_enabled and ping_role_id and reason in ["scheduled", "immediate", "manual"]:
                         poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
                         message_content = "📊 **Vote Now!**"
                         
