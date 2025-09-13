@@ -6,7 +6,10 @@ Provides caching functionality using Redis for frequently accessed data.
 import logging
 from typing import Any, Optional, Dict, List
 from datetime import datetime
-from .redis_client import get_redis_client
+try:
+    from .redis_client import get_redis_client
+except ImportError:
+    from redis_client import get_redis_client  # type: ignore
 
 logger = logging.getLogger(__name__)
 
