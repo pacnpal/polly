@@ -7,8 +7,13 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 
-from .database import get_db_session, Poll, TypeSafeColumn
-from .static_page_generator import get_static_page_generator
+try:
+    from .database import get_db_session, Poll, TypeSafeColumn
+    from .static_page_generator import get_static_page_generator
+except ImportError:
+    from database import get_db_session, Poll, TypeSafeColumn  # type: ignore
+    from static_page_generator import get_static_page_generator  # type: ignore
+
 
 logger = logging.getLogger(__name__)
 
