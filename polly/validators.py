@@ -8,8 +8,10 @@ import pytz
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 import logging
-from .database import Poll, Vote, get_db_session
-
+try:
+    from .database import Poll, Vote, get_db_session
+except ImportError:
+    from database import Poll, Vote, get_db_session  # type: ignore
 logger = logging.getLogger(__name__)
 
 
