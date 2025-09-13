@@ -244,8 +244,14 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     else:
         logger.debug(f"ℹ️ EMBED TIMEZONE - Poll {poll_id} using UTC timezone")
 
+    # Add anonymity indicator to title for better visibility
+    poll_anonymous = bool(getattr(poll, "anonymous", False))
+    poll_title = f"{status_emoji} {str(getattr(poll, 'name', ''))}"
+    if poll_anonymous:
+        poll_title += " 🔒"  # Add lock icon to title for anonymous polls
+    
     embed = discord.Embed(
-        title=f"{status_emoji} {str(getattr(poll, 'name', ''))}",
+        title=poll_title,
         description=str(getattr(poll, "question", "")),
         color=color,
         timestamp=poll_timestamp,
@@ -406,10 +412,17 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
         poll_anonymous = bool(getattr(poll, "anonymous", False))
         if poll_anonymous:
-            # Enhanced anonymous poll display
+            # Enhanced anonymous poll display with more prominent messaging
             embed.add_field(
                 name="🔒 Anonymous Poll",
                 value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
+                inline=False,
+            )
+            
+            # Add voting instructions for anonymous polls
+            embed.add_field(
+                name="ℹ️ How to Vote",
+                value="React with the emoji of your choice below. Your vote is anonymous and results are hidden until the poll closes.",
                 inline=False,
             )
         else:
@@ -452,13 +465,50 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     name="📈 Live Results", value=results_text, inline=False
                 )
     else:
-        # Just show options without results
+        # Just show options without results (for scheduled polls)
         option_text = ""
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
             option_text += f"{emoji} **{option}**\n"
 
         embed.add_field(name="📝 Options", value=option_text, inline=False)
+        
+        # Show poll type information for scheduled polls
+        poll_anonymous = bool(getattr(poll, "anonymous", False))
+        poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+
+        poll_type = []
+        if poll_anonymous:
+            poll_type.append("🔒 Anonymous")
+        if poll_multiple_choice:
+            poll_type.append("☑️ Multiple Choice")
+
+        if poll_type:
+            embed.add_field(name="📋 Poll Type", value=" • ".join(poll_type), inline=False)
+            
+        # Add anonymous poll information for scheduled polls (same as active polls)
+        poll_anonymous = bool(getattr(poll, "anonymous", False))
+        if poll_anonymous:
+            total_votes = poll.get_total_votes()
+            embed.add_field(
+                name="🔒 Anonymous Poll",
+                value=f"Results will be revealed when the poll ends\n🗳️ **{total_votes}** votes cast so far",
+                inline=False,
+            )
+        
+        # Add voting instructions for scheduled polls
+        if poll_anonymous:
+            embed.add_field(
+                name="ℹ️ About This Poll",
+                value="This is an anonymous poll. Results will be hidden until the poll closes.",
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="ℹ️ About This Poll",
+                value="This poll will show live results as votes are cast.",
+                inline=False,
+            )
 
     # Add timing information with timezone support
     if poll_status == "scheduled":
