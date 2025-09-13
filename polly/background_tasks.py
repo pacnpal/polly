@@ -12,12 +12,12 @@ import discord
 
 try:
     from .database import get_db_session, Poll, Vote, TypeSafeColumn
-    from .discord_utils import post_poll_to_channel, update_poll_message
+    from .discord_utils import update_poll_message
     from .timezone_scheduler_fix import TimezoneAwareScheduler
     from .error_handler import PollErrorHandler
 except ImportError:
     from database import get_db_session, Poll, Vote, TypeSafeColumn  # type: ignore
-    from discord_utils import post_poll_to_channel, update_poll_message  # type: ignore
+    from discord_utils import update_poll_message  # type: ignore
     from timezone_scheduler_fix import TimezoneAwareScheduler  # type: ignore
     from error_handler import PollErrorHandler  # type: ignore
 # Track failed message fetch attempts for polls during runtime
@@ -640,9 +640,24 @@ async def run_static_content_recovery_on_startup():
                 tz_scheduler = TimezoneAwareScheduler(scheduler)
                 poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
 
-                # Schedule poll opening (use the timezone-aware datetime)
+                # Schedule poll opening using unified opening service
+                from .poll_open_service import poll_opening_service
+                
+                async def open_poll_scheduled(bot_instance, poll_id):
+                    """Wrapper function for scheduled poll opening"""
+                    result = await poll_opening_service.open_poll_unified(
+                        poll_id=poll_id,
+                        reason="scheduled",
+                        bot_instance=bot_instance
+                    )
+                    if not result["success"]:
+                        logger.error(f"❌ SCHEDULED OPEN {poll_id} - Failed: {result.get('error')}")
+                    else:
+                        logger.info(f"✅ SCHEDULED OPEN {poll_id} - Success: {result.get('message')}")
+                    return result
+                
                 success_open = tz_scheduler.schedule_poll_opening(
-                    poll_id, poll_open_time, poll_timezone, post_poll_to_channel, bot
+                    poll_id, poll_open_time, poll_timezone, open_poll_scheduled, bot
                 )
                 if success_open:
                     logger.debug(

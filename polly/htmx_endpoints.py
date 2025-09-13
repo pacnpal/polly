@@ -539,12 +539,28 @@ async def open_poll_now_htmx(
         except Exception as e:
             logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
 
-        # Post the poll to Discord immediately
+        # Post the poll to Discord immediately using unified opening service
         try:
-            from .discord_utils import post_poll_to_channel
-
-            await post_poll_to_channel(bot, poll_id)
-            logger.info(f"Poll {poll_id} opened immediately by user {current_user.id}")
+            from .poll_open_service import poll_opening_service
+            
+            result = await poll_opening_service.open_poll_unified(
+                poll_id=poll_id,
+                reason="immediate",
+                admin_user_id=current_user.id,
+                bot_instance=bot
+            )
+            
+            if not result["success"]:
+                logger.error(f"Unified poll opening failed for poll {poll_id}: {result.get('error')}")
+                # Revert status change if opening failed
+                setattr(poll, "status", "scheduled")
+                db.commit()
+                return templates.TemplateResponse(
+                    "htmx/components/inline_error.html",
+                    {"request": request, "message": result.get("error", "Error opening poll")},
+                )
+            
+            logger.info(f"Poll {poll_id} opened immediately by user {current_user.id} via unified service")
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
             # Revert status change if posting failed
@@ -3842,15 +3858,15 @@ async def create_poll_htmx(
 
         # Schedule poll opening and closing using timezone-aware scheduler
         try:
-            from .discord_utils import post_poll_to_channel
             from .background_tasks import close_poll
 
             # Use the timezone-aware scheduler wrapper
             tz_scheduler = TimezoneAwareScheduler(scheduler)
 
-            # Schedule poll to open at the specified time
+            # Schedule poll to open at the specified time using unified opening service
+            from .background_tasks import open_poll_scheduled
             success_open = tz_scheduler.schedule_poll_opening(
-                poll_id, open_dt, timezone_str, post_poll_to_channel, bot
+                poll_id, open_dt, timezone_str, open_poll_scheduled
             )
             if not success_open:
                 logger.error(f"Failed to schedule poll {poll_id} opening")
@@ -5339,15 +5355,14 @@ async def update_poll_htmx(
         except Exception as e:
             logger.debug(f"Job close_poll_{poll_id} not found or already removed: {e}")
 
-        # Reschedule jobs
-        from .discord_utils import post_poll_to_channel
-        from .background_tasks import close_poll
+        # Reschedule jobs using unified opening service
+        from .background_tasks import open_poll_scheduled, close_poll
 
         if open_dt > datetime.now(pytz.UTC):
             scheduler.add_job(
-                post_poll_to_channel,
+                open_poll_scheduled,
                 DateTrigger(run_date=open_dt),
-                args=[bot, poll_id],
+                args=[poll_id],
                 id=f"open_poll_{poll_id}",
             )
 

@@ -450,26 +450,31 @@ class SuperAdminService:
                 logger.error(f"❌ Error scheduling close time for reopened poll {poll_id}: {schedule_error}")
                 # Don't fail the reopen operation if scheduling fails
             
-            # Step 6: Update Discord embed and reactions
+            # Step 6: Use unified opening service for consistent Discord handling
             try:
-                # Import Discord utilities and bot instance
-                from .discord_utils import update_poll_message
+                from .poll_open_service import poll_opening_service
                 from .discord_bot import get_bot_instance
                 
                 bot = get_bot_instance()
                 if bot and bot.is_ready():
-                    # Update the Discord message with new active status and reactions
-                    discord_update_success = await update_poll_message(bot, poll)
-                    if discord_update_success:
-                        logger.info(f"✅ Discord embed updated for reopened poll {poll_id}")
-                    else:
-                        logger.warning(f"⚠️ Failed to update Discord embed for reopened poll {poll_id}")
-                else:
-                    logger.warning(f"⚠️ Discord bot not ready, skipping embed update for poll {poll_id}")
+                    # Use unified opening service for consistent behavior
+                    open_result = await poll_opening_service.open_poll_unified(
+                        poll_id=poll_id,
+                        reason="reopen",
+                        admin_user_id=admin_user_id,
+                        bot_instance=bot
+                    )
                     
-            except Exception as discord_error:
-                logger.error(f"❌ Error updating Discord embed for reopened poll {poll_id}: {discord_error}")
-                # Don't fail the reopen operation if Discord update fails
+                    if open_result["success"]:
+                        logger.info(f"✅ Unified opening service successfully handled reopened poll {poll_id}")
+                    else:
+                        logger.warning(f"⚠️ Unified opening service failed for reopened poll {poll_id}: {open_result.get('error')}")
+                else:
+                    logger.warning(f"⚠️ Discord bot not ready, skipping unified opening for poll {poll_id}")
+                    
+            except Exception as opening_error:
+                logger.error(f"❌ Error in unified opening service for reopened poll {poll_id}: {opening_error}")
+                # Don't fail the reopen operation if opening service fails
             
             # Step 7: Generate comprehensive success response
             poll_name = TypeSafeColumn.get_string(poll, "name")

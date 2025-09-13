@@ -174,10 +174,30 @@ class RecoveryManager:
                 logger.error(f"❌ RECOVERY MANAGER - Failed to close overdue poll {poll_id}: {e}")
                 raise
         
-        # Poll should still be active - ensure Discord message exists and has reactions
+        # Poll should still be active - check if it needs to be re-opened using unified service
         if not message_id or not channel_id:
-            logger.warning(f"⚠️ RECOVERY MANAGER - Poll {poll_id} missing message_id or channel_id")
-            return
+            logger.warning(f"⚠️ RECOVERY MANAGER - Poll {poll_id} missing message_id or channel_id, attempting recovery via unified opening service")
+            
+            # Use unified opening service to recover the poll
+            try:
+                from .poll_open_service import poll_opening_service
+                
+                result = await poll_opening_service.open_poll_unified(
+                    poll_id=poll_id,
+                    reason="recovery",
+                    bot_instance=self.bot
+                )
+                
+                if result["success"]:
+                    logger.info(f"✅ RECOVERY MANAGER - Poll {poll_id} recovered via unified opening service")
+                else:
+                    logger.error(f"❌ RECOVERY MANAGER - Failed to recover poll {poll_id} via unified opening service: {result.get('error')}")
+                
+                return
+                
+            except Exception as e:
+                logger.error(f"❌ RECOVERY MANAGER - Error using unified opening service for poll {poll_id}: {e}")
+                return
         
         try:
             # Get Discord channel and message
@@ -193,9 +213,29 @@ class RecoveryManager:
             try:
                 message = await channel.fetch_message(int(message_id))
             except discord.NotFound:
-                logger.warning(f"⚠️ RECOVERY MANAGER - Message {message_id} not found for poll {poll_id}")
-                # Message was deleted - we'll let the cleanup process handle this
-                return
+                logger.warning(f"⚠️ RECOVERY MANAGER - Message {message_id} not found for poll {poll_id}, attempting recovery via unified opening service")
+                
+                # Message was deleted - use unified opening service to recreate it
+                try:
+                    from .poll_open_service import poll_opening_service
+                    
+                    result = await poll_opening_service.open_poll_unified(
+                        poll_id=poll_id,
+                        reason="recovery",
+                        bot_instance=self.bot
+                    )
+                    
+                    if result["success"]:
+                        logger.info(f"✅ RECOVERY MANAGER - Poll {poll_id} message recreated via unified opening service")
+                    else:
+                        logger.error(f"❌ RECOVERY MANAGER - Failed to recreate poll {poll_id} message via unified opening service: {result.get('error')}")
+                    
+                    return
+                    
+                except Exception as e:
+                    logger.error(f"❌ RECOVERY MANAGER - Error using unified opening service for poll {poll_id}: {e}")
+                    return
+                    
             except Exception as e:
                 logger.error(f"❌ RECOVERY MANAGER - Error fetching message {message_id} for poll {poll_id}: {e}")
                 return

@@ -667,26 +667,24 @@ class PollErrorHandler:
                     if poll:
                         now = datetime.now(pytz.UTC)
 
-                        # Reschedule opening if needed
+                        # Reschedule opening if needed using unified opening service
                         poll_open_time = poll.open_time_aware
                         if (
                             str(poll.status) == "scheduled"
                             and poll_open_time
                             and poll_open_time > now
                         ):
-                            from .discord_utils import post_poll_to_channel
-                            from .discord_bot import get_bot_instance
+                            from .background_tasks import open_poll_scheduled
                             from apscheduler.triggers.date import DateTrigger
 
-                            main_bot = get_bot_instance()
                             scheduler.add_job(
-                                post_poll_to_channel,
+                                open_poll_scheduled,
                                 DateTrigger(run_date=poll.open_time_aware),
-                                args=[main_bot, poll],
+                                args=[poll.id],
                                 id=f"open_poll_{poll.id}",
                                 replace_existing=True,
                             )
-                            logger.info(f"Rescheduled opening for poll {poll_id}")
+                            logger.info(f"Rescheduled opening for poll {poll_id} using unified service")
 
                         # Reschedule closing if needed
                         poll_close_time = poll.close_time_aware
