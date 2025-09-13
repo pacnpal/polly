@@ -12,10 +12,21 @@ import pytz
 import discord
 from discord.ext import commands
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
-from .discord_utils import update_poll_message
-from .poll_operations import BulletproofPollOperations
-from .background_tasks import close_poll
+# Handle both relative and absolute imports for direct execution
+try:
+    from .database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
+    from .discord_utils import update_poll_message
+    from .poll_operations import BulletproofPollOperations
+    from .background_tasks import close_poll
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
+    from discord_utils import update_poll_message
+    from poll_operations import BulletproofPollOperations
+    from background_tasks import close_poll
 
 logger = logging.getLogger(__name__)
 
