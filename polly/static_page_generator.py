@@ -427,29 +427,29 @@ class StaticPageGenerator:
             return False
             
     async def generate_all_static_content(self, poll_id: int, bot=None) -> Dict[str, bool]:
-        """Generate all static content for a closed poll - SCREENSHOTS FIRST, then HTML"""
-        logger.info(f"🔧 STATIC GEN - Generating all static content with SCREENSHOT-FIRST approach for poll {poll_id}")
+        """Generate all static content for a closed poll - NO SCREENSHOTS"""
+        logger.info(f"🔧 STATIC GEN - Generating all static content for poll {poll_id}")
         
-        # PHASE 1: Generate screenshot FIRST
-        print(f"📸 PHASE 1 - Generating screenshot for poll {poll_id} (before HTML)")
-        screenshot_success = await self.generate_dashboard_with_screenshot(poll_id, bot)
-        
-        # PHASE 2: Generate HTML details page AFTER screenshot (so it can reference it)
-        print(f"📄 PHASE 2 - Generating HTML details page for poll {poll_id} (after screenshot)")
+        # PHASE 1: Generate HTML details page
+        logger.info(f"📄 PHASE 1 - Generating HTML details page for poll {poll_id}")
         details_success = await self.generate_static_poll_details(poll_id, bot)
         
+        # PHASE 2: Generate dashboard page
+        logger.info(f"📊 PHASE 2 - Generating dashboard page for poll {poll_id}")
+        dashboard_success = await self.generate_static_poll_dashboard(poll_id, bot)
+        
         # PHASE 3: Generate JSON data file
-        print(f"📊 PHASE 3 - Generating JSON data for poll {poll_id}")
+        logger.info(f"📊 PHASE 3 - Generating JSON data for poll {poll_id}")
         data_success = await self.generate_static_poll_data(poll_id)
         
         results = {
             "details_page": details_success,
-            "dashboard_screenshot": screenshot_success,
+            "dashboard_page": dashboard_success,
             "data_file": data_success
         }
         
         success_count = sum(1 for success in results.values() if success)
-        logger.info(f"✅ STATIC GEN - Generated {success_count}/3 static files for poll {poll_id} using SCREENSHOT-FIRST approach")
+        logger.info(f"✅ STATIC GEN - Generated {success_count}/3 static files for poll {poll_id}")
         
         return results
         
