@@ -26,6 +26,24 @@ message_fetch_failures = {}
 MAX_FETCH_RETRIES = 5  # Number of consecutive failures before deleting poll
 RETRY_WINDOW_MINUTES = 30  # Time window to track failures
 
+# Threshold-based logging counters to reduce log noise
+startup_warning_counts = {
+    "message_not_found": 0,
+    "permission_denied": 0,
+    "channel_not_found": 0,
+    "rate_limited": 0,
+    "message_fix_failed": 0
+}
+
+# Thresholds for escalating to WARNING level
+WARNING_THRESHOLDS = {
+    "message_not_found": 3,  # Warn after 3 missing messages
+    "permission_denied": 3,  # Warn after 3 permission issues
+    "channel_not_found": 3,  # Warn after 3 missing channels
+    "rate_limited": 5,       # Warn after 5 rate limits
+    "message_fix_failed": 5  # Warn after 5 failed message fixes
+}
+
 logger = logging.getLogger(__name__)
 
 # Scheduler for poll timing
@@ -82,20 +100,23 @@ async def cleanup_polls_with_deleted_messages():
 
     db = get_db_session()
     try:
-        # Get all polls that have message IDs (active and scheduled polls that were posted)
+        # STRICT LIMIT: Get only a limited number of polls to prevent overwhelming Discord API
         polls_with_messages = (
             db.query(Poll)
             .filter(
                 Poll.message_id.isnot(None), Poll.status.in_(["active", "scheduled"])
             )
+            .order_by(Poll.created_at.desc())  # Check newest first
+            .limit(15)  # STRICT LIMIT: Only check 15 polls max on startup
             .all()
         )
 
         logger.info(
-            f"📊 MESSAGE CLEANUP - Found {len(polls_with_messages)} polls with message IDs to check"
+            f"📊 MESSAGE CLEANUP - Found {len(polls_with_messages)} polls with message IDs to check (limited to 15 for startup)"
         )
 
         deleted_polls = []
+        api_call_delay = 1.0  # 1 second delay between Discord API calls
 
         for poll in polls_with_messages:
             try:
@@ -124,9 +145,12 @@ async def cleanup_polls_with_deleted_messages():
                     deleted_polls.append(poll)
                     continue
 
-                # Try to fetch the message (only for text channels)
+                # Try to fetch the message (only for text channels) with RATE LIMITING
                 try:
                     if isinstance(channel, discord.TextChannel):
+                        # RATE LIMIT: Add delay before Discord API call
+                        await asyncio.sleep(api_call_delay)
+                        
                         await channel.fetch_message(int(message_id))
                         logger.debug(
                             f"✅ MESSAGE CLEANUP - Message {message_id} exists for poll {poll_id}"
@@ -138,18 +162,39 @@ async def cleanup_polls_with_deleted_messages():
                         deleted_polls.append(poll)
                         continue
                 except discord.NotFound:
-                    logger.warning(
-                        f"🗑️ MESSAGE CLEANUP - Message {message_id} not found for poll {poll_id}, marking for deletion"
-                    )
+                    startup_warning_counts["message_not_found"] += 1
+                    if startup_warning_counts["message_not_found"] <= WARNING_THRESHOLDS["message_not_found"]:
+                        logger.info(
+                            f"🗑️ MESSAGE CLEANUP - Message {message_id} not found for poll {poll_id}, marking for deletion ({startup_warning_counts['message_not_found']}/{WARNING_THRESHOLDS['message_not_found']})"
+                        )
+                    else:
+                        logger.warning(
+                            f"🗑️ MESSAGE CLEANUP - Message {message_id} not found for poll {poll_id}, marking for deletion (threshold exceeded: {startup_warning_counts['message_not_found']} occurrences)"
+                        )
                     deleted_polls.append(poll)
                 except discord.Forbidden:
-                    logger.warning(
-                        f"🔒 MESSAGE CLEANUP - No permission to access message {message_id} for poll {poll_id}, keeping poll"
-                    )
+                    startup_warning_counts["permission_denied"] += 1
+                    if startup_warning_counts["permission_denied"] <= WARNING_THRESHOLDS["permission_denied"]:
+                        logger.info(
+                            f"🔒 MESSAGE CLEANUP - No permission to access message {message_id} for poll {poll_id}, keeping poll ({startup_warning_counts['permission_denied']}/{WARNING_THRESHOLDS['permission_denied']})"
+                        )
+                    else:
+                        logger.warning(
+                            f"🔒 MESSAGE CLEANUP - No permission to access message {message_id} for poll {poll_id}, keeping poll (threshold exceeded: {startup_warning_counts['permission_denied']} occurrences)"
+                        )
                 except discord.HTTPException as e:
-                    logger.error(
-                        f"❌ MESSAGE CLEANUP - HTTP error checking message {message_id} for poll {poll_id}: {e}"
-                    )
+                    if e.status == 429:  # Rate limited
+                        startup_warning_counts["rate_limited"] += 1
+                        # Always warn on rate limits (threshold = 1)
+                        logger.warning(
+                            f"⚠️ MESSAGE CLEANUP - Rate limited checking message {message_id} for poll {poll_id}, implementing backoff (occurrence #{startup_warning_counts['rate_limited']})"
+                        )
+                        # EXPONENTIAL BACKOFF: Wait longer on rate limit
+                        await asyncio.sleep(15.0)
+                    else:
+                        logger.error(
+                            f"❌ MESSAGE CLEANUP - HTTP error checking message {message_id} for poll {poll_id}: {e}"
+                        )
                     # Don't delete on HTTP errors, might be temporary
                 except (ValueError, TypeError) as e:
                     logger.error(
@@ -305,7 +350,7 @@ async def fix_closed_polls_discord_messages_on_startup():
         # Get enhanced cache service for rate limiting prevention
         enhanced_cache = get_enhanced_cache_service()
         
-        # Get all closed polls that have message IDs
+        # Get all closed polls that have message IDs - LIMIT TO PREVENT OVERWHELMING
         db = get_db_session()
         try:
             closed_polls = (
@@ -313,10 +358,12 @@ async def fix_closed_polls_discord_messages_on_startup():
                 .options(joinedload(Poll.votes))
                 .filter(Poll.status == 'closed')
                 .filter(Poll.message_id.isnot(None))
+                .order_by(Poll.created_at.desc())  # Process newest first
+                .limit(20)  # STRICT LIMIT: Only process 20 polls max on startup
                 .all()
             )
             
-            logger.info(f"📊 STARTUP FIX - Found {len(closed_polls)} closed polls with message IDs to check")
+            logger.info(f"📊 STARTUP FIX - Found {len(closed_polls)} closed polls with message IDs to check (limited to 20 for startup)")
             
             if not closed_polls:
                 logger.info("✅ STARTUP FIX - No closed polls found that need Discord message fixing")
@@ -325,10 +372,11 @@ async def fix_closed_polls_discord_messages_on_startup():
             success_count = 0
             reaction_clear_count = 0
             
-            # Process polls in batches to respect rate limits
-            batch_size = 5  # Process 5 polls at a time
-            batch_delay = 2.0  # 2 second delay between batches
-            poll_delay = 0.5  # 0.5 second delay between individual polls
+            # STRICTER RATE LIMITS: Process polls in smaller batches with longer delays
+            batch_size = 3  # Process only 3 polls at a time (reduced from 5)
+            batch_delay = 5.0  # 5 second delay between batches (increased from 2.0)
+            poll_delay = 1.5  # 1.5 second delay between individual polls (increased from 0.5)
+            api_call_delay = 0.8  # Additional delay between API calls within a poll
             
             for i in range(0, len(closed_polls), batch_size):
                 batch = closed_polls[i:i + batch_size]
@@ -343,6 +391,9 @@ async def fix_closed_polls_discord_messages_on_startup():
                     logger.debug(f"🔄 STARTUP FIX - Checking poll {poll_id}: '{poll_name}' (Message: {message_id})")
                     
                     try:
+                        # RATE LIMIT: Add delay before Discord API call
+                        await asyncio.sleep(api_call_delay)
+                        
                         # Update the Discord message to show final results
                         message_updated = await update_poll_message(bot, poll)
                         
@@ -350,19 +401,32 @@ async def fix_closed_polls_discord_messages_on_startup():
                             logger.info(f"✅ STARTUP FIX - Successfully updated Discord message for poll {poll_id}")
                             success_count += 1
                         else:
-                            logger.debug(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (may already be correct)")
+                            startup_warning_counts["message_fix_failed"] += 1
+                            if startup_warning_counts["message_fix_failed"] <= WARNING_THRESHOLDS["message_fix_failed"]:
+                                logger.debug(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (may already be correct) ({startup_warning_counts['message_fix_failed']}/{WARNING_THRESHOLDS['message_fix_failed']})")
+                            else:
+                                logger.warning(f"⚠️ STARTUP FIX - Failed to update Discord message for poll {poll_id} (threshold exceeded: {startup_warning_counts['message_fix_failed']} failures)")
                         
-                        # Small delay to prevent rate limiting on message updates
-                        await asyncio.sleep(0.2)
+                        # INCREASED delay to prevent rate limiting on message updates
+                        await asyncio.sleep(api_call_delay)
                         
-                        # Clear reactions from Discord message for closed polls
+                        # Clear reactions from Discord message for closed polls with STRICT rate limiting
                         if message_id and channel_id:
                             try:
+                                # RATE LIMIT: Add delay before channel access
+                                await asyncio.sleep(api_call_delay)
+                                
                                 channel = bot.get_channel(int(channel_id))
                                 if channel and isinstance(channel, discord.TextChannel):
                                     try:
+                                        # RATE LIMIT: Add delay before message fetch
+                                        await asyncio.sleep(api_call_delay)
+                                        
                                         message = await channel.fetch_message(int(message_id))
                                         if message:
+                                            # RATE LIMIT: Add delay before clearing reactions
+                                            await asyncio.sleep(api_call_delay)
+                                            
                                             # Clear all reactions from the poll message
                                             await message.clear_reactions()
                                             logger.info(f"✅ STARTUP FIX - Cleared all reactions from Discord message for poll {poll_id}")
@@ -370,32 +434,47 @@ async def fix_closed_polls_discord_messages_on_startup():
                                         else:
                                             logger.warning(f"⚠️ STARTUP FIX - Could not find message {message_id} for poll {poll_id}")
                                     except discord.NotFound:
-                                        logger.warning(f"⚠️ STARTUP FIX - Message {message_id} not found for poll {poll_id} (may have been deleted)")
+                                        startup_warning_counts["message_not_found"] += 1
+                                        if startup_warning_counts["message_not_found"] <= WARNING_THRESHOLDS["message_not_found"]:
+                                            logger.info(f"⚠️ STARTUP FIX - Message {message_id} not found for poll {poll_id} (may have been deleted) ({startup_warning_counts['message_not_found']}/{WARNING_THRESHOLDS['message_not_found']})")
+                                        else:
+                                            logger.warning(f"⚠️ STARTUP FIX - Message {message_id} not found for poll {poll_id} (threshold exceeded: {startup_warning_counts['message_not_found']} occurrences)")
                                     except discord.Forbidden:
-                                        logger.warning(f"⚠️ STARTUP FIX - No permission to clear reactions for poll {poll_id}")
+                                        startup_warning_counts["permission_denied"] += 1
+                                        if startup_warning_counts["permission_denied"] <= WARNING_THRESHOLDS["permission_denied"]:
+                                            logger.info(f"⚠️ STARTUP FIX - No permission to clear reactions for poll {poll_id} ({startup_warning_counts['permission_denied']}/{WARNING_THRESHOLDS['permission_denied']})")
+                                        else:
+                                            logger.warning(f"⚠️ STARTUP FIX - No permission to clear reactions for poll {poll_id} (threshold exceeded: {startup_warning_counts['permission_denied']} occurrences)")
                                     except discord.HTTPException as http_error:
                                         if http_error.status == 429:  # Rate limited
-                                            logger.warning(f"⚠️ STARTUP FIX - Rate limited while clearing reactions for poll {poll_id}, adding extra delay")
-                                            await asyncio.sleep(5.0)  # Extra delay for rate limit
+                                            logger.warning(f"⚠️ STARTUP FIX - Rate limited while clearing reactions for poll {poll_id}, implementing exponential backoff")
+                                            # EXPONENTIAL BACKOFF: Start with 10 seconds, double on subsequent rate limits
+                                            backoff_delay = 10.0
+                                            await asyncio.sleep(backoff_delay)
                                         else:
                                             logger.error(f"❌ STARTUP FIX - HTTP error clearing reactions for poll {poll_id}: {http_error}")
                                     except Exception as reaction_error:
                                         logger.error(f"❌ STARTUP FIX - Error clearing reactions for poll {poll_id}: {reaction_error}")
                                 else:
-                                    logger.warning(f"⚠️ STARTUP FIX - Could not find or access channel {channel_id} for poll {poll_id}")
+                                    startup_warning_counts["channel_not_found"] += 1
+                                    if startup_warning_counts["channel_not_found"] <= WARNING_THRESHOLDS["channel_not_found"]:
+                                        logger.info(f"⚠️ STARTUP FIX - Could not find or access channel {channel_id} for poll {poll_id} ({startup_warning_counts['channel_not_found']}/{WARNING_THRESHOLDS['channel_not_found']})")
+                                    else:
+                                        logger.warning(f"⚠️ STARTUP FIX - Could not find or access channel {channel_id} for poll {poll_id} (threshold exceeded: {startup_warning_counts['channel_not_found']} occurrences)")
                             except Exception as channel_error:
                                 logger.error(f"❌ STARTUP FIX - Error accessing channel for poll {poll_id}: {channel_error}")
                             
                     except Exception as e:
-                        logger.warning(f"⚠️ STARTUP FIX - Error processing poll {poll_id}: {e}")
+                        # Keep individual poll processing errors as debug unless they become frequent
+                        logger.debug(f"⚠️ STARTUP FIX - Error processing poll {poll_id}: {e}")
                         continue
                     
                     # Rate limiting delay between individual polls
                     await asyncio.sleep(poll_delay)
                 
-                # Delay between batches to respect Discord rate limits
+                # LONGER delay between batches to respect Discord rate limits
                 if i + batch_size < len(closed_polls):  # Don't delay after the last batch
-                    logger.debug(f"⏳ STARTUP FIX - Waiting {batch_delay}s before next batch to respect rate limits")
+                    logger.info(f"⏳ STARTUP FIX - Waiting {batch_delay}s before next batch to respect rate limits")
                     await asyncio.sleep(batch_delay)
             
             if success_count > 0 or reaction_clear_count > 0:
@@ -427,14 +506,18 @@ async def run_static_content_recovery_on_startup():
             logger.warning("⚠️ STARTUP RECOVERY - Bot instance not available, skipping static recovery")
             return
         
-        # Run recovery with a reasonable limit to avoid overwhelming the system on startup
-        results = await run_static_content_recovery(bot, limit=50)
+        # STRICT LIMIT: Run recovery with a much smaller limit to avoid overwhelming the system on startup
+        results = await run_static_content_recovery(bot, limit=10)  # Reduced from 50 to 10
         
         if results["successful_generations"] > 0:
             logger.info(f"✅ STARTUP RECOVERY - Generated static content for {results['successful_generations']} existing closed polls")
         
         if results["failed_generations"] > 0:
-            logger.warning(f"⚠️ STARTUP RECOVERY - Failed to generate static content for {results['failed_generations']} polls")
+            # Only warn if failure rate is high (>50% of attempted generations)
+            if results["failed_generations"] > (results.get("successful_generations", 0)):
+                logger.warning(f"⚠️ STARTUP RECOVERY - Failed to generate static content for {results['failed_generations']} polls (high failure rate)")
+            else:
+                logger.info(f"ℹ️ STARTUP RECOVERY - Failed to generate static content for {results['failed_generations']} polls (acceptable failure rate)")
         
         if results["polls_needing_static"] == 0:
             logger.info("✅ STARTUP RECOVERY - All existing closed polls already have static content")
@@ -825,8 +908,8 @@ async def reaction_safeguard_task():
                                     "last_attempt": current_time,
                                     "methods_tried": ["fetch_message"],
                                 }
-                                logger.warning(
-                                    f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES})"
+                                logger.info(
+                                    f"ℹ️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES})"
                                 )
                             else:
                                 failure_info = message_fetch_failures[poll_id]
@@ -850,9 +933,15 @@ async def reaction_safeguard_task():
                                         f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt 1/{MAX_FETCH_RETRIES}, reset after {time_since_first_failure:.1f} minutes)"
                                     )
                                 else:
-                                    logger.warning(
-                                        f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt {failure_info['count']}/{MAX_FETCH_RETRIES})"
-                                    )
+                                    # Only warn after multiple attempts
+                                    if failure_info['count'] >= 3:
+                                        logger.warning(
+                                            f"⚠️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt {failure_info['count']}/{MAX_FETCH_RETRIES})"
+                                        )
+                                    else:
+                                        logger.info(
+                                            f"ℹ️ Safeguard: Message {poll_message_id} not found for poll {poll_id} (attempt {failure_info['count']}/{MAX_FETCH_RETRIES})"
+                                        )
 
                                 # Try alternative methods before giving up
                                 if failure_info["count"] <= MAX_FETCH_RETRIES:
