@@ -558,9 +558,8 @@ class EnhancedRecoveryValidator:
                 
                 for server_id in server_ids:
                     if server_id:
-                        # Check if emoji cache exists
-                        cache_key = f"guild_emojis:{server_id}"
-                        cached_emojis = await cache_service.get(cache_key)
+                        # Check if emoji cache exists using the correct method
+                        cached_emojis = await cache_service.get_cached_guild_emojis_extended(server_id)
                         
                         if not cached_emojis:
                             cache_misses += 1
