@@ -9,7 +9,15 @@ from datetime import datetime
 from typing import List, Dict, Any
 import pytz
 
-from .database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
+# Handle both relative and absolute imports for direct execution
+try:
+    from .database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from database import get_db_session, Guild, Channel, Poll, POLL_EMOJIS
 from .debug_config import get_debug_logger
 
 logger = get_debug_logger(__name__)
