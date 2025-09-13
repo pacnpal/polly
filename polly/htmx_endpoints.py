@@ -3856,62 +3856,116 @@ async def create_poll_htmx(
         poll_id = result["poll_id"]
         logger.info(f"Created poll {poll_id} for user {current_user.id}")
 
-        # Schedule poll opening and closing using timezone-aware scheduler
-        try:
-            from .background_tasks import close_poll
-
-            # Use the timezone-aware scheduler wrapper
-            tz_scheduler = TimezoneAwareScheduler(scheduler)
-
-            # Create wrapper function for scheduled poll opening using unified service
-            async def open_poll_scheduled_wrapper(bot_instance, poll_id):
-                """Wrapper function for scheduled poll opening using unified service"""
+        # Handle immediate opening vs scheduled opening
+        if open_immediately:
+            logger.info(f"🚀 IMMEDIATE OPEN - Opening poll {poll_id} immediately for user {current_user.id}")
+            
+            # Open poll immediately using unified opening service
+            try:
                 from .poll_open_service import poll_opening_service
                 
-                result = await poll_opening_service.open_poll_unified(
+                immediate_result = await poll_opening_service.open_poll_unified(
                     poll_id=poll_id,
-                    reason="scheduled",
-                    bot_instance=bot_instance
+                    reason="immediate",
+                    admin_user_id=current_user.id,
+                    bot_instance=bot
                 )
-                if not result["success"]:
-                    logger.error(f"❌ SCHEDULED OPEN {poll_id} - Failed: {result.get('error')}")
+                
+                if not immediate_result["success"]:
+                    logger.error(f"❌ IMMEDIATE OPEN {poll_id} - Failed: {immediate_result.get('error')}")
+                    return templates.TemplateResponse(
+                        "htmx/components/inline_error.html",
+                        {"request": request, "message": f"Error opening poll immediately: {immediate_result.get('error')}"},
+                    )
                 else:
-                    logger.info(f"✅ SCHEDULED OPEN {poll_id} - Success: {result.get('message')}")
-                return result
-
-            # Schedule poll to open at the specified time using unified opening service
-            success_open = tz_scheduler.schedule_poll_opening(
-                poll_id, open_dt, timezone_str, open_poll_scheduled_wrapper, bot
-            )
-            if not success_open:
-                logger.error(f"Failed to schedule poll {poll_id} opening")
-                await PollErrorHandler.handle_scheduler_error(
-                    Exception("Failed to schedule poll opening"),
-                    poll_id,
-                    "poll_opening",
-                    bot,
+                    logger.info(f"✅ IMMEDIATE OPEN {poll_id} - Success: {immediate_result.get('message')}")
+                    
+            except Exception as immediate_error:
+                logger.error(f"❌ IMMEDIATE OPEN {poll_id} - Exception: {immediate_error}")
+                return templates.TemplateResponse(
+                    "htmx/components/inline_error.html",
+                    {"request": request, "message": f"Error opening poll immediately: {str(immediate_error)}"},
                 )
-
-            # Schedule poll to close
-            success_close = tz_scheduler.schedule_poll_closing(
-                poll_id, close_dt, timezone_str, close_poll
-            )
-            if not success_close:
-                logger.error(f"Failed to schedule poll {poll_id} closing")
-                await PollErrorHandler.handle_scheduler_error(
-                    Exception("Failed to schedule poll closing"),
-                    poll_id,
-                    "poll_closure",
-                    bot,
+            
+            # For immediate polls, only schedule closing (opening already happened)
+            try:
+                from .background_tasks import close_poll
+                tz_scheduler = TimezoneAwareScheduler(scheduler)
+                
+                success_close = tz_scheduler.schedule_poll_closing(
+                    poll_id, close_dt, timezone_str, close_poll
                 )
+                if not success_close:
+                    logger.error(f"Failed to schedule poll {poll_id} closing")
+                    await PollErrorHandler.handle_scheduler_error(
+                        Exception("Failed to schedule poll closing"),
+                        poll_id,
+                        "poll_closure",
+                        bot,
+                    )
+                    
+            except Exception as scheduling_error:
+                logger.error(f"Error scheduling poll {poll_id} closing: {scheduling_error}")
+                await PollErrorHandler.handle_scheduler_error(
+                    scheduling_error, poll_id, "poll_closing", bot
+                )
+        else:
+            # Schedule poll opening and closing using timezone-aware scheduler
+            try:
+                from .background_tasks import close_poll
 
-        except Exception as scheduling_error:
-            logger.error(
-                f"Critical scheduling error for poll {poll_id}: {scheduling_error}"
-            )
-            await PollErrorHandler.handle_scheduler_error(
-                scheduling_error, poll_id, "poll_scheduling", bot
-            )
+                # Use the timezone-aware scheduler wrapper
+                tz_scheduler = TimezoneAwareScheduler(scheduler)
+
+                # Create wrapper function for scheduled poll opening using unified service
+                async def open_poll_scheduled_wrapper(bot_instance, poll_id):
+                    """Wrapper function for scheduled poll opening using unified service"""
+                    from .poll_open_service import poll_opening_service
+                    
+                    result = await poll_opening_service.open_poll_unified(
+                        poll_id=poll_id,
+                        reason="scheduled",
+                        bot_instance=bot_instance
+                    )
+                    if not result["success"]:
+                        logger.error(f"❌ SCHEDULED OPEN {poll_id} - Failed: {result.get('error')}")
+                    else:
+                        logger.info(f"✅ SCHEDULED OPEN {poll_id} - Success: {result.get('message')}")
+                    return result
+
+                # Schedule poll to open at the specified time using unified opening service
+                success_open = tz_scheduler.schedule_poll_opening(
+                    poll_id, open_dt, timezone_str, open_poll_scheduled_wrapper, bot
+                )
+                if not success_open:
+                    logger.error(f"Failed to schedule poll {poll_id} opening")
+                    await PollErrorHandler.handle_scheduler_error(
+                        Exception("Failed to schedule poll opening"),
+                        poll_id,
+                        "poll_opening",
+                        bot,
+                    )
+
+                # Schedule poll to close
+                success_close = tz_scheduler.schedule_poll_closing(
+                    poll_id, close_dt, timezone_str, close_poll
+                )
+                if not success_close:
+                    logger.error(f"Failed to schedule poll {poll_id} closing")
+                    await PollErrorHandler.handle_scheduler_error(
+                        Exception("Failed to schedule poll closing"),
+                        poll_id,
+                        "poll_closure",
+                        bot,
+                    )
+
+            except Exception as scheduling_error:
+                logger.error(
+                    f"Critical scheduling error for poll {poll_id}: {scheduling_error}"
+                )
+                await PollErrorHandler.handle_scheduler_error(
+                    scheduling_error, poll_id, "poll_scheduling", bot
+                )
 
         # Save user preferences for next time
         save_user_preferences(
