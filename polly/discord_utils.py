@@ -463,12 +463,10 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         option_text = ""
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-            option_text += f"{emoji} **{option}**\n\n"  # Double newline for more space
+            option_text += f"\n{emoji} **{option}**\n"  # Double newline for more space
 
         embed.add_field(name="📝 Options", value=option_text.rstrip(), inline=False)
-        
-        # Add spacing after options section
-        embed.add_field(name="", value="", inline=False)
+    
         
         # Consolidated poll type and anonymous info for scheduled polls
         poll_anonymous = bool(getattr(poll, "anonymous", False))
