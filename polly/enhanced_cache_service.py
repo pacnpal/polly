@@ -6,7 +6,10 @@ Provides extended caching functionality with longer TTLs specifically for Discor
 import logging
 from typing import Any, Optional, Dict, List
 from datetime import datetime, timedelta
-from .cache_service import CacheService
+try:
+    from .cache_service import CacheService
+except ImportError:
+    from cache_service import CacheService  # type: ignore
 
 logger = logging.getLogger(__name__)
 
