@@ -2058,9 +2058,37 @@ async def get_polls_htmx(
             if cached_polls_data:
                 logger.debug(f"🚀 POLLS CACHE HIT - Retrieved cached polls for user {current_user.id} (filter: {filter})")
                 
+                # Debug the cache structure
+                logger.debug(f"🔍 CACHE DEBUG - Cached data type: {type(cached_polls_data)}")
+                logger.debug(f"🔍 CACHE DEBUG - Cached data keys: {list(cached_polls_data.keys()) if isinstance(cached_polls_data, dict) else 'Not a dict'}")
+                
+                serialized_polls = cached_polls_data.get("serialized_polls", [])
+                logger.debug(f"🔍 CACHE DEBUG - Serialized polls type: {type(serialized_polls)}")
+                logger.debug(f"🔍 CACHE DEBUG - Serialized polls count: {len(serialized_polls) if isinstance(serialized_polls, list) else 'Not a list'}")
+                
+                if serialized_polls and len(serialized_polls) > 0:
+                    logger.debug(f"🔍 CACHE DEBUG - First poll data type: {type(serialized_polls[0])}")
+                    logger.debug(f"🔍 CACHE DEBUG - First poll data keys: {list(serialized_polls[0].keys()) if isinstance(serialized_polls[0], dict) else 'Not a dict'}")
+                
                 try:
                     # Reconstruct Poll-like objects from cached data
-                    cached_polls = _reconstruct_polls_from_cache(cached_polls_data.get("serialized_polls", []))
+                    cached_polls = _reconstruct_polls_from_cache(serialized_polls)
+                    
+                    logger.debug(f"🔍 CACHE DEBUG - Reconstructed polls count: {len(cached_polls)}")
+                    
+                    # Debug the reconstructed objects
+                    if cached_polls and len(cached_polls) > 0:
+                        first_poll = cached_polls[0]
+                        logger.debug(f"🔍 CACHE DEBUG - First reconstructed poll type: {type(first_poll)}")
+                        logger.debug(f"🔍 CACHE DEBUG - First poll has get_total_votes: {hasattr(first_poll, 'get_total_votes')}")
+                        logger.debug(f"🔍 CACHE DEBUG - First poll get_total_votes callable: {callable(getattr(first_poll, 'get_total_votes', None))}")
+                        
+                        # Test the method
+                        try:
+                            test_votes = first_poll.get_total_votes()
+                            logger.debug(f"🔍 CACHE DEBUG - First poll total votes: {test_votes}")
+                        except Exception as method_error:
+                            logger.error(f"🔍 CACHE DEBUG - Error calling get_total_votes: {method_error}")
                     
                     # Prepare template data with reconstructed polls
                     polls_data = {
@@ -2081,7 +2109,8 @@ async def get_polls_htmx(
                     )
                     
                 except Exception as cache_reconstruction_error:
-                    logger.warning(f"⚠️ POLLS CACHE RECONSTRUCTION FAILED - {cache_reconstruction_error}")
+                    logger.error(f"❌ POLLS CACHE RECONSTRUCTION FAILED - {cache_reconstruction_error}")
+                    logger.exception("Full traceback for cache reconstruction error:")
                     # Fall through to database query
                     
     except Exception as e:
@@ -2119,10 +2148,26 @@ async def get_polls_htmx(
             }
             return templates.TemplateResponse("htmx/polls.html", {"request": request, "format_datetime_for_user": format_datetime_for_user, **error_data})
 
-        # Process polls with individual error handling
+        # Process polls with individual error handling and defensive programming
         processed_polls = []
         for poll in polls:
             try:
+                # Debug the poll object type and methods
+                logger.debug(f"🔍 POLL PROCESSING DEBUG - Processing poll object type: {type(poll)}")
+                logger.debug(f"🔍 POLL PROCESSING DEBUG - Poll object attributes: {dir(poll) if hasattr(poll, '__dict__') else 'No __dict__'}")
+                
+                # Check if poll has get_total_votes method
+                if hasattr(poll, 'get_total_votes') and callable(getattr(poll, 'get_total_votes')):
+                    logger.debug(f"🔍 POLL PROCESSING DEBUG - Poll {TypeSafeColumn.get_int(poll, 'id', 0)} has get_total_votes method")
+                    try:
+                        # Test the method to ensure it works
+                        test_votes = poll.get_total_votes()
+                        logger.debug(f"🔍 POLL PROCESSING DEBUG - Poll {TypeSafeColumn.get_int(poll, 'id', 0)} total votes: {test_votes}")
+                    except Exception as method_error:
+                        logger.error(f"🔍 POLL PROCESSING DEBUG - Error calling get_total_votes on poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {method_error}")
+                else:
+                    logger.warning(f"🔍 POLL PROCESSING DEBUG - Poll {TypeSafeColumn.get_int(poll, 'id', 0)} missing get_total_votes method")
+
                 # Add status_class to each poll for template
                 poll.status_class = {
                     "active": "bg-success",
