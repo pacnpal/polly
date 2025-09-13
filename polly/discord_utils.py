@@ -466,7 +466,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
             option_text += f"\n# {emoji} {option}\n"  # Double newline for more space
                 # Add spacing after options section
         embed.add_field(name="📝 Options", value="", inline=False)
-        embed.add_description(name="", value=option_text.rstrip(), inline=False)
+        embed.add_field(name="", value="", description=option_text.rstrip(), inline=False)
         
 
         
