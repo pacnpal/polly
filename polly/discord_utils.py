@@ -256,6 +256,9 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         color=color,
         timestamp=poll_timestamp,
     )
+    
+    # Add spacing after description for better visual separation
+    embed.add_field(name="", value="", inline=False)
 
     # For closed polls, use a cleaner layout without duplicates
     if poll_status == "closed" and show_results:
@@ -411,7 +414,12 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         total_votes = poll.get_total_votes()
 
         poll_anonymous = bool(getattr(poll, "anonymous", False))
-        if not poll_anonymous:
+        if poll_anonymous:
+            # Consolidated anonymous poll display for active polls
+            total_votes = poll.get_total_votes()
+            anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n🗳️ **{total_votes}** votes cast so far"
+            embed.add_field(name="", value=anonymous_text, inline=False)
+        else:
             # For non-anonymous polls, ALWAYS show live results with percentages
             if total_votes > 0:
                 # Show live vote breakdown for non-anonymous polls
@@ -451,36 +459,29 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
                     name="📈 Live Results", value=results_text, inline=False
                 )
     else:
-        # Just show options without results (for scheduled polls)
+        # Just show options without results (for scheduled polls) - with better spacing
         option_text = ""
         for i, option in enumerate(poll.options):
             emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
-            option_text += f"{emoji} **{option}**\n"
+            option_text += f"{emoji} **{option}**\n\n"  # Double newline for more space
 
-        embed.add_field(name="📝 Options", value=option_text, inline=False)
+        embed.add_field(name="📝 Options", value=option_text.rstrip(), inline=False)
         
-        # Show poll type information for scheduled polls
+        # Add spacing after options section
+        embed.add_field(name="", value="", inline=False)
+        
+        # Consolidated poll type and anonymous info for scheduled polls
         poll_anonymous = bool(getattr(poll, "anonymous", False))
         poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
 
-        poll_type = []
-        if poll_anonymous:
-            poll_type.append("🔒 Anonymous")
-        if poll_multiple_choice:
-            poll_type.append("☑️ Multiple Choice")
-
-        if poll_type:
-            embed.add_field(name="📋 Poll Type", value=" • ".join(poll_type), inline=False)
-            
-        # Add anonymous poll information for scheduled polls (streamlined)
-        poll_anonymous = bool(getattr(poll, "anonymous", False))
         if poll_anonymous:
             total_votes = poll.get_total_votes()
-            embed.add_field(
-                name="🗳️ Vote Totals",
-                value=f"**{total_votes}** votes",
-                inline=False,
-            )
+            anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n🗳️ **{total_votes}** votes cast so far"
+            if poll_multiple_choice:
+                anonymous_text += "\n☑️ Multiple Choice"
+            embed.add_field(name="", value=anonymous_text, inline=False)
+        elif poll_multiple_choice:
+            embed.add_field(name="", value="☑️ Multiple Choice Poll", inline=False)
 
     # Add timing information with timezone support
     if poll_status == "scheduled":
