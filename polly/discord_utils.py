@@ -247,8 +247,6 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     # Add anonymity indicator to title for better visibility
     poll_anonymous = bool(getattr(poll, "anonymous", False))
     poll_title = f"{status_emoji} {str(getattr(poll, 'name', ''))}"
-    if poll_anonymous:
-        poll_title += " 🔒"  # Add lock icon to title for anonymous polls
     
     embed = discord.Embed(
         title=poll_title,
