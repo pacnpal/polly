@@ -3864,14 +3864,14 @@ async def create_poll_htmx(
             tz_scheduler = TimezoneAwareScheduler(scheduler)
 
             # Create wrapper function for scheduled poll opening using unified service
-            async def open_poll_scheduled_wrapper(poll_id):
+            async def open_poll_scheduled_wrapper(bot_instance, poll_id):
                 """Wrapper function for scheduled poll opening using unified service"""
                 from .poll_open_service import poll_opening_service
                 
                 result = await poll_opening_service.open_poll_unified(
                     poll_id=poll_id,
                     reason="scheduled",
-                    bot_instance=bot
+                    bot_instance=bot_instance
                 )
                 if not result["success"]:
                     logger.error(f"❌ SCHEDULED OPEN {poll_id} - Failed: {result.get('error')}")
