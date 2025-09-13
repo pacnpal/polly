@@ -973,6 +973,230 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
         return roles
 
 
+async def send_vote_confirmation_dm(
+    bot: commands.Bot, poll: Poll, user_id: str, option_index: int, vote_action: str
+) -> bool:
+    """
+    Send a DM to the user confirming their vote with poll information.
+    Checks previous vote status and customizes message accordingly.
+
+    Args:
+        bot: Discord bot instance
+        poll: Poll object
+        user_id: Discord user ID who voted
+        option_index: Index of the option they voted for
+        vote_action: Action taken ("added", "removed", "updated", "created", "already_recorded")
+
+    Returns:
+        bool: True if DM was sent successfully, False otherwise
+    """
+    logger.info(f"🔔 DM FUNCTION DEBUG - Starting send_vote_confirmation_dm for user {user_id}, action: {vote_action}")
+    try:
+        # Get the user object
+        user = bot.get_user(int(user_id))
+        if not user:
+            try:
+                user = await bot.fetch_user(int(user_id))
+            except (discord.NotFound, discord.HTTPException):
+                logger.warning(
+                    f"Could not find user {user_id} for vote confirmation DM"
+                )
+                return False
+
+        if not user:
+            logger.warning(f"User {user_id} not found for vote confirmation DM")
+            return False
+
+        # Get poll information
+        poll_name = str(getattr(poll, "name", ""))
+        poll_question = str(getattr(poll, "question", ""))
+        selected_option = (
+            poll.options[option_index]
+            if option_index < len(poll.options)
+            else "Unknown Option"
+        )
+        selected_emoji = (
+            poll.emojis[option_index]
+            if option_index < len(poll.emojis)
+            else POLL_EMOJIS[option_index]
+        )
+
+        # Check user's voting history for this poll to provide context
+        db = get_db_session()
+        previous_votes = []
+        try:
+            from .database import Vote
+            user_votes = (
+                db.query(Vote)
+                .filter(Vote.poll_id == getattr(poll, "id"), Vote.user_id == user_id)
+                .all()
+            )
+            previous_votes = [vote.option_index for vote in user_votes]
+        except Exception as e:
+            logger.warning(f"Could not fetch previous votes for user {user_id}: {e}")
+        finally:
+            db.close()
+
+        # Determine action message based on vote action and previous votes
+        poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+
+        if vote_action == "added":
+            if poll_multiple_choice:
+                action_description = f"✅ You added a vote for: {selected_emoji} **{selected_option}**"
+                if len(previous_votes) > 1:
+                    action_description += f"\n💡 You now have {len(previous_votes)} selections in this poll"
+            else:
+                action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
+
+        elif vote_action == "removed":
+            action_description = f"❌ You removed your vote for: {selected_emoji} **{selected_option}**"
+            if poll_multiple_choice and len(previous_votes) > 0:
+                action_description += f"\n💡 You still have {len(previous_votes)} other selection(s) in this poll"
+            elif poll_multiple_choice and len(previous_votes) == 0:
+                action_description += "\n💡 You have no selections remaining in this poll"
+
+        elif vote_action == "updated":
+            action_description = f"🔄 You changed your vote to: {selected_emoji} **{selected_option}**"
+            # For single-choice polls, this means they had a different previous vote
+            if not poll_multiple_choice:
+                action_description += "\n💡 Your previous vote has been replaced"
+
+        elif vote_action == "created":
+            action_description = f"✅ You voted for: {selected_emoji} **{selected_option}**"
+
+        elif vote_action == "already_recorded":
+            action_description = f"Your vote for {selected_emoji} **{selected_option}** was previously recorded.\n\n💡 Your vote already counted and this is just confirmation of your vote."
+
+        else:
+            # Fallback for unknown actions
+            action_description = f"🗳️ Your vote: {selected_emoji} **{selected_option}**"
+
+        # Check if user already had this exact vote (for better messaging)
+        had_this_vote_before = option_index in [v.option_index for v in (
+            db.query(Vote).filter(
+                Vote.poll_id == getattr(poll, "id"),
+                Vote.user_id == user_id,
+                Vote.option_index == option_index
+            ).all() if 'db' in locals() else []
+        )]
+
+        # Add contextual information for repeated votes
+        if vote_action == "added" and not poll_multiple_choice:
+            # For single choice, "added" usually means first vote, but let's be explicit
+            if len(previous_votes) == 1:  # This is their first and only vote
+                action_description += "\n💡 This is your only vote in this poll"
+        elif vote_action == "created" and not poll_multiple_choice:
+            # For single choice polls, clarify it's their only vote
+            action_description += "\n💡 This is your only vote in this poll"
+
+        # Create embed with poll information
+        embed_color = 0x00FF00  # Green for confirmation
+        if vote_action == "removed":
+            embed_color = 0xFFA500  # Orange for removal
+        elif vote_action == "updated":
+            embed_color = 0x0099FF  # Blue for change
+
+        embed = discord.Embed(
+            title="🗳️ Vote Confirmation",
+            description=action_description,
+            color=embed_color,
+            timestamp=datetime.now(pytz.UTC),
+        )
+
+        # Add poll details with choice limit information
+        poll_info_text = f"**{poll_name}**\n{poll_question}\n\n"
+
+        # Add choice limit information
+        if poll_multiple_choice:
+            poll_info_text += "🔢 You may make **multiple choices** in this poll"
+        else:
+            poll_info_text += "🔢 You may make **1 choice** in this poll"
+
+        embed.add_field(
+            name="📊 Poll", value=poll_info_text, inline=False
+        )
+
+        # Add all poll options for reference, highlighting current selections
+        options_text = ""
+        current_user_votes = []
+
+        # Get current votes after the action
+        db = get_db_session()
+        try:
+            from .database import Vote
+            current_votes = (
+                db.query(Vote)
+                .filter(Vote.poll_id == getattr(poll, "id"), Vote.user_id == user_id)
+                .all()
+            )
+            current_user_votes = [vote.option_index for vote in current_votes]
+        except Exception as e:
+            logger.warning(f"Could not fetch current votes for user {user_id}: {e}")
+        finally:
+            db.close()
+
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            if i in current_user_votes:
+                # Highlight all current selections
+                if i == option_index and vote_action in ["added", "updated", "created"]:
+                    options_text += f"{emoji} **{option}** ← Your current choice ✅\n"
+                else:
+                    options_text += f"{emoji} **{option}** ← Selected ✅\n"
+            else:
+                options_text += f"{emoji} {option}\n"
+
+        embed.add_field(name="📝 All Options", value=options_text, inline=False)
+
+        # Add voting summary for multiple choice polls
+        if poll_multiple_choice and len(current_user_votes) > 0:
+            summary_text = f"You have selected {len(current_user_votes)} option(s) in this poll"
+            embed.add_field(name="📊 Your Selections", value=summary_text, inline=True)
+
+        # Add poll type information
+        poll_anonymous = bool(getattr(poll, "anonymous", False))
+
+        poll_info = []
+        if poll_anonymous:
+            poll_info.append("🔒 Anonymous")
+        if poll_multiple_choice:
+            poll_info.append("☑️ Multiple Choice")
+
+        if poll_info:
+            embed.add_field(
+                name="ℹ️ Poll Type", value=" • ".join(poll_info), inline=True
+            )
+
+        # Add server and channel info
+        server_name = str(getattr(poll, "server_name", "Unknown Server"))
+        channel_name = str(getattr(poll, "channel_name", "Unknown Channel"))
+        embed.add_field(
+            name="📍 Location",
+            value=f"**{server_name}** → #{channel_name}",
+            inline=True,
+        )
+
+        embed.set_footer(text="Vote confirmation • Created by Polly")
+
+        # Send the DM
+        await user.send(embed=embed)
+
+        logger.info(
+            f"✅ Sent enhanced vote confirmation DM to user {user_id} for poll {getattr(poll, 'id')} (action: {vote_action})"
+        )
+        return True
+
+    except discord.Forbidden:
+        logger.info(f"⚠️ User {user_id} has DMs disabled, cannot send vote confirmation")
+        return False
+    except discord.HTTPException as e:
+        logger.warning(f"⚠️ Failed to send vote confirmation DM to user {user_id}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error sending vote confirmation DM to user {user_id}: {e}")
+        return False
+
+
 def user_has_admin_permissions(member: discord.Member) -> bool:
     """Check if user has admin permissions in the guild"""
     return (
