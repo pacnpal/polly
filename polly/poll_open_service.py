@@ -130,7 +130,7 @@ class PollOpeningService:
                         if bot_member and channel.permissions_for(bot_member).attach_files:
                             
                             # Post image message before poll
-                            image_result = await self._post_image_message(
+                            image_result = await PollOpeningService._post_image_message(
                                 channel, image_path, image_message_text
                             )
                             
@@ -305,26 +305,9 @@ class PollOpeningService:
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Error managing caches: {cache_error}")
                 # Don't fail the opening process if cache management fails
 
-            # STEP 9: Generate initial static content (for consistency with closure service)
-            try:
-                from .static_page_generator import get_static_page_generator
-                
-                logger.info(f"🔧 UNIFIED OPEN {poll_id} - Generating initial static content for opened poll")
-                static_generator = get_static_page_generator()
-                
-                # For active polls, we might want to generate basic static structure
-                # This ensures consistency and prepares for when the poll closes
-                static_success = await static_generator.regenerate_static_content_if_needed(poll_id, bot_instance)
-                
-                if static_success:
-                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Static content prepared successfully")
-                else:
-                    logger.warning(f"⚠️ UNIFIED OPEN {poll_id} - Static content preparation failed, but poll opening continues")
-                    
-            except Exception as static_error:
-                logger.error(f"❌ UNIFIED OPEN {poll_id} - Error preparing static content: {static_error}")
-                # Don't fail the entire poll opening process if static generation fails
-                logger.info(f"🔄 UNIFIED OPEN {poll_id} - Continuing with poll opening despite static preparation failure")
+            # STEP 9: Static content generation is handled only at poll closure
+            # No static content generation needed during poll opening
+            logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Static content will be generated when poll closes")
 
             # Log admin action if this was an admin opening
             if admin_user_id:
