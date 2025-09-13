@@ -1905,6 +1905,7 @@ async def get_polls_htmx(
             cached_polls_data = await redis_client.cache_get(cache_key)
             if cached_polls_data:
                 logger.debug(f"🚀 POLLS CACHE HIT - Retrieved cached polls for user {current_user.id} (filter: {filter})")
+                # The cached data should contain the processed polls data, not just metadata
                 return templates.TemplateResponse(
                     "htmx/polls.html",
                     {
@@ -1989,21 +1990,45 @@ async def get_polls_htmx(
             "user_timezone": user_timezone,
         }
 
-        # Cache the polls data for 30 seconds to reduce database load
-        # Note: We cache the basic data, not the full template response
+        # Cache the processed polls data properly for consistent display
         try:
             if redis_client:
-                # Create a simplified version for caching (without complex objects)
+                # Create a cacheable version of the polls data by serializing poll objects
+                cacheable_polls = []
+                for poll in processed_polls:
+                    try:
+                        # Extract the essential poll data that can be cached
+                        poll_dict = {
+                            'id': TypeSafeColumn.get_int(poll, 'id'),
+                            'name': TypeSafeColumn.get_string(poll, 'name'),
+                            'question': TypeSafeColumn.get_string(poll, 'question'),
+                            'status': TypeSafeColumn.get_string(poll, 'status'),
+                            'status_class': getattr(poll, 'status_class', 'bg-secondary'),
+                            'created_at': TypeSafeColumn.get_datetime(poll, 'created_at').isoformat() if TypeSafeColumn.get_datetime(poll, 'created_at') else None,
+                            'open_time': TypeSafeColumn.get_datetime(poll, 'open_time').isoformat() if TypeSafeColumn.get_datetime(poll, 'open_time') else None,
+                            'close_time': TypeSafeColumn.get_datetime(poll, 'close_time').isoformat() if TypeSafeColumn.get_datetime(poll, 'close_time') else None,
+                            'options': poll.options,
+                            'emojis': poll.emojis,
+                            'anonymous': TypeSafeColumn.get_bool(poll, 'anonymous', False),
+                            'multiple_choice': TypeSafeColumn.get_bool(poll, 'multiple_choice', False),
+                            'image_path': TypeSafeColumn.get_string(poll, 'image_path'),
+                            'total_votes': poll.get_total_votes() if hasattr(poll, 'get_total_votes') else 0,
+                        }
+                        cacheable_polls.append(poll_dict)
+                    except Exception as poll_serialize_error:
+                        logger.warning(f"Error serializing poll {TypeSafeColumn.get_int(poll, 'id', 0)} for cache: {poll_serialize_error}")
+                        continue
+
+                # Create the complete cacheable data structure
                 cacheable_data = {
+                    "polls": cacheable_polls,
                     "current_filter": filter,
                     "user_timezone": user_timezone,
-                    "poll_count": len(processed_polls),
                     "cached_at": datetime.now().isoformat(),
                 }
-                # For now, we'll cache just the metadata and let the template handle the polls
-                # This is a compromise since Poll objects are complex to serialize
+                
                 await redis_client.cache_set(cache_key, cacheable_data, 30)
-                logger.debug(f"💾 POLLS CACHED - Stored polls metadata for user {current_user.id} with 30s TTL")
+                logger.debug(f"💾 POLLS CACHED - Stored {len(cacheable_polls)} polls for user {current_user.id} with 30s TTL")
         except Exception as e:
             logger.warning(f"Error caching polls for user {current_user.id}: {e}")
 
