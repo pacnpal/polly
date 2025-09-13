@@ -12,8 +12,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from urllib.parse import urlparse
-
-from .enhanced_cache_service import get_enhanced_cache_service
+try:
+    from .enhanced_cache_service import get_enhanced_cache_service
+except ImportError:
+    from enhanced_cache_service import get_enhanced_cache_service  # type: ignore
 
 logger = logging.getLogger(__name__)
 
