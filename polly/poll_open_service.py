@@ -152,24 +152,27 @@ class PollOpeningService:
                         content_parts.append(image_message_text.strip())
                     
                     # Add role mention and vote message if role ping is enabled
-                    if ping_role_enabled and ping_role_id and reason in ["scheduled", "reopen"]:
+                    # Include role ping for most opening reasons (exclude only recovery to avoid spam)
+                    if ping_role_enabled and ping_role_id and reason not in ["recovery"]:
                         role_id = str(ping_role_id)
                         
-                        # Prepare role ping message content
-                        if reason == "reopen":
-                            vote_message = f"📊 **Poll '{poll_name}' has been reopened!**"
-                        else:
+                        # Prepare role ping message content based on reason
+                        elif reason == "manual":
+                            vote_message = "📊 **Vote Now!**"
+                        elif reason == "immediate":
+                            vote_message = "📊 **Vote Now!**"
+                        else:  # scheduled and other reasons
                             vote_message = "📊 **Vote Now!**"
                         
                         role_mention_line = f"<@&{role_id}> {vote_message}"
                         content_parts.append(role_mention_line)
                         
-                        logger.info(f"🔔 UNIFIED OPEN {poll_id} - Prepared role ping content for {ping_role_name} ({role_id})")
+                        logger.info(f"� UNIFIED OPEN {poll_id} - Prepared role ping content for {ping_role_name} ({role_id}) with reason: {reason}")
                     
                     # Combine all content parts
                     if content_parts:
                         unified_message_content = "\n\n".join(content_parts)
-                        logger.info(f"📝 UNIFIED OPEN {poll_id} - Prepared unified message content with {len(content_parts)} components")
+                        logger.info(f"�📝 UNIFIED OPEN {poll_id} - Prepared unified message content with {len(content_parts)} components")
                         
             except Exception as e:
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Error preparing unified message content: {e}")
