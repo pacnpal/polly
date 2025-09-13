@@ -12,7 +12,10 @@ from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import pytz
-from .database import get_db_session, User
+try:
+    from .database import get_db_session, User
+except ImportError:
+    from database import get_db_session, User  # type: ignore
 
 # Discord OAuth settings
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
