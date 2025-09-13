@@ -180,12 +180,13 @@ class EnhancedRecoveryValidator:
         db = get_db_session()
         try:
             # Check for orphaned votes
-            orphaned_votes = db.execute("""
+            from sqlalchemy import text
+            orphaned_votes = db.execute(text("""
                 SELECT v.id, v.poll_id, v.user_id 
                 FROM votes v 
                 LEFT JOIN polls p ON v.poll_id = p.id 
                 WHERE p.id IS NULL
-            """).fetchall()
+            """)).fetchall()
             
             if orphaned_votes:
                 self.validation_errors.append(f"Found {len(orphaned_votes)} orphaned votes")
