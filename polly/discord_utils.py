@@ -474,7 +474,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
         if poll_anonymous:
             total_votes = poll.get_total_votes()
-            anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n🗳️ **{total_votes}** votes cast so far"
+            anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n\n🗳️ **{total_votes}** votes cast so far"
             if poll_multiple_choice:
                 anonymous_text += "\n☑️ Multiple Choice"
             embed.add_field(name="", value=anonymous_text, inline=False)
