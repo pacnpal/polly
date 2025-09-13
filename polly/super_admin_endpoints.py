@@ -197,6 +197,81 @@ async def force_close_poll_api(
         raise HTTPException(status_code=500, detail="Error closing poll")
 
 
+async def reopen_poll_api(
+    poll_id: int,
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> JSONResponse:
+    """Reopen a closed poll with comprehensive options (super admin only)"""
+    try:
+        # Parse form data or JSON body
+        content_type = request.headers.get("content-type", "")
+        
+        if "application/json" in content_type:
+            # Handle JSON request
+            body = await request.json()
+            extend_hours = body.get("extend_hours")
+            reset_votes = body.get("reset_votes", False)
+            new_close_time_str = body.get("new_close_time")
+        else:
+            # Handle form data
+            form_data = await request.form()
+            extend_hours = form_data.get("extend_hours")
+            reset_votes = form_data.get("reset_votes") == "true"
+            new_close_time_str = form_data.get("new_close_time")
+        
+        # Parse extend_hours if provided
+        if extend_hours:
+            try:
+                extend_hours = int(extend_hours)
+            except (ValueError, TypeError):
+                return JSONResponse(
+                    content={"success": False, "error": "Invalid extend_hours value"},
+                    status_code=400
+                )
+        
+        # Parse new_close_time if provided
+        new_close_time = None
+        if new_close_time_str:
+            try:
+                from datetime import datetime
+                import pytz
+                # Parse ISO format datetime
+                new_close_time = datetime.fromisoformat(new_close_time_str.replace('Z', '+00:00'))
+                # Ensure timezone-aware
+                if new_close_time.tzinfo is None:
+                    new_close_time = pytz.UTC.localize(new_close_time)
+            except (ValueError, TypeError) as e:
+                return JSONResponse(
+                    content={"success": False, "error": f"Invalid new_close_time format: {str(e)}"},
+                    status_code=400
+                )
+        
+        db = get_db_session()
+        try:
+            result = super_admin_service.reopen_poll(
+                db, 
+                poll_id, 
+                current_user.id,
+                new_close_time=new_close_time,
+                extend_hours=extend_hours,
+                reset_votes=reset_votes
+            )
+            
+            if result["success"]:
+                logger.info(f"Super admin {current_user.username} reopened poll {poll_id}")
+                return JSONResponse(content=result)
+            else:
+                return JSONResponse(content=result, status_code=400)
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error reopening poll {poll_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error reopening poll")
+
+
 async def delete_poll_api(
     poll_id: int,
     request: Request,
@@ -821,6 +896,12 @@ def add_super_admin_routes(app):
         poll_id: int, request: Request, current_user: DiscordUser = Depends(require_super_admin)
     ):
         return await force_close_poll_api(poll_id, request, current_user)
+
+    @app.post("/super-admin/api/poll/{poll_id}/reopen")
+    async def super_admin_reopen_poll(
+        poll_id: int, request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await reopen_poll_api(poll_id, request, current_user)
 
     @app.delete("/super-admin/api/poll/{poll_id}")
     async def super_admin_delete_poll(

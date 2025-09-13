@@ -293,6 +293,150 @@ class SuperAdminService:
             return {"success": False, "error": str(e)}
     
     @staticmethod
+    def reopen_poll(
+        db_session, 
+        poll_id: int, 
+        admin_user_id: str,
+        new_close_time: Optional[datetime] = None,
+        extend_hours: Optional[int] = None,
+        reset_votes: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive method to re-open a closed poll with multiple options.
+        
+        Args:
+            db_session: Database session
+            poll_id: ID of the poll to reopen
+            admin_user_id: ID of the admin performing the action
+            new_close_time: Specific new close time (optional)
+            extend_hours: Hours to extend from current time (optional)
+            reset_votes: Whether to clear all existing votes (default: False)
+            
+        Returns:
+            Dict with success status and details
+        """
+        try:
+            # Step 1: Validate poll exists and can be reopened
+            poll = db_session.query(Poll).filter(Poll.id == poll_id).first()
+            if not poll:
+                return {"success": False, "error": "Poll not found"}
+            
+            current_status = TypeSafeColumn.get_string(poll, "status")
+            if current_status != "closed":
+                return {
+                    "success": False, 
+                    "error": f"Poll is not closed (current status: {current_status}). Only closed polls can be reopened."
+                }
+            
+            # Step 2: Determine new close time
+            now = datetime.now(pytz.UTC)
+            original_close_time = TypeSafeColumn.get_datetime(poll, "close_time")
+            
+            if new_close_time:
+                # Use specific new close time
+                if new_close_time <= now:
+                    return {
+                        "success": False,
+                        "error": "New close time must be in the future"
+                    }
+                final_close_time = new_close_time
+                time_description = f"until {new_close_time.strftime('%Y-%m-%d %H:%M UTC')}"
+                
+            elif extend_hours:
+                # Extend by specified hours from now
+                if extend_hours <= 0 or extend_hours > 8760:  # Max 1 year
+                    return {
+                        "success": False,
+                        "error": "Extension hours must be between 1 and 8760 (1 year)"
+                    }
+                final_close_time = now + timedelta(hours=extend_hours)
+                time_description = f"for {extend_hours} hours (until {final_close_time.strftime('%Y-%m-%d %H:%M UTC')})"
+                
+            else:
+                # Default: extend by 24 hours from now
+                final_close_time = now + timedelta(hours=24)
+                time_description = "for 24 hours (default extension)"
+            
+            # Step 3: Handle vote reset if requested
+            votes_cleared = 0
+            if reset_votes:
+                try:
+                    # Count votes before deletion for logging
+                    votes_cleared = db_session.query(Vote).filter(Vote.poll_id == poll_id).count()
+                    
+                    # Delete all votes for this poll
+                    db_session.query(Vote).filter(Vote.poll_id == poll_id).delete()
+                    
+                    logger.info(f"Cleared {votes_cleared} votes from poll {poll_id} during reopen")
+                    
+                except Exception as e:
+                    logger.error(f"Error clearing votes for poll {poll_id}: {e}")
+                    db_session.rollback()
+                    return {
+                        "success": False,
+                        "error": f"Failed to clear votes: {str(e)}"
+                    }
+            
+            # Step 4: Update poll status and times
+            try:
+                # Set poll to active status
+                setattr(poll, "status", "active")
+                
+                # Update close time
+                setattr(poll, "close_time", final_close_time)
+                
+                # Optionally update open time to now if it was in the past
+                current_open_time = TypeSafeColumn.get_datetime(poll, "open_time")
+                if current_open_time and current_open_time < now:
+                    setattr(poll, "open_time", now)
+                
+                # Commit all changes
+                db_session.commit()
+                
+            except Exception as e:
+                logger.error(f"Error updating poll {poll_id} during reopen: {e}")
+                db_session.rollback()
+                return {
+                    "success": False,
+                    "error": f"Failed to update poll: {str(e)}"
+                }
+            
+            # Step 5: Generate comprehensive success response
+            poll_name = TypeSafeColumn.get_string(poll, "name")
+            
+            # Log the admin action with full details
+            logger.warning(
+                f"Super admin poll reopen: poll_id={poll_id} admin_user_id={admin_user_id} "
+                f"poll_name='{poll_name}' new_close_time='{final_close_time}' "
+                f"votes_cleared={votes_cleared} original_close_time='{original_close_time}'"
+            )
+            
+            success_message = f"Poll '{poll_name}' has been successfully reopened {time_description}"
+            if votes_cleared > 0:
+                success_message += f" (cleared {votes_cleared} existing votes)"
+            
+            return {
+                "success": True,
+                "message": success_message,
+                "poll_id": poll_id,
+                "poll_name": poll_name,
+                "new_status": "active",
+                "new_close_time": final_close_time,
+                "original_close_time": original_close_time,
+                "votes_cleared": votes_cleared,
+                "reopened_by": admin_user_id,
+                "reopened_at": now
+            }
+            
+        except Exception as e:
+            logger.error(f"Error reopening poll {poll_id} by admin {admin_user_id}: {e}")
+            db_session.rollback()
+            return {
+                "success": False,
+                "error": f"Unexpected error during poll reopen: {str(e)}"
+            }
+    
+    @staticmethod
     def delete_poll(db_session, poll_id: int, admin_user_id: str) -> Dict[str, Any]:
         """Delete a poll and all its votes (super admin only)"""
         try:

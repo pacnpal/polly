@@ -712,6 +712,170 @@
             });
         }
 
+        function reopenPoll(pollId, pollName) {
+            // Create a custom modal for reopen options
+            const modalHtml = `
+                <div class="modal fade" id="reopenPollModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Reopen Poll: ${pollName}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="reopenPollForm">
+                                    <div class="mb-3">
+                                        <label class="form-label">Extension Options</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="extensionType" id="defaultExtension" value="default" checked>
+                                            <label class="form-check-label" for="defaultExtension">
+                                                Default (24 hours from now)
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="extensionType" id="customHours" value="hours">
+                                            <label class="form-check-label" for="customHours">
+                                                Custom hours from now
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="extensionType" id="specificTime" value="specific">
+                                            <label class="form-check-label" for="specificTime">
+                                                Specific end time
+                                            </label>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3" id="hoursInput" style="display: none;">
+                                        <label for="extendHours" class="form-label">Hours to extend</label>
+                                        <input type="number" class="form-control" id="extendHours" min="1" max="8760" placeholder="24">
+                                        <div class="form-text">Maximum 8760 hours (1 year)</div>
+                                    </div>
+                                    
+                                    <div class="mb-3" id="specificTimeInput" style="display: none;">
+                                        <label for="newCloseTime" class="form-label">New close time</label>
+                                        <input type="datetime-local" class="form-control" id="newCloseTime">
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="resetVotes">
+                                            <label class="form-check-label" for="resetVotes">
+                                                <strong>Reset all votes</strong> (clear existing votes)
+                                            </label>
+                                            <div class="form-text text-warning">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                                This will permanently delete all existing votes for this poll
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-success" onclick="executeReopenPoll(${pollId})">
+                                    <i class="fas fa-play me-1"></i>Reopen Poll
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove existing modal if present
+            const existingModal = document.getElementById('reopenPollModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add modal to body
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            
+            // Set up event listeners for radio buttons
+            document.querySelectorAll('input[name="extensionType"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    document.getElementById('hoursInput').style.display = this.value === 'hours' ? 'block' : 'none';
+                    document.getElementById('specificTimeInput').style.display = this.value === 'specific' ? 'block' : 'none';
+                });
+            });
+            
+            // Set minimum datetime to current time
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('newCloseTime').min = now.toISOString().slice(0, 16);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('reopenPollModal'));
+            modal.show();
+            
+            // Clean up modal when hidden
+            document.getElementById('reopenPollModal').addEventListener('hidden.bs.modal', function() {
+                this.remove();
+            });
+        }
+
+        function executeReopenPoll(pollId) {
+            const form = document.getElementById('reopenPollForm');
+            const extensionType = form.querySelector('input[name="extensionType"]:checked').value;
+            const resetVotes = document.getElementById('resetVotes').checked;
+            
+            let requestData = {
+                reset_votes: resetVotes
+            };
+            
+            // Handle different extension types
+            if (extensionType === 'hours') {
+                const hours = parseInt(document.getElementById('extendHours').value);
+                if (!hours || hours < 1 || hours > 8760) {
+                    showAlert('Error', 'Please enter a valid number of hours (1-8760)');
+                    return;
+                }
+                requestData.extend_hours = hours;
+            } else if (extensionType === 'specific') {
+                const newCloseTime = document.getElementById('newCloseTime').value;
+                if (!newCloseTime) {
+                    showAlert('Error', 'Please select a new close time');
+                    return;
+                }
+                
+                const selectedTime = new Date(newCloseTime);
+                const now = new Date();
+                if (selectedTime <= now) {
+                    showAlert('Error', 'New close time must be in the future');
+                    return;
+                }
+                
+                requestData.new_close_time = selectedTime.toISOString();
+            }
+            // For 'default', no additional parameters needed
+            
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('reopenPollModal'));
+            modal.hide();
+            
+            // Make the API request
+            fetch(`/super-admin/api/poll/${pollId}/reopen`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('Success', data.message);
+                    refreshPolls();
+                } else {
+                    showAlert('Error', data.error || 'Failed to reopen poll');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Error', 'An error occurred while reopening the poll');
+            });
+        }
+
         function deletePoll(pollId, pollName) {
             showConfirmation(
                 'Delete Poll',
