@@ -394,12 +394,9 @@ def get_user_preferences(user_id: str) -> dict:
         )
         if prefs:
             return {
-                "last_server_id": TypeSafeColumn.get_string(prefs, "last_server_id")
-                or None,
-                "last_channel_id": TypeSafeColumn.get_string(prefs, "last_channel_id")
-                or None,
-                "last_role_id": TypeSafeColumn.get_string(prefs, "last_role_id")
-                or None,
+                "last_server_id": TypeSafeColumn.get_string(prefs, "last_server_id", ""),
+                "last_channel_id": TypeSafeColumn.get_string(prefs, "last_channel_id", ""),
+                "last_role_id": TypeSafeColumn.get_string(prefs, "last_role_id", ""),
                 "default_timezone": TypeSafeColumn.get_string(
                     prefs, "default_timezone", "US/Eastern"
                 ),
@@ -539,6 +536,9 @@ async def close_poll_htmx(
                 logger.error(
                     f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}"
                 )
+
+        # Invalidate user polls cache after successful closure
+        await invalidate_user_polls_cache(current_user.id)
 
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
@@ -1884,40 +1884,210 @@ async def get_create_form_json_import_htmx(
     )
 
 
+# Helper functions for Redis caching
+def _serialize_polls_for_cache(polls: list) -> list:
+    """Convert Poll objects to JSON-serializable dictionaries with pre-calculated expensive operations"""
+    serialized_polls = []
+    
+    for poll in polls:
+        try:
+            # Pre-calculate expensive operations during serialization
+            total_votes = poll.get_total_votes()
+            
+            # Extract all poll data safely using TypeSafeColumn
+            poll_data = {
+                "id": TypeSafeColumn.get_int(poll, "id"),
+                "name": TypeSafeColumn.get_string(poll, "name"),
+                "question": TypeSafeColumn.get_string(poll, "question"),
+                "status": TypeSafeColumn.get_string(poll, "status"),
+                "creator_id": TypeSafeColumn.get_string(poll, "creator_id"),
+                "server_id": TypeSafeColumn.get_string(poll, "server_id"),
+                "server_name": TypeSafeColumn.get_string(poll, "server_name"),
+                "channel_id": TypeSafeColumn.get_string(poll, "channel_id"),
+                "channel_name": TypeSafeColumn.get_string(poll, "channel_name"),
+                "options": poll.options,  # Use property method
+                "emojis": poll.emojis,    # Use property method
+                "anonymous": TypeSafeColumn.get_bool(poll, "anonymous", False),
+                "multiple_choice": TypeSafeColumn.get_bool(poll, "multiple_choice", False),
+                "max_choices": TypeSafeColumn.get_int(poll, "max_choices"),
+                "ping_role_enabled": TypeSafeColumn.get_bool(poll, "ping_role_enabled", False),
+                "ping_role_id": TypeSafeColumn.get_string(poll, "ping_role_id"),
+                "ping_role_name": TypeSafeColumn.get_string(poll, "ping_role_name"),
+                "ping_role_on_close": TypeSafeColumn.get_bool(poll, "ping_role_on_close", False),
+                "ping_role_on_update": TypeSafeColumn.get_bool(poll, "ping_role_on_update", False),
+                "image_path": TypeSafeColumn.get_string(poll, "image_path"),
+                "image_message_text": TypeSafeColumn.get_string(poll, "image_message_text"),
+                "timezone": TypeSafeColumn.get_string(poll, "timezone"),
+                "created_at": TypeSafeColumn.get_datetime(poll, "created_at").isoformat() if TypeSafeColumn.get_datetime(poll, "created_at") else None,
+                "updated_at": TypeSafeColumn.get_datetime(poll, "updated_at").isoformat() if TypeSafeColumn.get_datetime(poll, "updated_at") else None,
+                "open_time": TypeSafeColumn.get_datetime(poll, "open_time").isoformat() if TypeSafeColumn.get_datetime(poll, "open_time") else None,
+                "close_time": TypeSafeColumn.get_datetime(poll, "close_time").isoformat() if TypeSafeColumn.get_datetime(poll, "close_time") else None,
+                # Pre-calculated expensive operations
+                "total_votes": total_votes,
+                # Add status class for template compatibility
+                "status_class": {
+                    "active": "bg-success",
+                    "scheduled": "bg-warning", 
+                    "closed": "bg-danger",
+                }.get(TypeSafeColumn.get_string(poll, "status"), "bg-secondary")
+            }
+            
+            serialized_polls.append(poll_data)
+            
+        except Exception as e:
+            logger.error(f"Error serializing poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {e}")
+            continue
+    
+    return serialized_polls
+
+
+def _reconstruct_polls_from_cache(cached_polls: list) -> list:
+    """Recreate Poll-like objects from cached data with proper method interfaces"""
+    reconstructed_polls = []
+    
+    for poll_data in cached_polls:
+        try:
+            # Create a Poll-like object that maintains template compatibility
+            class CachedPoll:
+                def __init__(self, data):
+                    # Set all attributes from cached data
+                    for key, value in data.items():
+                        if key.endswith('_at') or key.endswith('_time'):
+                            # Convert ISO strings back to datetime objects
+                            if value:
+                                try:
+                                    setattr(self, key, datetime.fromisoformat(value.replace('Z', '+00:00')))
+                                except (ValueError, AttributeError):
+                                    setattr(self, key, None)
+                            else:
+                                setattr(self, key, None)
+                        else:
+                            setattr(self, key, value)
+                
+                def get_total_votes(self):
+                    """Return pre-calculated total votes from cache"""
+                    return getattr(self, 'total_votes', 0)
+                
+                @property
+                def options(self):
+                    """Return options list"""
+                    return getattr(self, '_options', [])
+                
+                @options.setter
+                def options(self, value):
+                    self._options = value
+                
+                @property
+                def emojis(self):
+                    """Return emojis list"""
+                    return getattr(self, '_emojis', [])
+                
+                @emojis.setter  
+                def emojis(self, value):
+                    self._emojis = value
+            
+            # Create the cached poll object
+            cached_poll = CachedPoll(poll_data)
+            
+            # Set options and emojis using the properties
+            cached_poll.options = poll_data.get('options', [])
+            cached_poll.emojis = poll_data.get('emojis', [])
+            
+            reconstructed_polls.append(cached_poll)
+            
+        except Exception as e:
+            logger.error(f"Error reconstructing cached poll {poll_data.get('id', 'unknown')}: {e}")
+            continue
+    
+    return reconstructed_polls
+
+
+async def invalidate_user_polls_cache(user_id: str, enhanced_cache=None):
+    """Clear all poll cache variations for a user"""
+    if enhanced_cache is None:
+        from .enhanced_cache_service import get_enhanced_cache_service
+        enhanced_cache = get_enhanced_cache_service()
+    
+    try:
+        redis_client = await enhanced_cache._get_redis()
+        if redis_client:
+            # Clear all filter variations for the user
+            cache_patterns = [
+                f"user_polls:{user_id}:*",  # All filter variations
+                f"user_polls:{user_id}",    # No filter (None)
+            ]
+            
+            for pattern in cache_patterns:
+                try:
+                    # Get all keys matching the pattern
+                    keys = await redis_client.keys(pattern)
+                    if keys:
+                        # Delete all matching keys
+                        await redis_client.delete(*keys)
+                        logger.debug(f"🗑️ CACHE INVALIDATED - Cleared {len(keys)} poll cache keys for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Error clearing cache pattern {pattern} for user {user_id}: {e}")
+            
+            logger.info(f"✅ CACHE INVALIDATED - Successfully invalidated poll cache for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error invalidating poll cache for user {user_id}: {e}")
+
+
 # HTMX endpoint functions that will be registered with the FastAPI app
 async def get_polls_htmx(
     request: Request,
     filter: str = None,
     current_user: DiscordUser = Depends(require_auth),
 ):
-    """Get user's polls as HTML for HTMX with caching to prevent rate limiting"""
+    """Get user's polls as HTML for HTMX with Redis caching and 30-second TTL"""
     from .enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
-
+    
     logger.debug(f"Getting polls for user {current_user.id} with filter: {filter}")
 
-    # Check cache first (30 second TTL for polls to reduce database load)
-    cache_key = f"user_polls_htmx:{current_user.id}:{filter or 'all'}"
+    # Create filter-aware cache key
+    filter_key = filter if filter else "all"
+    cache_key = f"user_polls:{current_user.id}:{filter_key}"
+    
+    # Check cache first (30 second TTL)
     try:
         redis_client = await enhanced_cache._get_redis()
         if redis_client:
             cached_polls_data = await redis_client.cache_get(cache_key)
             if cached_polls_data:
                 logger.debug(f"🚀 POLLS CACHE HIT - Retrieved cached polls for user {current_user.id} (filter: {filter})")
-                # The cached data should contain the processed polls data, not just metadata
-                return templates.TemplateResponse(
-                    "htmx/polls.html",
-                    {
-                        "request": request,
-                        "format_datetime_for_user": format_datetime_for_user,
-                        **cached_polls_data
-                    },
-                )
+                
+                try:
+                    # Reconstruct Poll-like objects from cached data
+                    cached_polls = _reconstruct_polls_from_cache(cached_polls_data.get("serialized_polls", []))
+                    
+                    # Prepare template data with reconstructed polls
+                    polls_data = {
+                        "polls": cached_polls,
+                        "current_filter": cached_polls_data.get("current_filter"),
+                        "user_timezone": cached_polls_data.get("user_timezone", "US/Eastern"),
+                    }
+                    
+                    logger.debug(f"✅ POLLS CACHE SUCCESS - Serving {len(cached_polls)} cached polls")
+                    
+                    return templates.TemplateResponse(
+                        "htmx/polls.html",
+                        {
+                            "request": request,
+                            "format_datetime_for_user": format_datetime_for_user,
+                            **polls_data
+                        },
+                    )
+                    
+                except Exception as cache_reconstruction_error:
+                    logger.warning(f"⚠️ POLLS CACHE RECONSTRUCTION FAILED - {cache_reconstruction_error}")
+                    # Fall through to database query
+                    
     except Exception as e:
         logger.warning(f"Error checking polls cache for user {current_user.id}: {e}")
 
-    # Cache miss - generate polls data
+    # Cache miss or reconstruction failed - generate from database
     logger.debug(f"🔍 POLLS CACHE MISS - Generating polls for user {current_user.id} (filter: {filter})")
 
     db = get_db_session()
@@ -1982,55 +2152,33 @@ async def get_polls_htmx(
 
         logger.debug(f"Returning {len(processed_polls)} processed polls")
 
-        # Prepare data for caching and template
-        # Note: We can't cache the Poll objects directly, so we'll cache the template data
+        # Serialize polls for caching (with pre-calculated expensive operations)
+        try:
+            serialized_polls = _serialize_polls_for_cache(processed_polls)
+            
+            # Prepare cacheable data
+            cacheable_data = {
+                "serialized_polls": serialized_polls,
+                "current_filter": filter,
+                "user_timezone": user_timezone,
+                "cached_at": datetime.now().isoformat(),
+            }
+            
+            # Cache with 30-second TTL
+            if redis_client:
+                await redis_client.cache_set(cache_key, cacheable_data, 30)
+                logger.debug(f"💾 POLLS CACHED - Stored {len(serialized_polls)} polls for user {current_user.id} (filter: {filter}) with 30s TTL")
+                
+        except Exception as caching_error:
+            logger.warning(f"Error caching polls for user {current_user.id}: {caching_error}")
+            # Continue without caching
+
+        # Prepare data for template
         polls_data = {
-            "polls": processed_polls,  # These will be serialized by the template
+            "polls": processed_polls,
             "current_filter": filter,
             "user_timezone": user_timezone,
         }
-
-        # Cache the processed polls data properly for consistent display
-        try:
-            if redis_client:
-                # Create a cacheable version of the polls data by serializing poll objects
-                cacheable_polls = []
-                for poll in processed_polls:
-                    try:
-                        # Extract the essential poll data that can be cached
-                        poll_dict = {
-                            'id': TypeSafeColumn.get_int(poll, 'id'),
-                            'name': TypeSafeColumn.get_string(poll, 'name'),
-                            'question': TypeSafeColumn.get_string(poll, 'question'),
-                            'status': TypeSafeColumn.get_string(poll, 'status'),
-                            'status_class': getattr(poll, 'status_class', 'bg-secondary'),
-                            'created_at': TypeSafeColumn.get_datetime(poll, 'created_at').isoformat() if TypeSafeColumn.get_datetime(poll, 'created_at') else None,
-                            'open_time': TypeSafeColumn.get_datetime(poll, 'open_time').isoformat() if TypeSafeColumn.get_datetime(poll, 'open_time') else None,
-                            'close_time': TypeSafeColumn.get_datetime(poll, 'close_time').isoformat() if TypeSafeColumn.get_datetime(poll, 'close_time') else None,
-                            'options': poll.options,
-                            'emojis': poll.emojis,
-                            'anonymous': TypeSafeColumn.get_bool(poll, 'anonymous', False),
-                            'multiple_choice': TypeSafeColumn.get_bool(poll, 'multiple_choice', False),
-                            'image_path': TypeSafeColumn.get_string(poll, 'image_path'),
-                            'total_votes': poll.get_total_votes() if hasattr(poll, 'get_total_votes') else 0,
-                        }
-                        cacheable_polls.append(poll_dict)
-                    except Exception as poll_serialize_error:
-                        logger.warning(f"Error serializing poll {TypeSafeColumn.get_int(poll, 'id', 0)} for cache: {poll_serialize_error}")
-                        continue
-
-                # Create the complete cacheable data structure
-                cacheable_data = {
-                    "polls": cacheable_polls,
-                    "current_filter": filter,
-                    "user_timezone": user_timezone,
-                    "cached_at": datetime.now().isoformat(),
-                }
-                
-                await redis_client.cache_set(cache_key, cacheable_data, 30)
-                logger.debug(f"💾 POLLS CACHED - Stored {len(cacheable_polls)} polls for user {current_user.id} with 30s TTL")
-        except Exception as e:
-            logger.warning(f"Error caching polls for user {current_user.id}: {e}")
 
         return templates.TemplateResponse(
             "htmx/polls.html",
@@ -2074,6 +2222,7 @@ async def get_stats_htmx(
 
     # Check cache first (30 second TTL for stats to reduce database load)
     cache_key = f"user_stats_htmx:{current_user.id}"
+    redis_client = None
     try:
         redis_client = await enhanced_cache._get_redis()
         if redis_client:
@@ -3759,6 +3908,9 @@ async def create_poll_htmx(
             current_user.id, server_id, channel_id, ping_role_id, timezone_str
         )
 
+        # Invalidate user polls cache after successful creation
+        await invalidate_user_polls_cache(current_user.id)
+
         # Return success message and redirect to polls view
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
@@ -4771,6 +4923,9 @@ async def delete_poll_htmx(
 
         logger.info(f"Poll {poll_id} deleted by user {current_user.id}")
 
+        # Invalidate user polls cache after successful deletion
+        await invalidate_user_polls_cache(current_user.id)
+
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
             {
@@ -5225,6 +5380,9 @@ async def update_poll_htmx(
         )
 
         logger.info(f"Successfully updated poll {poll_id}")
+
+        # Invalidate user polls cache after successful update
+        await invalidate_user_polls_cache(current_user.id)
 
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
