@@ -6,8 +6,8 @@ and follow the same patterns as fresh instances.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Set, Tuple
+from datetime import datetime
+from typing import Dict, Any, List, Optional
 import pytz
 from dataclasses import dataclass
 

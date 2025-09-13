@@ -7,8 +7,8 @@ and 100% data integrity recovery.
 import asyncio
 import logging
 import pytest
-from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from datetime import datetime
+from typing import Dict, Any
 import pytz
 
 # Handle both relative and absolute imports for direct execution
@@ -22,7 +22,7 @@ except ImportError:
     import sys
     import os
     sys.path.insert(0, os.path.dirname(__file__))
-    from database import get_db_session, Poll, Vote, TypeSafeColumn
+    from database import get_db_session
     from comprehensive_recovery_orchestrator import perform_ultimate_recovery
     from enhanced_recovery_validator import perform_enhanced_recovery_validation
     from discord_bot import get_bot_instance

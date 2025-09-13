@@ -4,13 +4,12 @@ Handles Discord user avatar caching with space optimization and deduplication.
 """
 
 import asyncio
-import hashlib
 import logging
 import aiohttp
 import aiofiles
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse
 try:
     from .enhanced_cache_service import get_enhanced_cache_service

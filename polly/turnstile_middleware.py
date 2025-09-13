@@ -153,7 +153,7 @@ class TurnstileSecurityMiddleware(BaseHTTPMiddleware):
                 try:
                     form_data = await request.form()
                     turnstile_token = form_data.get("cf-turnstile-response")
-                except Exception as form_error:
+                except Exception:
                     # Log form parsing errors safely
                     logger.warning(f"Failed to parse form data from {client_ip}: form parsing error")
                     pass

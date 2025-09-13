@@ -4,12 +4,14 @@ API endpoints for super admin dashboard functionality.
 """
 
 import logging
+import os
+import re
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import Request, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from .super_admin import require_super_admin, super_admin_service, DiscordUser
 from .database import get_db_session
@@ -463,16 +465,16 @@ async def download_logs_api(
         
         # Generate log content with analytics header
         def generate_log_content():
-            yield "# Polly System Logs Export (Pandas-Powered)\n"
+            yield f"# Polly System Logs Export (Pandas-Powered)\n"
             yield f"# Generated: {datetime.now().isoformat()}\n"
             yield f"# Filters: Level={level or 'All'}, Search={search or 'None'}, Time Range={time_range}\n"
             yield f"# Total Entries: {len(log_entries)}\n"
-            yield "# Analytics Summary:\n"
+            yield f"# Analytics Summary:\n"
             yield f"#   - Error Rate: {analytics.get('error_rate', 0):.2f}%\n"
             yield f"#   - Time Range: {analytics.get('time_range', {}).get('start', 'N/A')} to {analytics.get('time_range', {}).get('end', 'N/A')}\n"
             yield f"#   - Level Distribution: {analytics.get('level_distribution', {})}\n"
             yield f"#   - Poll Events: {analytics.get('poll_activity', {}).get('total_poll_events', 0)}\n"
-            yield "\n"
+            yield f"\n"
             
             for entry in log_entries:
                 metadata = entry.get('metadata', {})

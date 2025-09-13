@@ -4070,7 +4070,7 @@ async def get_poll_details_htmx(
                     # Fall through to dynamic content as fallback
             else:
                 logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
-                logger.warning(f"⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
+                logger.warning("⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
                 
                 # Try to regenerate the static file once if it's missing
                 logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")

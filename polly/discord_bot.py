@@ -4,7 +4,6 @@ Discord bot setup and event handling functionality.
 """
 
 from decouple import config
-import os
 import logging
 import discord
 from discord.ext import commands

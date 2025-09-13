@@ -169,7 +169,7 @@ async def validate_and_consume_screenshot_token(token: str, poll_id: int) -> tup
             logger.warning("🔐 SCREENSHOT TOKEN - Redis not available, checking fallback memory storage")
             return await validate_and_consume_screenshot_token_fallback(token, poll_id)
         
-        logger.info(f"🔐 SCREENSHOT TOKEN DEBUG - Redis connected successfully")
+        logger.info("🔐 SCREENSHOT TOKEN DEBUG - Redis connected successfully")
         
         # Clean up expired tokens first
         await cleanup_expired_screenshot_tokens_redis(redis_client)

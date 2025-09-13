@@ -88,22 +88,22 @@ async def download_enhanced_logs_api(
         
         # Generate enhanced log content with analytics header
         def generate_log_content():
-            yield f"# Polly Enhanced System Logs Export\n"
+            yield "# Polly Enhanced System Logs Export\n"
             yield f"# Generated: {datetime.now().isoformat()}\n"
-            yield f"# Filters Applied:\n"
+            yield "# Filters Applied:\n"
             yield f"#   - Level: {level or 'All'}\n"
             yield f"#   - Search: {search or 'None'}\n"
             yield f"#   - Time Range: {time_range}\n"
             yield f"#   - Category: {category or 'All'}\n"
             yield f"#   - Severity: {severity or 'All'}\n"
             yield f"# Total Entries: {len(log_entries)}\n"
-            yield f"# Enhanced Analytics Summary:\n"
+            yield "# Enhanced Analytics Summary:\n"
             yield f"#   - Error Rate: {analytics.get('error_rate', 0):.2f}%\n"
             yield f"#   - System Health Score: {analytics.get('structured_insights', {}).get('system_health', {}).get('health_score', 0)}/100\n"
             yield f"#   - Data Quality: {analytics.get('structured_insights', {}).get('data_quality', {}).get('structured_entries', 0)} structured entries\n"
             yield f"#   - Poll Events: {analytics.get('poll_activity', {}).get('total_poll_events', 0)}\n"
             yield f"#   - Performance Metrics: {analytics.get('performance_metrics', {}).get('avg_response_time', 0):.2f}ms avg response\n"
-            yield f"\n"
+            yield "\n"
             
             for entry in log_entries:
                 metadata = entry.get('metadata', {})

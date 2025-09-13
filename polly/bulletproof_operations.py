@@ -78,7 +78,7 @@ class BulletproofImageHandler:
                     "error": f"File too large. Max size: {self.max_file_size // (1024 * 1024)}MB",
                 }
 
-            logger.info(f"🔍 IMAGE VALIDATION - Step 1 passed: Basic validation OK")
+            logger.info("🔍 IMAGE VALIDATION - Step 1 passed: Basic validation OK")
 
             # Step 2: File extension validation with enhanced logging
             file_ext = Path(filename).suffix.lower()
@@ -124,7 +124,7 @@ class BulletproofImageHandler:
             try:
                 with Image.open(io.BytesIO(file_data)) as img:
                     img.verify()  # Verify image integrity
-                    logger.info(f"🔍 IMAGE VALIDATION - PIL verification passed")
+                    logger.info("🔍 IMAGE VALIDATION - PIL verification passed")
                     
                     # Re-open for size check (verify() closes the image)
                     img = Image.open(io.BytesIO(file_data))
@@ -150,7 +150,7 @@ class BulletproofImageHandler:
                     "error": f"Invalid or corrupted image: {str(e)}",
                 }
 
-            logger.info(f"🔍 IMAGE VALIDATION - Step 4 passed: PIL validation OK")
+            logger.info("🔍 IMAGE VALIDATION - Step 4 passed: PIL validation OK")
 
             # Step 5: Generate secure filename with enhanced logging
             file_hash = hashlib.sha256(file_data).hexdigest()[:16]
@@ -170,14 +170,14 @@ class BulletproofImageHandler:
                 # Write file atomically
                 async with aiofiles.open(file_path, "wb") as f:
                     await f.write(file_data)
-                logger.info(f"🔍 IMAGE VALIDATION - File written to disk")
+                logger.info("🔍 IMAGE VALIDATION - File written to disk")
 
                 # Small delay to ensure file system sync
                 await asyncio.sleep(0.1)
 
                 # Verify file was written correctly
                 if not file_path.exists():
-                    logger.error(f"🔍 IMAGE VALIDATION - File verification failed: file does not exist")
+                    logger.error("🔍 IMAGE VALIDATION - File verification failed: file does not exist")
                     return {"success": False, "error": "File was not created"}
                     
                 actual_size = file_path.stat().st_size
@@ -190,7 +190,7 @@ class BulletproofImageHandler:
                 # Set proper file permissions for web server access
                 try:
                     file_path.chmod(0o644)  # Read/write for owner, read for group/others
-                    logger.info(f"🔍 IMAGE VALIDATION - File permissions set to 644")
+                    logger.info("🔍 IMAGE VALIDATION - File permissions set to 644")
                 except Exception as perm_error:
                     logger.warning(f"🔍 IMAGE VALIDATION - Could not set file permissions: {perm_error}")
 
@@ -205,7 +205,7 @@ class BulletproofImageHandler:
                         logger.error(f"🔍 IMAGE VALIDATION - Cleanup failed: {cleanup_error}")
                 return {"success": False, "error": f"Failed to save file: {str(e)}"}
 
-            logger.info(f"🔍 IMAGE VALIDATION - Step 6 passed: File saved successfully")
+            logger.info("🔍 IMAGE VALIDATION - Step 6 passed: File saved successfully")
 
             # Success - clear temp_file_path to prevent cleanup
             temp_file_path = None
@@ -220,7 +220,7 @@ class BulletproofImageHandler:
                 "dimensions": (width, height),
             }
             
-            logger.info(f"🔍 IMAGE VALIDATION - ✅ SUCCESS: Image validation completed successfully")
+            logger.info("🔍 IMAGE VALIDATION - ✅ SUCCESS: Image validation completed successfully")
             return result
 
         except Exception as e:

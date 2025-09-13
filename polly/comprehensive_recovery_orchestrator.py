@@ -23,8 +23,8 @@ except ImportError:
     import sys
     import os
     sys.path.insert(0, os.path.dirname(__file__))
-    from recovery_manager import get_recovery_manager, perform_startup_recovery
-    from enhanced_recovery_validator import get_enhanced_recovery_validator, perform_enhanced_recovery_validation
+    from recovery_manager import get_recovery_manager
+    from enhanced_recovery_validator import get_enhanced_recovery_validator
     from static_recovery import get_static_recovery
     from background_tasks import restore_scheduled_jobs
     from enhanced_cache_service import get_enhanced_cache_service
@@ -103,7 +103,7 @@ class ComprehensiveRecoveryOrchestrator:
                     "message": "Ultimate recovery completed with 12/10 certainty - 100% data integrity validated"
                 }
             else:
-                logger.warning(f"⚠️ COMPREHENSIVE RECOVERY ORCHESTRATOR - Could not achieve 12/10 certainty")
+                logger.warning("⚠️ COMPREHENSIVE RECOVERY ORCHESTRATOR - Could not achieve 12/10 certainty")
                 logger.warning(f"Final confidence: {final_result.confidence_level}/12")
                 
                 return {
@@ -287,7 +287,7 @@ class ComprehensiveRecoveryOrchestrator:
     
     async def _cleanup_orphaned_data(self):
         """Clean up orphaned data in database"""
-        from .database import get_db_session, Vote, Poll
+        from .database import get_db_session
         from sqlalchemy import text
         
         db = get_db_session()
@@ -340,13 +340,13 @@ class ComprehensiveRecoveryOrchestrator:
                                     logger.warning(f"Failed to add reaction {emoji} to poll {poll_id}: {e}")
                                     # If we hit a rate limit, wait longer
                                     if "rate limit" in str(e).lower():
-                                        logger.warning(f"Rate limit hit, waiting 5 seconds before continuing")
+                                        logger.warning("Rate limit hit, waiting 5 seconds before continuing")
                                         await asyncio.sleep(5.0)
                     except Exception as e:
                         logger.warning(f"Failed to restore reactions for poll {poll_id}: {e}")
                         # If we hit a rate limit, wait before continuing to next poll
                         if "rate limit" in str(e).lower():
-                            logger.warning(f"Rate limit hit during message fetch, waiting 3 seconds")
+                            logger.warning("Rate limit hit during message fetch, waiting 3 seconds")
                             await asyncio.sleep(3.0)
         finally:
             db.close()

@@ -4,10 +4,9 @@ Additional endpoints for pandas-powered log analytics and insights.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import Request, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, HTMLResponse
-from typing import Optional
+from fastapi.responses import JSONResponse
 
 from .super_admin import require_super_admin, DiscordUser
 

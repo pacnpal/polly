@@ -1243,7 +1243,7 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
     
     # Ensure close_time is timezone-aware - if naive, assume it's in the poll's timezone
     if poll_close_time.tzinfo is None:
-        logger.warning(f"⚠️ RESULTS EMBED - Poll close_time was timezone-naive, localizing to poll timezone")
+        logger.warning("⚠️ RESULTS EMBED - Poll close_time was timezone-naive, localizing to poll timezone")
         
         # Try to use the poll's timezone first, fallback to UTC
         try:
@@ -1256,14 +1256,14 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
                     logger.info(f"✅ RESULTS EMBED - Poll close_time localized to {normalized_tz}")
                 else:
                     poll_close_time = pytz.UTC.localize(poll_close_time)
-                    logger.info(f"✅ RESULTS EMBED - Poll close_time localized to UTC (normalized)")
+                    logger.info("✅ RESULTS EMBED - Poll close_time localized to UTC (normalized)")
             else:
                 poll_close_time = pytz.UTC.localize(poll_close_time)
-                logger.info(f"✅ RESULTS EMBED - Poll close_time localized to UTC (default)")
+                logger.info("✅ RESULTS EMBED - Poll close_time localized to UTC (default)")
         except Exception as localize_error:
             logger.error(f"❌ RESULTS EMBED - Poll close_time localization failed: {localize_error}")
             poll_close_time = pytz.UTC.localize(poll_close_time)
-            logger.info(f"⚠️ RESULTS EMBED - Poll close_time using UTC fallback")
+            logger.info("⚠️ RESULTS EMBED - Poll close_time using UTC fallback")
     
     # Convert close time to poll's timezone if specified and different from UTC
     if poll_timezone and poll_timezone != "UTC":
@@ -1284,7 +1284,7 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
             # Ensure we have a valid UTC timestamp as fallback
             if poll_close_time.tzinfo != pytz.UTC:
                 poll_close_time = poll_close_time.astimezone(pytz.UTC)
-            logger.info(f"⚠️ RESULTS EMBED - Using UTC fallback")
+            logger.info("⚠️ RESULTS EMBED - Using UTC fallback")
 
     embed = discord.Embed(
         title=f"🏁 Poll Results: {poll_name}",
