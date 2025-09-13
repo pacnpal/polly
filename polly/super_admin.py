@@ -1,4 +1,4 @@
- it """
+ """
 Super Admin System
 Administrative system for managing all polls across all servers.
 """
