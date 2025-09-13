@@ -10,11 +10,16 @@ import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import discord
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn
-from .discord_utils import post_poll_to_channel, update_poll_message
-from .timezone_scheduler_fix import TimezoneAwareScheduler
-from .error_handler import PollErrorHandler
-
+try:
+    from .database import get_db_session, Poll, Vote, TypeSafeColumn
+    from .discord_utils import post_poll_to_channel, update_poll_message
+    from .timezone_scheduler_fix import TimezoneAwareScheduler
+    from .error_handler import PollErrorHandler
+except ImportError:
+    from database import get_db_session, Poll, Vote, TypeSafeColumn  # type: ignore
+    from discord_utils import post_poll_to_channel, update_poll_message  # type: ignore
+    from timezone_scheduler_fix import TimezoneAwareScheduler  # type: ignore
+    from error_handler import PollErrorHandler  # type: ignore
 # Track failed message fetch attempts for polls during runtime
 # Format: {poll_id: {"count": int, "first_failure": datetime, "last_attempt": datetime}}
 message_fetch_failures = {}
