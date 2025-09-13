@@ -237,7 +237,7 @@ class PollClosureService:
 
             # Log admin action if this was an admin closure
             if admin_user_id:
-                logger.warning(f"Admin poll closure: poll_id={poll_id} admin_user_id={admin_user_id} reason={reason}")
+                logger.info(f"Admin poll closure: poll_id={poll_id} admin_user_id={admin_user_id} reason={reason}")
 
             logger.info(f"🎉 UNIFIED CLOSE {poll_id} - Unified poll closure process completed successfully")
             
