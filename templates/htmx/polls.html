@@ -241,41 +241,131 @@
         }
         </script>
 
-        <!-- Filter Tabs -->
+        <!-- Filter Tabs - Client-side filtering for efficiency -->
         <ul class="nav nav-pills mb-3" id="poll-filter-tabs">
             <li class="nav-item">
-                <button type="button" class="nav-link {% if not current_filter or current_filter == 'all' %}active{% endif %}" 
-                        hx-get="/htmx/polls" hx-target="#main-content">
+                <button type="button" class="nav-link active" 
+                        onclick="filterPolls('all')" data-filter="all">
                     <i class="fas fa-list me-1"></i>All Polls
-                    <span class="badge bg-secondary ms-1">{{ polls|length }}</span>
+                    <span class="badge bg-secondary ms-1" id="count-all">{{ polls|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button type="button" class="nav-link {% if current_filter == 'active' %}active{% endif %}" 
-                        hx-get="/htmx/polls?filter=active" hx-target="#main-content">
+                <button type="button" class="nav-link" 
+                        onclick="filterPolls('active')" data-filter="active">
                     <i class="fas fa-play-circle me-1"></i>Active
-                    <span class="badge bg-success ms-1">{{ polls|selectattr("status", "equalto", "active")|list|length }}</span>
+                    <span class="badge bg-success ms-1" id="count-active">{{ polls|selectattr("status", "equalto", "active")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button type="button" class="nav-link {% if current_filter == 'scheduled' %}active{% endif %}" 
-                        hx-get="/htmx/polls?filter=scheduled" hx-target="#main-content">
+                <button type="button" class="nav-link" 
+                        onclick="filterPolls('scheduled')" data-filter="scheduled">
                     <i class="fas fa-clock me-1"></i>Scheduled
-                    <span class="badge bg-warning ms-1">{{ polls|selectattr("status", "equalto", "scheduled")|list|length }}</span>
+                    <span class="badge bg-warning ms-1" id="count-scheduled">{{ polls|selectattr("status", "equalto", "scheduled")|list|length }}</span>
                 </button>
             </li>
             <li class="nav-item">
-                <button type="button" class="nav-link {% if current_filter == 'closed' %}active{% endif %}" 
-                        hx-get="/htmx/polls?filter=closed" hx-target="#main-content">
+                <button type="button" class="nav-link" 
+                        onclick="filterPolls('closed')" data-filter="closed">
                     <i class="fas fa-stop-circle me-1"></i>Closed
-                    <span class="badge bg-danger ms-1">{{ polls|selectattr("status", "equalto", "closed")|list|length }}</span>
+                    <span class="badge bg-danger ms-1" id="count-closed">{{ polls|selectattr("status", "equalto", "closed")|list|length }}</span>
                 </button>
             </li>
         </ul>
     </div>
 </div>
 
-<!-- Static Poll Cards Container (no real-time updates on main listing) -->
+<!-- Static Poll Cards Container with client-side filtering support -->
 <div id="polls-static-container">
     {% include 'htmx/components/poll_cards_content.html' %}
 </div>
+
+<!-- Client-side filtering JavaScript for efficiency -->
+<script>
+// Client-side poll filtering for better performance
+function filterPolls(filterType) {
+    console.log('🔍 FILTER DEBUG - Filtering polls by:', filterType);
+    
+    // Update active tab
+    const tabs = document.querySelectorAll('#poll-filter-tabs .nav-link');
+    tabs.forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.getAttribute('data-filter') === filterType) {
+            tab.classList.add('active');
+        }
+    });
+    
+    // Get all poll cards
+    const pollCards = document.querySelectorAll('[data-status]');
+    let visibleCount = 0;
+    
+    console.log('🔍 FILTER DEBUG - Found', pollCards.length, 'poll cards');
+    
+    // Filter poll cards
+    pollCards.forEach(card => {
+        const pollStatus = card.getAttribute('data-status');
+        const shouldShow = filterType === 'all' || pollStatus === filterType;
+        
+        if (shouldShow) {
+            card.style.display = '';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    console.log('🔍 FILTER DEBUG - Showing', visibleCount, 'polls for filter:', filterType);
+    
+    // Show/hide empty state
+    const emptyState = document.querySelector('.no-polls-message');
+    if (visibleCount === 0 && !emptyState) {
+        // Create empty state message
+        const container = document.getElementById('polls-static-container');
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'col-12 text-center no-polls-message';
+        emptyDiv.innerHTML = `
+            <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No ${filterType === 'all' ? '' : filterType} polls found</h5>
+            <p class="text-muted">
+                ${filterType === 'all' 
+                    ? 'Create your first poll to get started!' 
+                    : `You don't have any ${filterType} polls yet.`}
+            </p>
+        `;
+        container.appendChild(emptyDiv);
+    } else if (visibleCount > 0 && emptyState) {
+        // Remove empty state if polls are visible
+        emptyState.remove();
+    }
+}
+
+// Initialize filtering on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔍 FILTER DEBUG - Initializing client-side filtering');
+    
+    // Set initial filter based on URL or default to 'all'
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialFilter = urlParams.get('filter') || 'all';
+    
+    // Apply initial filter
+    filterPolls(initialFilter);
+});
+
+// Handle refresh button - preserve current filter
+function refreshPolls() {
+    const activeTab = document.querySelector('#poll-filter-tabs .nav-link.active');
+    const currentFilter = activeTab ? activeTab.getAttribute('data-filter') : 'all';
+    
+    // Trigger HTMX refresh but maintain filter state
+    const refreshBtn = document.querySelector('[hx-get="/htmx/polls"]');
+    if (refreshBtn) {
+        // Update the hx-get URL to include current filter
+        if (currentFilter !== 'all') {
+            refreshBtn.setAttribute('hx-get', `/htmx/polls?filter=${currentFilter}`);
+        }
+        
+        // Trigger the refresh
+        htmx.trigger(refreshBtn, 'click');
+    }
+}
+</script>
