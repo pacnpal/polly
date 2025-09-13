@@ -401,7 +401,28 @@ class SuperAdminService:
                     "error": f"Failed to update poll: {str(e)}"
                 }
             
-            # Step 5: Generate comprehensive success response
+            # Step 5: Update Discord embed and reactions
+            try:
+                # Import Discord utilities and bot instance
+                from .discord_utils import update_poll_message
+                from .discord_bot import get_bot_instance
+                
+                bot = get_bot_instance()
+                if bot and bot.is_ready():
+                    # Update the Discord message with new active status and reactions
+                    discord_update_success = await update_poll_message(bot, poll)
+                    if discord_update_success:
+                        logger.info(f"✅ Discord embed updated for reopened poll {poll_id}")
+                    else:
+                        logger.warning(f"⚠️ Failed to update Discord embed for reopened poll {poll_id}")
+                else:
+                    logger.warning(f"⚠️ Discord bot not ready, skipping embed update for poll {poll_id}")
+                    
+            except Exception as discord_error:
+                logger.error(f"❌ Error updating Discord embed for reopened poll {poll_id}: {discord_error}")
+                # Don't fail the reopen operation if Discord update fails
+            
+            # Step 6: Generate comprehensive success response
             poll_name = TypeSafeColumn.get_string(poll, "name")
             
             # Log the admin action with full details
