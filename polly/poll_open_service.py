@@ -152,17 +152,10 @@ class PollOpeningService:
                         content_parts.append(image_message_text.strip())
                     
                     # Add role mention and vote message if role ping is enabled
-                    # Include role ping for most opening reasons (exclude only recovery to avoid spam)
-                    if ping_role_enabled and ping_role_id and reason not in ["recovery"]:
+                    # Include role ping for most opening reasons (exclude only recovery and reopen to avoid spam)
+                    if ping_role_enabled and ping_role_id and reason not in ["recovery", "reopen"]:
                         role_id = str(ping_role_id)
-                        
-                        # Prepare role ping message content based on reason
-                        elif reason == "manual":
-                            vote_message = "📊 **Vote Now!**"
-                        elif reason == "immediate":
-                            vote_message = "📊 **Vote Now!**"
-                        else:  # scheduled and other reasons
-                            vote_message = "📊 **Vote Now!**"
+                        vote_message = "📊 **Vote Now!**"
                         
                         role_mention_line = f"<@&{role_id}> {vote_message}"
                         content_parts.append(role_mention_line)
