@@ -262,3 +262,8 @@ class PollClosureService:
 
 # Global service instance
 poll_closure_service = PollClosureService()
+
+
+def get_poll_closure_service() -> PollClosureService:
+    """Get the global poll closure service instance"""
+    return poll_closure_service
