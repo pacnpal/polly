@@ -8,16 +8,20 @@ import os
 import logging
 import discord
 from discord.ext import commands
-
-from .database import get_db_session, Poll, POLL_EMOJIS, TypeSafeColumn
-from .discord_utils import (
-    update_poll_message,
-)
-from .error_handler import (
-    PollErrorHandler,
-    setup_automatic_bot_owner_notifications,
-    set_bot_for_automatic_notifications,
-)
+try:
+    from .database import get_db_session, Poll, POLL_EMOJIS, TypeSafeColumn
+    from .discord_utils import update_poll_message
+    from .error_handler import PollErrorHandler, setup_automatic_bot_owner_notifications, set_bot_for_automatic_notifications
+except ImportError:
+    ############### Temporary fix for import issues during testing ################
+    import sys
+    import pathlib
+    current_dir = pathlib.Path(__file__).parent.resolve()
+    sys.path.append(str(current_dir))
+    ###############################################################################
+    from database import get_db_session, Poll, POLL_EMOJIS, TypeSafeColumn  # type: ignore
+    from discord_utils import update_poll_message  # type: ignore
+    from error_handler import PollErrorHandler, setup_automatic_bot_owner_notifications, set_bot_for_automatic_notifications  # type: ignore
 
 logger = logging.getLogger(__name__)
 
