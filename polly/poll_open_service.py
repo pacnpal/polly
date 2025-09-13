@@ -161,15 +161,10 @@ class PollOpeningService:
                     # Check if we should ping role on poll opening
                     if ping_role_enabled and ping_role_id and reason in ["scheduled", "reopen"]:
                         poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
-                        
-                        # Prepare role ping message content
-                        if reason == "reopen":
-                            message_content = f"📊 **Poll '{poll_name}' has been reopened!**"
-                        else:
-                            message_content = "📊 **Vote Now!**"
+                        message_content = "📊 **Vote Now!**"
                         
                         role_id = str(ping_role_id)
-                        role_mention_content = f"<@&{role_id}> {message_content}"
+                        role_mention_content = f"<@&{role_id}>\n{message_content}"
                         
                         logger.info(f"🔔 UNIFIED OPEN {poll_id} - Prepared role ping content for {ping_role_name} ({role_id})")
                         
