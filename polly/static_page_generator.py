@@ -1104,64 +1104,64 @@ class StaticPageGenerator:
     #         logger.error(f"❌ SCREENSHOT - Error capturing dashboard screenshot for poll {poll_id}: {e}")
     #         logger.exception("Full traceback for screenshot error:")
     #         return None
-    
-    async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "https://polly.pacnp.al") -> Optional[str]:
-        """DISABLED: Screenshot functionality completely disabled per user request"""
-        logger.info(f"📸 SCREENSHOT DISABLED - Skipping screenshot for poll {poll_id} (disabled per user request)")
-        return None
-            
-    async def generate_dashboard_with_screenshot(self, poll_id: int, bot=None, base_url: str = "https://polly.pacnp.al") -> bool:
-        print(f"📸 PRINT DEBUG - Starting generate_dashboard_with_screenshot for poll {poll_id}")
-        """
-        Generate static dashboard with screenshot capture
-        
-        Args:
-            poll_id: The poll ID
-            bot: Discord bot instance
-            base_url: Base URL of the application for screenshot capture
-            
-        Returns: True if successful, False if failed
-        """
-        try:
-            logger.info(f"🔧 SCREENSHOT GEN - Generating dashboard with screenshot for poll {poll_id}")
-            
-            # First generate the regular static dashboard
-            dashboard_success = await self.generate_static_poll_dashboard(poll_id, bot)
-            if not dashboard_success:
-                logger.error(f"❌ SCREENSHOT GEN - Failed to generate static dashboard for poll {poll_id}")
-                return False
-            
-            # Get poll creator ID for secure token generation
-            db = get_db_session()
-            try:
-                poll = db.query(Poll).filter(Poll.id == poll_id).first()
-                if not poll:
-                    logger.error(f"❌ SCREENSHOT GEN - Poll {poll_id} not found for screenshot")
-                    return False
-                
-                creator_id = TypeSafeColumn.get_string(poll, "creator_id")
-                logger.info(f"🔍 DEBUG - Poll {poll_id} creator_id: {creator_id}")
-                if not creator_id:
-                    logger.error(f"❌ SCREENSHOT GEN - No creator_id found for poll {poll_id}")
-                    return False
-                    
-            finally:
-                db.close()
-            
-            # Capture dashboard screenshot with secure token
-            screenshot_url = await self.capture_dashboard_screenshot(poll_id, creator_id, base_url)
-            print(f"📸 PRINT DEBUG - About to call capture_dashboard_screenshot for poll {poll_id}")
-            
-            if screenshot_url:
-                logger.info(f"✅ SCREENSHOT GEN - Successfully generated dashboard with screenshot for poll {poll_id}")
-                return True
-            else:
-                logger.warning(f"⚠️ SCREENSHOT GEN - Dashboard generated but screenshot failed for poll {poll_id}")
-                return True  # Still consider success since we have the HTML
-                
-        except Exception as e:
-            logger.error(f"❌ SCREENSHOT GEN - Error generating dashboard with screenshot for poll {poll_id}: {e}")
-            return False
+   # 
+   # async def capture_dashboard_screenshot(self, poll_id: int, creator_id: str, base_url: str = "https://polly.pacnp.al") -> Optional[str]:
+   #     """DISABLED: Screenshot functionality completely disabled per user request"""
+   #     logger.info(f"📸 SCREENSHOT DISABLED - Skipping screenshot for poll {poll_id} (disabled per user request)")
+   #     return None
+   #         
+   # async def generate_dashboard_with_screenshot(self, poll_id: int, bot=None, base_url: str = "https://polly.pacnp.al") -> bool:
+   #     print(f"📸 PRINT DEBUG - Starting generate_dashboard_with_screenshot for poll {poll_id}")
+   #     """
+   #     Generate static dashboard with screenshot capture
+   #     
+   #     Args:
+   #         poll_id: The poll ID
+   #         bot: Discord bot instance
+   #         base_url: Base URL of the application for screenshot capture
+   #         
+   #     Returns: True if successful, False if failed
+   #     """
+   #     try:
+   #         logger.info(f"🔧 SCREENSHOT GEN - Generating dashboard with screenshot for poll {poll_id}")
+   #         
+   #         # First generate the regular static dashboard
+   #         dashboard_success = await self.generate_static_poll_dashboard(poll_id, bot)
+   #         if not dashboard_success:
+   #             logger.error(f"❌ SCREENSHOT GEN - Failed to generate static dashboard for poll {poll_id}")
+   #             return False
+   #         
+   #         # Get poll creator ID for secure token generation
+   #         db = get_db_session()
+   #         try:
+   #             poll = db.query(Poll).filter(Poll.id == poll_id).first()
+   #             if not poll:
+   #                 logger.error(f"❌ SCREENSHOT GEN - Poll {poll_id} not found for screenshot")
+   #                 return False
+   #             
+   #             creator_id = TypeSafeColumn.get_string(poll, "creator_id")
+   #             logger.info(f"🔍 DEBUG - Poll {poll_id} creator_id: {creator_id}")
+   #             if not creator_id:
+   #                 logger.error(f"❌ SCREENSHOT GEN - No creator_id found for poll {poll_id}")
+   #                 return False
+   #                 
+   #         finally:
+   #             db.close()
+   #         
+   #         # Capture dashboard screenshot with secure token
+   #         screenshot_url = await self.capture_dashboard_screenshot(poll_id, creator_id, base_url)
+   #         print(f"📸 PRINT DEBUG - About to call capture_dashboard_screenshot for poll {poll_id}")
+   #         
+   #         if screenshot_url:
+   #             logger.info(f"✅ SCREENSHOT GEN - Successfully generated dashboard with screenshot for poll {poll_id}")
+   #             return True
+   #         else:
+   #             logger.warning(f"⚠️ SCREENSHOT GEN - Dashboard generated but screenshot failed for poll {poll_id}")
+   #             return True  # Still consider success since we have the HTML
+   #             
+   #     except Exception as e:
+   #         logger.error(f"❌ SCREENSHOT GEN - Error generating dashboard with screenshot for poll {poll_id}: {e}")
+   #         return False
 
     async def get_image_storage_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics about image storage"""
