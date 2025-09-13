@@ -441,13 +441,14 @@ class UltimateRecoveryTestSuite:
     
     async def _create_orphaned_data_scenario(self):
         """Create orphaned data in database"""
+        from sqlalchemy import text
         db = get_db_session()
         try:
             # Create a vote without a corresponding poll
-            db.execute("""
+            db.execute(text("""
                 INSERT INTO votes (poll_id, user_id, option_index, voted_at)
                 VALUES (99999, '123456789', 0, datetime('now'))
-            """)
+            """))
             db.commit()
             logger.info("Created orphaned data scenario")
         finally:
@@ -494,13 +495,14 @@ class UltimateRecoveryTestSuite:
     
     async def _verify_orphaned_data_cleanup(self) -> bool:
         """Verify orphaned data was cleaned up"""
+        from sqlalchemy import text
         db = get_db_session()
         try:
-            orphaned_count = db.execute("""
+            orphaned_count = db.execute(text("""
                 SELECT COUNT(*) FROM votes v 
                 LEFT JOIN polls p ON v.poll_id = p.id 
                 WHERE p.id IS NULL
-            """).scalar()
+            """)).scalar()
             return orphaned_count == 0
         finally:
             db.close()
