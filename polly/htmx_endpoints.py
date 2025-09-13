@@ -495,30 +495,6 @@ async def close_poll_htmx(
             logger.error(f"❌ HTMX CLOSE POLL {poll_id} - Error generating static content: {static_error}")
             # Don't fail the poll closure if static generation fails
 
-        # Send role ping notification if enabled
-        # Update poll status to closed
-        setattr(poll, "status", "closed")
-        setattr(poll, "updated_at", datetime.now(pytz.UTC))
-        db.commit()
-
-        logger.info(f"Poll {poll_id} closed by user {current_user.id}")
-
-        # Generate static content for the closed poll (same as automatic closure)
-        try:
-            from .static_page_generator import generate_static_content_on_poll_close
-            
-            logger.info(f"🔧 HTMX CLOSE POLL {poll_id} - Generating static content for manually closed poll")
-            static_success = await generate_static_content_on_poll_close(poll_id, bot)
-            
-            if static_success:
-                logger.info(f"✅ HTMX CLOSE POLL {poll_id} - Static content generated successfully")
-            else:
-                logger.warning(f"⚠️ HTMX CLOSE POLL {poll_id} - Static content generation failed")
-        except Exception as static_error:
-            logger.error(f"❌ HTMX CLOSE POLL {poll_id} - Error generating static content: {static_error}")
-            # Don't fail the poll closure if static generation fails
-
-        # Send role ping notification if enabled
         if (
             ping_role_enabled
             and ping_role_id
