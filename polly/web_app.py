@@ -447,7 +447,7 @@ async def start_background_tasks():
 
 
 async def start_recovery_process(bot_task):
-    """Start the recovery process after bot is ready"""
+    """Start the ultimate recovery process with 12/10 certainty after bot is ready"""
     try:
         # Wait for bot to start
         await bot_task
@@ -455,27 +455,43 @@ async def start_recovery_process(bot_task):
         # Give bot a moment to fully initialize
         await asyncio.sleep(3)
         
-        # Get bot instance and perform recovery
+        # Get bot instance and perform ultimate recovery
         from .discord_bot import get_bot_instance
         bot = get_bot_instance()
         
         if bot and bot.is_ready():
-            logger.info("🔄 Starting comprehensive recovery process")
+            logger.info("🚀 Starting ULTIMATE recovery process with 12/10 certainty validation")
             
             # Import here to avoid circular imports
-            from .recovery_manager import perform_startup_recovery
-            recovery_result = await perform_startup_recovery(bot)
+            from .comprehensive_recovery_orchestrator import perform_ultimate_recovery
+            recovery_result = await perform_ultimate_recovery(bot)
             
-            if recovery_result["success"]:
-                logger.info(f"✅ Recovery completed successfully: {recovery_result['message']}")
-                logger.info(f"📊 Recovery stats: {recovery_result['stats']}")
+            if recovery_result["success"] and recovery_result["certainty_achieved"]:
+                logger.info("🎉 ULTIMATE RECOVERY SUCCESS - 12/10 CERTAINTY ACHIEVED!")
+                logger.info(f"✅ Recovery completed: {recovery_result['message']}")
+                logger.info(f"📊 Confidence Level: {recovery_result['confidence_level']}/12")
+                logger.info(f"📊 Items Recovered: {recovery_result['total_items_recovered']}")
+                logger.info(f"📊 Duration: {recovery_result['recovery_duration']:.2f}s")
+                logger.info(f"📊 Validation Passes: {recovery_result['validation_passes']}")
+                logger.info(f"📊 Fresh Instance Compliance: {recovery_result['fresh_instance_compliance']}")
+            elif recovery_result["success"]:
+                logger.warning("⚠️ RECOVERY COMPLETED BUT CERTAINTY NOT ACHIEVED")
+                logger.warning(f"Final confidence: {recovery_result['confidence_level']}/12")
+                logger.warning(f"Message: {recovery_result['message']}")
+                if recovery_result.get("validation_errors"):
+                    logger.warning(f"Validation errors: {recovery_result['validation_errors']}")
             else:
-                logger.error(f"❌ Recovery failed: {recovery_result.get('message', 'Unknown error')}")
+                logger.error("❌ ULTIMATE RECOVERY FAILED")
+                logger.error(f"Error: {recovery_result.get('message', 'Unknown error')}")
+                logger.error(f"Confidence achieved: {recovery_result['confidence_level']}/12")
+                if recovery_result.get("error_details"):
+                    logger.error(f"Error details: {recovery_result['error_details']}")
         else:
-            logger.warning("⚠️ Bot not ready for recovery process")
+            logger.warning("⚠️ Bot not ready for ultimate recovery process")
             
     except Exception as e:
-        logger.error(f"❌ Recovery process failed: {e}")
+        logger.error(f"❌ Ultimate recovery process failed: {e}")
+        logger.exception("Full traceback for ultimate recovery failure:")
 
 
 async def shutdown_background_tasks():
