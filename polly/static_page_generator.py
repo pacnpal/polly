@@ -13,11 +13,16 @@ from pathlib import Path
 from .htmx_endpoints import format_datetime_for_user
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn
-from .enhanced_cache_service import get_enhanced_cache_service
-from .avatar_cache_service import get_avatar_cache_service
-from .data_utils import sanitize_data_for_json
-
+try:
+    from .database import get_db_session, Poll, Vote, TypeSafeColumn
+    from .enhanced_cache_service import get_enhanced_cache_service
+    from .avatar_cache_service import get_avatar_cache_service
+    from .data_utils import sanitize_data_for_json
+except ImportError:
+    from database import get_db_session, Poll, Vote, TypeSafeColumn  # type: ignore
+    from enhanced_cache_service import get_enhanced_cache_service  # type: ignore
+    from avatar_cache_service import get_avatar_cache_service  # type: ignore
+    from data_utils import sanitize_data_for_json  # type: ignore
 logger = logging.getLogger(__name__)
 
 # Image compression imports (optional dependencies)
