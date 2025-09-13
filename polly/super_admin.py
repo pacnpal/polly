@@ -398,7 +398,43 @@ class SuperAdminService:
                     "error": f"Failed to update poll: {str(e)}"
                 }
             
-            # Step 5: Update Discord embed and reactions
+            # Step 5: Schedule the new close time with timezone-aware scheduler
+            try:
+                from .background_tasks import get_scheduler
+                from .timezone_scheduler_fix import TimezoneAwareScheduler
+                from .background_tasks import close_poll
+                
+                scheduler = get_scheduler()
+                if scheduler and scheduler.running:
+                    # Remove any existing close job for this poll
+                    try:
+                        if scheduler.get_job(f"close_poll_{poll_id}"):
+                            scheduler.remove_job(f"close_poll_{poll_id}")
+                            logger.info(f"🗑️ Removed existing close job for reopened poll {poll_id}")
+                    except Exception as remove_error:
+                        logger.warning(f"⚠️ Error removing existing close job for poll {poll_id}: {remove_error}")
+                    
+                    # Schedule new close time using timezone-aware scheduler
+                    tz_scheduler = TimezoneAwareScheduler(scheduler)
+                    poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
+                    
+                    success_close = tz_scheduler.schedule_poll_closing(
+                        poll_id, final_close_time, poll_timezone, close_poll
+                    )
+                    
+                    if success_close:
+                        logger.info(f"✅ Scheduled reopened poll {poll_id} to close at {final_close_time} in timezone {poll_timezone}")
+                    else:
+                        logger.error(f"❌ Failed to schedule close time for reopened poll {poll_id}")
+                        # Don't fail the reopen operation if scheduling fails
+                else:
+                    logger.warning(f"⚠️ Scheduler not available, reopened poll {poll_id} won't auto-close")
+                    
+            except Exception as schedule_error:
+                logger.error(f"❌ Error scheduling close time for reopened poll {poll_id}: {schedule_error}")
+                # Don't fail the reopen operation if scheduling fails
+            
+            # Step 6: Update Discord embed and reactions
             try:
                 # Import Discord utilities and bot instance
                 from .discord_utils import update_poll_message
@@ -419,7 +455,7 @@ class SuperAdminService:
                 logger.error(f"❌ Error updating Discord embed for reopened poll {poll_id}: {discord_error}")
                 # Don't fail the reopen operation if Discord update fails
             
-            # Step 6: Generate comprehensive success response
+            # Step 7: Generate comprehensive success response
             poll_name = TypeSafeColumn.get_string(poll, "name")
             
             # Log the admin action with full details
