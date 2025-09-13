@@ -18,10 +18,20 @@ from discord.ext import commands
 import aiofiles
 from PIL import Image
 
-from .validators import PollValidator, VoteValidator
-from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
-from .database import get_db_session, Poll, Vote, TypeSafeColumn
-
+# Handle both relative and absolute imports for direct execution
+try:
+    from .validators import PollValidator, VoteValidator
+    from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
+    from .database import get_db_session, Poll, Vote, TypeSafeColumn
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from validators import PollValidator, VoteValidator
+    from error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
+    from database import get_db_session, Poll, Vote, TypeSafeColumn
+    
 logger = logging.getLogger(__name__)
 
 
