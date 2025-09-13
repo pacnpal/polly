@@ -3314,6 +3314,9 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     validation_errors = []
     validated_data = {}
 
+    # Extract open_immediately flag FIRST - this affects time validation logic
+    open_immediately = form_data.get("open_immediately") == "true"
+
     # Extract form data
     name = safe_get_form_data(form_data, "name")
     question = safe_get_form_data(form_data, "question")
@@ -3322,7 +3325,6 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     open_time = safe_get_form_data(form_data, "open_time")
     close_time = safe_get_form_data(form_data, "close_time")
     timezone_str = safe_get_form_data(form_data, "timezone", "US/Eastern")
-    open_immediately = form_data.get("open_immediately") == "true"
 
     # Validate poll name
     if not name or len(name.strip()) < 3:

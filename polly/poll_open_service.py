@@ -75,7 +75,7 @@ class PollOpeningService:
 
                 # Validate opening eligibility based on current status and reason
                 if current_status == "active":
-                    if reason not in ["recovery", "manual"]:
+                    if reason not in ["recovery", "manual", "immediate"]:
                         logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Poll already active, skipping")
                         return {"success": True, "message": "Poll was already active", "already_active": True}
                 elif current_status == "closed" and reason not in ["reopen", "manual"]:
