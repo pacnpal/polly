@@ -118,66 +118,72 @@ class PollOpeningService:
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Validation system error: {validation_error}")
                 # Continue with opening but log the validation failure
 
-            # STEP 3: Images and image message text are now handled in the unified message (STEP 4)
-            # No separate image posting needed - everything will be in one cohesive message
+            # STEP 3: Handle image posting (if poll has image)
             discord_image_message_id = None
-            logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Images will be included in unified poll message")
+            if image_path and Path(image_path).exists():
+                logger.info(f"📷 UNIFIED OPEN {poll_id} - Processing image posting")
+                try:
+                    channel = bot_instance.get_channel(int(channel_id))
+                    if channel and isinstance(channel, discord.TextChannel):
+                        # Check bot permissions for image posting
+                        bot_member = channel.guild.get_member(bot_instance.user.id)
+                        if bot_member and channel.permissions_for(bot_member).attach_files:
+                            
+                            # Post image message before poll
+                            image_result = await PollOpeningService._post_image_message(
+                                channel, image_path, image_message_text
+                            )
+                            
+                            if image_result["success"]:
+                                discord_image_message_id = image_result["message_id"]
+                                logger.info(f"✅ UNIFIED OPEN {poll_id} - Image posted successfully")
+                            else:
+                                logger.warning(f"⚠️ UNIFIED OPEN {poll_id} - Image posting failed: {image_result['error']}")
+                        else:
+                            logger.warning(f"⚠️ UNIFIED OPEN {poll_id} - Bot lacks attach_files permission for image")
+                    else:
+                        logger.warning(f"⚠️ UNIFIED OPEN {poll_id} - Channel not found or not text channel")
+                        
+                except Exception as image_error:
+                    logger.error(f"❌ UNIFIED OPEN {poll_id} - Error posting image: {image_error}")
+                    # Continue with poll opening even if image fails
 
-            # STEP 4: Prepare unified message content for poll posting
-            unified_message_content = None
-            poll_image_path = None
+            # STEP 4: Prepare role mention content for poll posting
+            role_mention_content = None
             db = get_db_session()
             try:
                 fresh_poll = db.query(Poll).filter(Poll.id == poll_id).first()
                 if fresh_poll:
-                    # Get all the components for the unified message
-                    image_message_text = TypeSafeColumn.get_string(fresh_poll, "image_message_text")
-                    poll_image_path = TypeSafeColumn.get_string(fresh_poll, "image_path")
                     ping_role_enabled = TypeSafeColumn.get_bool(fresh_poll, "ping_role_enabled", False)
                     ping_role_id = TypeSafeColumn.get_string(fresh_poll, "ping_role_id")
                     ping_role_name = TypeSafeColumn.get_string(fresh_poll, "ping_role_name", "Unknown Role")
-                    poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
                     
-                    # Build unified message content in the desired order:
-                    # 1. image_message_text (optional)
-                    # 2. image will be attached separately
-                    # 3. @role (optional) 
-                    # 4. (poll emoji) Vote Now!
-                    # 5. embed will be added separately
-                    
-                    content_parts = []
-                    
-                    # Add image message text if present
-                    if image_message_text and image_message_text.strip():
-                        content_parts.append(image_message_text.strip())
-                    
-                    # Add role mention and vote message if role ping is enabled
-                    # Include role ping for most opening reasons (exclude only recovery and reopen to avoid spam)
-                    if ping_role_enabled and ping_role_id and reason not in ["recovery", "reopen"]:
+                    # Check if we should ping role on poll opening
+                    if ping_role_enabled and ping_role_id and reason in ["scheduled", "reopen"]:
+                        poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
+                        
+                        # Prepare role ping message content
+                        if reason == "reopen":
+                            message_content = f"📊 **Poll '{poll_name}' has been reopened!**"
+                        else:
+                            message_content = "📊 **Vote Now!**"
+                        
                         role_id = str(ping_role_id)
-                        vote_message = "📊 **Vote Now!**"
+                        role_mention_content = f"<@&{role_id}> {message_content}"
                         
-                        role_mention_line = f"<@&{role_id}> {vote_message}"
-                        content_parts.append(role_mention_line)
-                        
-                        logger.info(f"� UNIFIED OPEN {poll_id} - Prepared role ping content for {ping_role_name} ({role_id}) with reason: {reason}")
-                    
-                    # Combine all content parts
-                    if content_parts:
-                        unified_message_content = "\n\n".join(content_parts)
-                        logger.info(f"�📝 UNIFIED OPEN {poll_id} - Prepared unified message content with {len(content_parts)} components")
+                        logger.info(f"🔔 UNIFIED OPEN {poll_id} - Prepared role ping content for {ping_role_name} ({role_id})")
                         
             except Exception as e:
-                logger.error(f"❌ UNIFIED OPEN {poll_id} - Error preparing unified message content: {e}")
+                logger.error(f"❌ UNIFIED OPEN {poll_id} - Error preparing role ping content: {e}")
             finally:
                 db.close()
 
-            # STEP 5: Post poll to Discord using existing robust function with unified content and image
-            logger.info(f"📊 UNIFIED OPEN {poll_id} - Posting poll to Discord with unified message")
+            # STEP 5: Post poll to Discord using existing robust function with role mention
+            logger.info(f"📊 UNIFIED OPEN {poll_id} - Posting poll to Discord")
             try:
                 from .discord_utils import post_poll_to_channel
                 
-                post_result = await post_poll_to_channel(bot_instance, poll_id, unified_message_content, poll_image_path)
+                post_result = await post_poll_to_channel(bot_instance, poll_id, role_mention_content)
                 
                 if not post_result["success"]:
                     error_msg = await PollErrorHandler.handle_poll_creation_error(
