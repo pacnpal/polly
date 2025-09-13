@@ -2010,26 +2010,20 @@ async def invalidate_user_polls_cache(user_id: str, enhanced_cache=None):
     
     try:
         redis_client = await enhanced_cache._get_redis()
-        if redis_client and redis_client._client:
-            # Clear all filter variations for the user
+        if redis_client:
+            # Clear all filter variations for the user using the cache_clear_pattern method
             cache_patterns = [
-                f"cache:user_polls:{user_id}:*",  # All filter variations (with cache: prefix)
-                f"cache:user_polls:{user_id}",    # No filter (None) (with cache: prefix)
+                f"user_polls:{user_id}:*",  # All filter variations (without cache: prefix - method adds it)
+                f"user_polls:{user_id}",    # No filter (None) (without cache: prefix - method adds it)
             ]
             
             total_cleared = 0
             for pattern in cache_patterns:
                 try:
-                    # Get all keys matching the pattern using scan_iter
-                    keys_to_delete = []
-                    async for key in redis_client._client.scan_iter(match=pattern):
-                        keys_to_delete.append(key)
-                    
-                    if keys_to_delete:
-                        # Delete all matching keys
-                        deleted_count = await redis_client._client.delete(*keys_to_delete)
-                        total_cleared += deleted_count
-                        logger.debug(f"🗑️ CACHE INVALIDATED - Cleared {deleted_count} poll cache keys for pattern {pattern}")
+                    # Use the cache_clear_pattern method from redis_client which handles the scan_iter properly
+                    deleted_count = await redis_client.cache_clear_pattern(pattern)
+                    total_cleared += deleted_count
+                    logger.debug(f"🗑️ CACHE INVALIDATED - Cleared {deleted_count} poll cache keys for pattern {pattern}")
                 except Exception as e:
                     logger.warning(f"Error clearing cache pattern {pattern} for user {user_id}: {e}")
             
