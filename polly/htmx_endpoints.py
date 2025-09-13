@@ -487,6 +487,22 @@ async def close_poll_htmx(
 
         logger.info(f"Poll {poll_id} closed by user {current_user.id} at {current_time}")
 
+        # CRITICAL FIX: Update the Discord embed to show closed status
+        try:
+            from .discord_utils import update_poll_message
+            
+            logger.info(f"🔄 HTMX CLOSE POLL {poll_id} - Updating Discord embed to show closed status")
+            message_updated = await update_poll_message(bot, poll)
+            
+            if message_updated:
+                logger.info(f"✅ HTMX CLOSE POLL {poll_id} - Successfully updated Discord embed to show closed status")
+            else:
+                logger.warning(f"⚠️ HTMX CLOSE POLL {poll_id} - Discord embed update returned False")
+                
+        except Exception as embed_error:
+            logger.error(f"❌ HTMX CLOSE POLL {poll_id} - Error updating Discord embed: {embed_error}")
+            # Don't fail the poll closure if embed update fails, but log it
+
         # Remove the scheduled closing job since poll is now closed
         try:
             from .background_tasks import get_scheduler
