@@ -3863,10 +3863,25 @@ async def create_poll_htmx(
             # Use the timezone-aware scheduler wrapper
             tz_scheduler = TimezoneAwareScheduler(scheduler)
 
+            # Create wrapper function for scheduled poll opening using unified service
+            async def open_poll_scheduled_wrapper(poll_id):
+                """Wrapper function for scheduled poll opening using unified service"""
+                from .poll_open_service import poll_opening_service
+                
+                result = await poll_opening_service.open_poll_unified(
+                    poll_id=poll_id,
+                    reason="scheduled",
+                    bot_instance=bot
+                )
+                if not result["success"]:
+                    logger.error(f"❌ SCHEDULED OPEN {poll_id} - Failed: {result.get('error')}")
+                else:
+                    logger.info(f"✅ SCHEDULED OPEN {poll_id} - Success: {result.get('message')}")
+                return result
+
             # Schedule poll to open at the specified time using unified opening service
-            from .background_tasks import open_poll_scheduled
             success_open = tz_scheduler.schedule_poll_opening(
-                poll_id, open_dt, timezone_str, open_poll_scheduled
+                poll_id, open_dt, timezone_str, open_poll_scheduled_wrapper
             )
             if not success_open:
                 logger.error(f"Failed to schedule poll {poll_id} opening")
@@ -5356,11 +5371,27 @@ async def update_poll_htmx(
             logger.debug(f"Job close_poll_{poll_id} not found or already removed: {e}")
 
         # Reschedule jobs using unified opening service
-        from .background_tasks import open_poll_scheduled, close_poll
+        from .background_tasks import close_poll
+
+        # Create wrapper function for scheduled poll opening using unified service
+        async def open_poll_scheduled_wrapper(poll_id):
+            """Wrapper function for scheduled poll opening using unified service"""
+            from .poll_open_service import poll_opening_service
+            
+            result = await poll_opening_service.open_poll_unified(
+                poll_id=poll_id,
+                reason="scheduled",
+                bot_instance=bot
+            )
+            if not result["success"]:
+                logger.error(f"❌ SCHEDULED OPEN {poll_id} - Failed: {result.get('error')}")
+            else:
+                logger.info(f"✅ SCHEDULED OPEN {poll_id} - Success: {result.get('message')}")
+            return result
 
         if open_dt > datetime.now(pytz.UTC):
             scheduler.add_job(
-                open_poll_scheduled,
+                open_poll_scheduled_wrapper,
                 DateTrigger(run_date=open_dt),
                 args=[poll_id],
                 id=f"open_poll_{poll_id}",
