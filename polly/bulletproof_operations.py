@@ -29,10 +29,14 @@ except ImportError:
     MAGIC_AVAILABLE = False
     logger = logging.getLogger(__name__)
     logger.warning("python-magic not available, falling back to mimetypes module")
-
-from .validators import PollValidator, VoteValidator
-from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
-from .database import get_db_session, Poll
+try:
+    from .validators import PollValidator, VoteValidator
+    from .error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation
+    from .database import get_db_session, Poll
+except ImportError:
+    from validators import PollValidator, VoteValidator  # type: ignore
+    from error_handler import PollErrorHandler, DiscordErrorHandler, critical_operation  # type: ignore
+    from database import get_db_session, Poll  # type: ignore
 
 logger = logging.getLogger(__name__)
 
