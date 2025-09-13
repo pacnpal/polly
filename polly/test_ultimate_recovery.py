@@ -11,10 +11,21 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 import pytz
 
-from database import get_db_session, Poll, Vote, TypeSafeColumn
-from comprehensive_recovery_orchestrator import perform_ultimate_recovery
-from enhanced_recovery_validator import perform_enhanced_recovery_validation
-from discord_bot import get_bot_instance
+# Handle both relative and absolute imports for direct execution
+try:
+    from .database import get_db_session, Poll, Vote, TypeSafeColumn
+    from .comprehensive_recovery_orchestrator import perform_ultimate_recovery
+    from .enhanced_recovery_validator import perform_enhanced_recovery_validation
+    from .discord_bot import get_bot_instance
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from database import get_db_session, Poll, Vote, TypeSafeColumn
+    from comprehensive_recovery_orchestrator import perform_ultimate_recovery
+    from enhanced_recovery_validator import perform_enhanced_recovery_validation
+    from discord_bot import get_bot_instance
 
 logger = logging.getLogger(__name__)
 
