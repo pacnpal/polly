@@ -2010,25 +2010,30 @@ async def invalidate_user_polls_cache(user_id: str, enhanced_cache=None):
     
     try:
         redis_client = await enhanced_cache._get_redis()
-        if redis_client:
+        if redis_client and redis_client._client:
             # Clear all filter variations for the user
             cache_patterns = [
-                f"user_polls:{user_id}:*",  # All filter variations
-                f"user_polls:{user_id}",    # No filter (None)
+                f"cache:user_polls:{user_id}:*",  # All filter variations (with cache: prefix)
+                f"cache:user_polls:{user_id}",    # No filter (None) (with cache: prefix)
             ]
             
+            total_cleared = 0
             for pattern in cache_patterns:
                 try:
-                    # Get all keys matching the pattern
-                    keys = await redis_client.keys(pattern)
-                    if keys:
+                    # Get all keys matching the pattern using scan_iter
+                    keys_to_delete = []
+                    async for key in redis_client._client.scan_iter(match=pattern):
+                        keys_to_delete.append(key)
+                    
+                    if keys_to_delete:
                         # Delete all matching keys
-                        await redis_client.delete(*keys)
-                        logger.debug(f"🗑️ CACHE INVALIDATED - Cleared {len(keys)} poll cache keys for user {user_id}")
+                        deleted_count = await redis_client._client.delete(*keys_to_delete)
+                        total_cleared += deleted_count
+                        logger.debug(f"🗑️ CACHE INVALIDATED - Cleared {deleted_count} poll cache keys for pattern {pattern}")
                 except Exception as e:
                     logger.warning(f"Error clearing cache pattern {pattern} for user {user_id}: {e}")
             
-            logger.info(f"✅ CACHE INVALIDATED - Successfully invalidated poll cache for user {user_id}")
+            logger.info(f"✅ CACHE INVALIDATED - Successfully invalidated {total_cleared} poll cache entries for user {user_id}")
     except Exception as e:
         logger.error(f"Error invalidating poll cache for user {user_id}: {e}")
 
