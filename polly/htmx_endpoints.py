@@ -3881,7 +3881,7 @@ async def create_poll_htmx(
 
             # Schedule poll to open at the specified time using unified opening service
             success_open = tz_scheduler.schedule_poll_opening(
-                poll_id, open_dt, timezone_str, open_poll_scheduled_wrapper
+                poll_id, open_dt, timezone_str, open_poll_scheduled_wrapper, bot
             )
             if not success_open:
                 logger.error(f"Failed to schedule poll {poll_id} opening")
