@@ -192,7 +192,7 @@ class EnhancedRecoveryValidator:
                 self.validation_errors.append(f"Found {len(orphaned_votes)} orphaned votes")
                 # Clean up orphaned votes
                 for vote in orphaned_votes:
-                    db.execute("DELETE FROM votes WHERE id = ?", (vote[0],))
+                    db.execute(text("DELETE FROM votes WHERE id = ?"), (vote[0],))
                 db.commit()
                 self.recovery_actions.append(f"Cleaned up {len(orphaned_votes)} orphaned votes")
                 self.metrics["recovery_actions_executed"] += len(orphaned_votes)
