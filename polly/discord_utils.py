@@ -973,6 +973,227 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
         return roles
 
 
+async def create_poll_results_embed(poll: Poll) -> discord.Embed:
+    """Create comprehensive results embed for closed polls - ALWAYS shows full breakdown"""
+    poll_name = str(getattr(poll, "name", ""))
+    poll_question = str(getattr(poll, "question", ""))
+
+    # Use poll's close time in the correct timezone for the timestamp
+    poll_timezone = str(getattr(poll, "timezone", "UTC"))
+    poll_close_time = poll.close_time_aware
+
+    # Ensure close_time is timezone-aware - if naive, assume it's in the poll's timezone
+    if poll_close_time.tzinfo is None:
+        logger.warning("⚠️ RESULTS EMBED - Poll close_time was timezone-naive, localizing to poll timezone")
+
+        # Try to use the poll's timezone first, fallback to UTC
+        try:
+            if poll_timezone and poll_timezone != "UTC":
+                from .utils import validate_and_normalize_timezone
+                normalized_tz = validate_and_normalize_timezone(poll_timezone)
+                if normalized_tz != "UTC":
+                    tz = pytz.timezone(normalized_tz)
+                    poll_close_time = tz.localize(poll_close_time)
+                    logger.info(f"✅ RESULTS EMBED - Poll close_time localized to {normalized_tz}")
+                else:
+                    poll_close_time = pytz.UTC.localize(poll_close_time)
+                    logger.info("✅ RESULTS EMBED - Poll close_time localized to UTC (normalized)")
+            else:
+                poll_close_time = pytz.UTC.localize(poll_close_time)
+                logger.info("✅ RESULTS EMBED - Poll close_time localized to UTC (default)")
+        except Exception as localize_error:
+            logger.error(f"❌ RESULTS EMBED - Poll close_time localization failed: {localize_error}")
+            poll_close_time = pytz.UTC.localize(poll_close_time)
+            logger.info("⚠️ RESULTS EMBED - Poll close_time using UTC fallback")
+
+    # Convert close time to poll's timezone if specified and different from UTC
+    if poll_timezone and poll_timezone != "UTC":
+        try:
+            # Validate and normalize timezone first
+            from .utils import validate_and_normalize_timezone
+            normalized_tz = validate_and_normalize_timezone(poll_timezone)
+
+            if normalized_tz != "UTC":
+                tz = pytz.timezone(normalized_tz)
+                # Convert to the poll's timezone for display
+                poll_close_time = poll_close_time.astimezone(tz)
+                logger.debug(f"✅ RESULTS EMBED - Converted close time to {normalized_tz}")
+            else:
+                logger.debug(f"ℹ️ RESULTS EMBED - Using UTC (normalized from {poll_timezone})")
+        except Exception as e:
+            logger.error(f"❌ RESULTS EMBED - Close time timezone conversion failed: {e}")
+            # Ensure we have a valid UTC timestamp as fallback
+            if poll_close_time.tzinfo != pytz.UTC:
+                poll_close_time = poll_close_time.astimezone(pytz.UTC)
+            logger.info("⚠️ RESULTS EMBED - Using UTC fallback")
+
+    embed = discord.Embed(
+        title=f"🏁 Poll Results: {poll_name}",
+        description=poll_question,
+        color=0xFF0000,  # Red for closed
+        timestamp=poll_close_time,
+    )
+
+    # Get results data
+    results = poll.get_results()
+    total_votes = poll.get_total_votes()
+
+    # Build comprehensive results breakdown
+    results_text = ""
+
+    if total_votes > 0:
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            votes = results.get(i, 0)
+            percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+
+            # Create enhanced progress bar
+            bar_length = 15
+            filled = int((percentage / 100) * bar_length)
+            bar = (
+                "█" * filled + "░" * (bar_length - filled)
+                if filled > 0
+                else "░" * bar_length
+            )
+
+            # Format the option with enhanced styling
+            results_text += f"{emoji} **{option}**\n"
+            results_text += f"`{bar}` **{votes}** votes (**{percentage:.1f}%**)\n\n"
+    else:
+        # Show options even with no votes
+        for i, option in enumerate(poll.options):
+            emoji = poll.emojis[i] if i < len(poll.emojis) else POLL_EMOJIS[i]
+            bar = "░" * 15  # Empty bar
+            results_text += f"{emoji} **{option}**\n"
+            results_text += f"`{bar}` **0** votes (**0.0%**)\n\n"
+
+    embed.add_field(
+        name="📊 Final Results", value=results_text or "No votes cast", inline=False
+    )
+
+    # Total votes
+    embed.add_field(name="🗳️ Total Votes", value=f"**{total_votes}**", inline=True)
+
+    # Winner announcement
+    if total_votes > 0:
+        winners = poll.get_winner()
+        if winners:
+            if len(winners) == 1:
+                winner_emoji = (
+                    poll.emojis[winners[0]]
+                    if winners[0] < len(poll.emojis)
+                    else POLL_EMOJIS[winners[0]]
+                )
+                winner_option = poll.options[winners[0]]
+                winner_votes = results.get(winners[0], 0)
+                winner_percentage = (
+                    (winner_votes / total_votes * 100) if total_votes > 0 else 0
+                )
+                embed.add_field(
+                    name="🏆 Winner",
+                    value=f"{winner_emoji} **{winner_option}**\n{winner_votes} votes ({winner_percentage:.1f}%)",
+                    inline=True,
+                )
+            else:
+                # Multiple winners (tie)
+                winner_text = "**TIE!**\n"
+                for winner_idx in winners:
+                    winner_emoji = (
+                        poll.emojis[winner_idx]
+                        if winner_idx < len(poll.emojis)
+                        else POLL_EMOJIS[winner_idx]
+                    )
+                    winner_option = poll.options[winner_idx]
+                    winner_votes = results.get(winner_idx, 0)
+                    winner_percentage = (
+                        (winner_votes / total_votes * 100) if total_votes > 0 else 0
+                    )
+                    winner_text += f"{winner_emoji} {winner_option} ({winner_votes} votes, {winner_percentage:.1f}%)\n"
+                embed.add_field(name="🏆 Winners", value=winner_text, inline=True)
+    else:
+        embed.add_field(name="🏆 Winner", value="No votes cast", inline=True)
+
+    # Poll type indicator
+    poll_anonymous = bool(getattr(poll, "anonymous", False))
+    poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
+
+    poll_type = []
+    if poll_anonymous:
+        poll_type.append("🔒 Anonymous")
+    if poll_multiple_choice:
+        poll_type.append("☑️ Multiple Choice")
+
+    if poll_type:
+        embed.add_field(name="📋 Poll Type", value=" • ".join(poll_type), inline=False)
+
+    embed.set_footer(text="Poll completed • Created by Polly")
+    return embed
+
+
+async def post_poll_results(bot: commands.Bot, poll: Poll):
+    """Post final results when poll closes - always shows full breakdown for all polls"""
+    try:
+        poll_channel_id = getattr(poll, "channel_id", None)
+        channel = bot.get_channel(int(str(poll_channel_id)))
+        if not channel:
+            return False
+
+        # Ensure we have a text channel
+        if not isinstance(channel, discord.TextChannel):
+            return False
+
+        # Create comprehensive results embed - ALWAYS show results for closed polls
+        embed = await create_poll_results_embed(poll)
+        poll_name = str(getattr(poll, "name", ""))
+
+        # Check if role ping is enabled and configured for poll closure
+        message_content = f"📊 **Poll '{poll_name}' has ended!**"
+        role_ping_attempted = False
+        ping_role_enabled = getattr(poll, "ping_role_enabled", False)
+        ping_role_id = getattr(poll, "ping_role_id", None)
+        ping_role_on_close = getattr(poll, "ping_role_on_close", False)
+
+        if ping_role_enabled and ping_role_id and ping_role_on_close:
+            role_id = str(ping_role_id)
+            role_name = str(getattr(poll, "ping_role_name", "Unknown Role"))
+            message_content = f"<@&{role_id}> {message_content}"
+            role_ping_attempted = True
+            logger.info(
+                f"🔔 POLL RESULTS {getattr(poll, 'id')} - Will ping role {role_name} ({role_id}) for poll closure"
+            )
+
+        # Post results message with graceful error handling for role pings
+        try:
+            await channel.send(content=message_content, embed=embed)
+        except discord.Forbidden as role_error:
+            if role_ping_attempted:
+                # Role ping failed due to permissions, try without role ping
+                logger.warning(
+                    f"⚠️ POLL RESULTS {getattr(poll, 'id')} - Role ping failed due to permissions, posting without role ping: {role_error}"
+                )
+                try:
+                    fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
+                    await channel.send(content=fallback_content, embed=embed)
+                    logger.info(
+                        f"✅ POLL RESULTS {getattr(poll, 'id')} - Results posted without role ping (fallback)"
+                    )
+                except Exception as fallback_error:
+                    logger.error(
+                        f"❌ POLL RESULTS {getattr(poll, 'id')} - Fallback results posting also failed: {fallback_error}"
+                    )
+                    raise fallback_error
+            else:
+                # Not a role ping issue, re-raise the error
+                raise role_error
+
+        logger.info(f"Posted final results for poll {getattr(poll, 'id')}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error posting poll results {poll.id}: {e}")
+        return False
+
+
 async def send_vote_confirmation_dm(
     bot: commands.Bot, poll: Poll, user_id: str, option_index: int, vote_action: str
 ) -> bool:
