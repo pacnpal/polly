@@ -163,7 +163,17 @@ class PollOpeningService:
                     return {"success": False, "error": post_result["error"]}
                 else:
                     discord_poll_message_id = post_result.get("message_id")
-                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Poll posted to Discord successfully")
+                    
+                    # CRITICAL: Validate that we received a message ID from Discord
+                    if not discord_poll_message_id:
+                        error_msg = "Discord posting succeeded but no message ID was returned"
+                        logger.error(f"❌ UNIFIED OPEN {poll_id} - {error_msg}")
+                        await PollErrorHandler.handle_poll_creation_error(
+                            Exception(error_msg), {"poll_id": poll_id}, bot_instance
+                        )
+                        return {"success": False, "error": error_msg}
+                    
+                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Poll posted to Discord successfully with message ID: {discord_poll_message_id}")
 
             except Exception as e:
                 error_msg = await PollErrorHandler.handle_poll_creation_error(e, {"poll_id": poll_id}, bot_instance)
@@ -175,15 +185,20 @@ class PollOpeningService:
             try:
                 poll = db.query(Poll).filter(Poll.id == poll_id).first()
                 if poll:
-                    # Update message IDs if we have them
-                    if discord_poll_message_id:
-                        setattr(poll, "message_id", str(discord_poll_message_id))
+                    # CRITICAL: Ensure we have a message ID before updating database
+                    if not discord_poll_message_id:
+                        error_msg = "Cannot update database: missing Discord message ID"
+                        logger.error(f"❌ UNIFIED OPEN {poll_id} - {error_msg}")
+                        return {"success": False, "error": error_msg}
+                    
+                    # Update message ID (we know it exists due to validation above)
+                    setattr(poll, "message_id", str(discord_poll_message_id))
                     
                     # Ensure poll is marked as active
                     setattr(poll, "status", "active")
                     
                     db.commit()
-                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Database updated with active status")
+                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Database updated with active status and message ID: {discord_poll_message_id}")
                     
             except Exception as e:
                 db.rollback()
