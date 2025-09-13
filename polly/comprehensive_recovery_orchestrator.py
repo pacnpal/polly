@@ -86,37 +86,37 @@ class ComprehensiveRecoveryOrchestrator:
             self.recovery_stats["recovery_duration_seconds"] = recovery_duration
             
             # Compile final results
-            if final_result["confidence_level"] >= 12.0 and verification_result["success"]:
+            if final_result.confidence_level >= 12.0 and verification_result["success"]:
                 self.recovery_stats["successful_recoveries"] += 1
                 logger.info("🎉 COMPREHENSIVE RECOVERY ORCHESTRATOR - 12/10 CERTAINTY ACHIEVED!")
                 logger.info(f"📊 Recovery completed in {recovery_duration:.2f} seconds")
                 
                 return {
                     "success": True,
-                    "confidence_level": final_result["confidence_level"],
+                    "confidence_level": final_result.confidence_level,
                     "certainty_achieved": True,
-                    "total_items_recovered": final_result["items_recovered"],
+                    "total_items_recovered": final_result.items_recovered,
                     "recovery_duration": recovery_duration,
                     "validation_passes": self.recovery_stats["validation_passes"],
-                    "fresh_instance_compliance": final_result["fresh_instance_compliance"],
+                    "fresh_instance_compliance": final_result.fresh_instance_compliance,
                     "detailed_stats": self.recovery_stats.copy(),
                     "message": "Ultimate recovery completed with 12/10 certainty - 100% data integrity validated"
                 }
             else:
                 logger.warning(f"⚠️ COMPREHENSIVE RECOVERY ORCHESTRATOR - Could not achieve 12/10 certainty")
-                logger.warning(f"Final confidence: {final_result['confidence_level']}/12")
+                logger.warning(f"Final confidence: {final_result.confidence_level}/12")
                 
                 return {
                     "success": False,
-                    "confidence_level": final_result["confidence_level"],
+                    "confidence_level": final_result.confidence_level,
                     "certainty_achieved": False,
-                    "total_items_recovered": final_result["items_recovered"],
+                    "total_items_recovered": final_result.items_recovered,
                     "recovery_duration": recovery_duration,
                     "validation_passes": self.recovery_stats["validation_passes"],
-                    "fresh_instance_compliance": final_result["fresh_instance_compliance"],
+                    "fresh_instance_compliance": final_result.fresh_instance_compliance,
                     "detailed_stats": self.recovery_stats.copy(),
-                    "validation_errors": final_result.get("validation_errors", []),
-                    "message": f"Recovery completed but only achieved {final_result['confidence_level']}/12 certainty"
+                    "validation_errors": final_result.validation_errors,
+                    "message": f"Recovery completed but only achieved {final_result.confidence_level}/12 certainty"
                 }
                 
         except Exception as e:
@@ -288,13 +288,14 @@ class ComprehensiveRecoveryOrchestrator:
     async def _cleanup_orphaned_data(self):
         """Clean up orphaned data in database"""
         from .database import get_db_session, Vote, Poll
+        from sqlalchemy import text
         
         db = get_db_session()
         try:
             # Remove orphaned votes
-            orphaned_count = db.execute("""
+            orphaned_count = db.execute(text("""
                 DELETE FROM votes WHERE poll_id NOT IN (SELECT id FROM polls)
-            """).rowcount
+            """)).rowcount
             
             db.commit()
             logger.info(f"Cleaned up {orphaned_count} orphaned votes")
@@ -465,19 +466,20 @@ class ComprehensiveRecoveryOrchestrator:
     async def _verify_database_integrity(self) -> Dict[str, Any]:
         """Verify database integrity"""
         from .database import get_db_session
+        from sqlalchemy import text
         
         db = get_db_session()
         try:
             # Check for basic integrity
-            poll_count = db.execute("SELECT COUNT(*) FROM polls").scalar()
-            vote_count = db.execute("SELECT COUNT(*) FROM votes").scalar()
+            poll_count = db.execute(text("SELECT COUNT(*) FROM polls")).scalar()
+            vote_count = db.execute(text("SELECT COUNT(*) FROM votes")).scalar()
             
             # Check for orphaned data
-            orphaned_votes = db.execute("""
+            orphaned_votes = db.execute(text("""
                 SELECT COUNT(*) FROM votes v 
                 LEFT JOIN polls p ON v.poll_id = p.id 
                 WHERE p.id IS NULL
-            """).scalar()
+            """)).scalar()
             
             integrity_score = 1.0 if orphaned_votes == 0 else max(0.0, 1.0 - (orphaned_votes / max(vote_count, 1)))
             
