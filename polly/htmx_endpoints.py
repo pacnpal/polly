@@ -14,24 +14,44 @@ from fastapi import Request, Depends
 from fastapi.templating import Jinja2Templates
 from apscheduler.triggers.date import DateTrigger
 
-from .auth import require_auth, DiscordUser
-from .database import (
-    get_db_session,
-    Poll,
-    Vote,
-    UserPreference,
-    TypeSafeColumn,
-    POLL_EMOJIS,
-)
-from .discord_utils import get_user_guilds_with_channels
-from .poll_operations import BulletproofPollOperations
-from .error_handler import PollErrorHandler
-from .timezone_scheduler_fix import TimezoneAwareScheduler
-from .discord_emoji_handler import DiscordEmojiHandler
-from .emoji_pipeline_fix import get_unified_emoji_processor
-from .json_import import PollJSONImporter, PollJSONExporter
-from .debug_config import get_debug_logger
-from .data_utils import sanitize_data_for_json
+try:
+    from .auth import require_auth, DiscordUser
+    from .database import (
+        get_db_session,
+        Poll,
+        Vote,
+        UserPreference,
+        TypeSafeColumn,
+        POLL_EMOJIS,
+    )
+    from .discord_utils import get_user_guilds_with_channels
+    from .poll_operations import BulletproofPollOperations
+    from .error_handler import PollErrorHandler
+    from .timezone_scheduler_fix import TimezoneAwareScheduler
+    from .discord_emoji_handler import DiscordEmojiHandler
+    from .emoji_pipeline_fix import get_unified_emoji_processor
+    from .json_import import PollJSONImporter, PollJSONExporter
+    from .debug_config import get_debug_logger
+    from .data_utils import sanitize_data_for_json
+except ImportError:
+    from auth import require_auth, DiscordUser  # type: ignore
+    from database import (  # type: ignore
+        get_db_session,
+        Poll,
+        Vote,
+        UserPreference,
+        TypeSafeColumn,
+        POLL_EMOJIS,
+    )
+    from discord_utils import get_user_guilds_with_channels  # type: ignore
+    from poll_operations import BulletproofPollOperations  # type: ignore
+    from error_handler import PollErrorHandler  # type: ignore
+    from timezone_scheduler_fix import TimezoneAwareScheduler  # type: ignore
+    from discord_emoji_handler import DiscordEmojiHandler  # type: ignore
+    from emoji_pipeline_fix import get_unified_emoji_processor  # type: ignore
+    from json_import import PollJSONImporter, PollJSONExporter  # type: ignore
+    from debug_config import get_debug_logger  # type: ignore
+    from data_utils import sanitize_data_for_json  # type: ignore
 
 logger = get_debug_logger(__name__)
 
