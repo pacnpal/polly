@@ -268,16 +268,20 @@ class EnhancedRecoveryValidator:
                 
                 # Check if poll should still be active
                 close_time = poll.close_time
-                if close_time and close_time <= now:
-                    self.validation_errors.append(f"Poll {poll_id} should be closed but is still active")
-                    # Close the poll immediately
-                    try:
-                        from .background_tasks import close_poll
-                        await close_poll(poll_id)
-                        self.recovery_actions.append(f"Closed overdue poll {poll_id}")
-                        self.metrics["recovery_actions_executed"] += 1
-                    except Exception as e:
-                        logger.error(f"Failed to close overdue poll {poll_id}: {e}")
+                if close_time:
+                    # Ensure both datetimes are timezone-aware for comparison
+                    if close_time.tzinfo is None:
+                        close_time = close_time.replace(tzinfo=pytz.UTC)
+                    if close_time <= now:
+                        self.validation_errors.append(f"Poll {poll_id} should be closed but is still active")
+                        # Close the poll immediately
+                        try:
+                            from .background_tasks import close_poll
+                            await close_poll(poll_id)
+                            self.recovery_actions.append(f"Closed overdue poll {poll_id}")
+                            self.metrics["recovery_actions_executed"] += 1
+                        except Exception as e:
+                            logger.error(f"Failed to close overdue poll {poll_id}: {e}")
                 
                 # Validate Discord message exists
                 message_id = TypeSafeColumn.get_string(poll, "message_id")
