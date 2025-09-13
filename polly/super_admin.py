@@ -439,11 +439,11 @@ class SuperAdminService:
                 "poll_id": poll_id,
                 "poll_name": poll_name,
                 "new_status": "active",
-                "new_close_time": final_close_time,
-                "original_close_time": original_close_time,
+                "new_close_time": final_close_time.isoformat() if final_close_time else None,
+                "original_close_time": original_close_time.isoformat() if original_close_time else None,
                 "votes_cleared": votes_cleared,
                 "reopened_by": admin_user_id,
-                "reopened_at": now
+                "reopened_at": now.isoformat()
             }
             
         except Exception as e:
