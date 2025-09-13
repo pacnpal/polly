@@ -13,8 +13,12 @@ import pytz
 import discord
 from discord.ext import commands
 
-from .database import get_db_session, Poll, Vote
-from .validators import ValidationError
+try:
+    from .database import get_db_session, Poll, Vote
+    from .validators import ValidationError
+except ImportError:
+    from database import get_db_session, Poll, Vote  # type: ignore
+    from validators import ValidationError  # type: ignore
 
 logger = logging.getLogger(__name__)
 
