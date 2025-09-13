@@ -415,7 +415,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         if poll_anonymous:
             # Consolidated anonymous poll display for active polls
             total_votes = poll.get_total_votes()
-            anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n🗳️ **{total_votes}** votes cast so far"
+            anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n\n🗳️ **{total_votes}** votes cast so far"
             embed.add_field(name="", value=anonymous_text, inline=False)
         else:
             # For non-anonymous polls, ALWAYS show live results with percentages
