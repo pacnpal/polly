@@ -119,6 +119,9 @@ class PollClosureService:
                 )
                 if fresh_poll:
                     # Update the poll embed to show it's closed with final results BEFORE clearing reactions
+                    # Note: This works with both unified messages (new format) and legacy messages (old format)
+                    # For unified messages, the original content (image text, role mentions) is preserved
+                    # and only the embed is updated to show final results
                     try:
                         from .discord_utils import update_poll_message
                         await update_poll_message(bot_instance, fresh_poll)

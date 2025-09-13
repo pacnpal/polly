@@ -542,12 +542,14 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     return embed
 
 
-async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
+async def post_poll_to_channel(bot: commands.Bot, poll_or_id, message_content: str = None, image_path: str = None):
     """Post a poll to its designated Discord channel with comprehensive debugging and validation
 
     Args:
         bot: Discord bot instance
         poll_or_id: Either a Poll object or poll_id (int)
+        message_content: Optional message content to include above the embed (e.g., role mentions)
+        image_path: Optional path to image file to include with the poll message
 
     Returns:
         Dict with success status and message_id if successful, or error details if failed
@@ -755,8 +757,26 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
         # Create embed
         embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
 
-        # Post message
-        message = await channel.send(embed=embed)
+        # Prepare file attachment if image is provided
+        discord_file = None
+        if image_path:
+            try:
+                from pathlib import Path
+                file_path = Path(image_path)
+                if file_path.exists():
+                    # Check bot permissions for file attachments
+                    if permissions.attach_files:
+                        discord_file = discord.File(file_path, filename=file_path.name)
+                        logger.info(f"📷 POSTING POLL {poll_id} - Prepared image attachment: {file_path.name}")
+                    else:
+                        logger.warning(f"⚠️ POSTING POLL {poll_id} - Bot lacks attach_files permission for image")
+                else:
+                    logger.warning(f"⚠️ POSTING POLL {poll_id} - Image file not found: {image_path}")
+            except Exception as image_error:
+                logger.error(f"❌ POSTING POLL {poll_id} - Error preparing image attachment: {image_error}")
+
+        # Post unified message with content, image, and embed
+        message = await channel.send(content=message_content, file=discord_file, embed=embed)
         
         # Add reactions for voting
         for i in range(len(poll.options)):
@@ -792,7 +812,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id):
 
 
 async def update_poll_message(bot: commands.Bot, poll: Poll):
-    """Update poll message with current results and send role ping notification for status changes"""
+    """Update poll message with current results - handles both unified and legacy message formats"""
     poll_id = getattr(poll, "id", "unknown")
     try:
         logger.info(f"🔄 UPDATE MESSAGE - Starting update for poll {poll_id}")
@@ -835,7 +855,18 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
             show_results = bool(poll.should_show_results())
         
         embed = await create_poll_embed(poll, show_results=show_results)
-        await message.edit(embed=embed)
+        
+        # For unified messages (new format), we preserve the existing content
+        # For legacy messages (old format), we only update the embed
+        # Discord doesn't allow editing content of messages with embeds easily,
+        # so we maintain backward compatibility by only updating the embed
+        
+        try:
+            await message.edit(embed=embed)
+            logger.info(f"✅ UPDATE MESSAGE - Successfully updated embed for poll {poll_id}")
+        except discord.HTTPException as edit_error:
+            logger.error(f"❌ UPDATE MESSAGE - Failed to edit message for poll {poll_id}: {edit_error}")
+            return False
 
         # CRITICAL: Restore reactions for reopened polls
         if poll_status == "active":
