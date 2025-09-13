@@ -11,12 +11,25 @@ from typing import Dict, Any, List, Optional, Set, Tuple
 import pytz
 from dataclasses import dataclass
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
-from .recovery_manager import get_recovery_manager
-from .bulletproof_operations import BulletproofPollOperations
-from .background_tasks import get_scheduler
-from .static_recovery import get_static_recovery
-from .enhanced_cache_service import get_enhanced_cache_service
+# Handle both relative and absolute imports for direct execution
+try:
+    from .database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
+    from .recovery_manager import get_recovery_manager
+    from .bulletproof_operations import BulletproofPollOperations
+    from .background_tasks import get_scheduler
+    from .static_recovery import get_static_recovery
+    from .enhanced_cache_service import get_enhanced_cache_service
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(__file__))
+    from database import get_db_session, Poll, Vote, TypeSafeColumn, POLL_EMOJIS
+    from recovery_manager import get_recovery_manager
+    from bulletproof_operations import BulletproofPollOperations
+    from background_tasks import get_scheduler
+    from static_recovery import get_static_recovery
+    from enhanced_cache_service import get_enhanced_cache_service
 
 logger = logging.getLogger(__name__)
 
