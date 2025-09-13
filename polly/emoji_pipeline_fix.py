@@ -5,9 +5,14 @@ Unified emoji processing for create and edit operations
 
 import logging
 from typing import List, Tuple
-from .discord_emoji_handler import DiscordEmojiHandler
-from .validators import PollValidator
-from .database import POLL_EMOJIS
+try:
+    from .discord_emoji_handler import DiscordEmojiHandler
+    from .validators import PollValidator
+    from .database import POLL_EMOJIS
+except ImportError:
+    from discord_emoji_handler import DiscordEmojiHandler  # type: ignore
+    from validators import PollValidator  # type: ignore
+    from database import POLL_EMOJIS  # type: ignore
 
 logger = logging.getLogger(__name__)
 
