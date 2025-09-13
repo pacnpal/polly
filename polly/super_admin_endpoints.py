@@ -179,7 +179,7 @@ async def force_close_poll_api(
     try:
         db = get_db_session()
         try:
-            result = super_admin_service.force_close_poll(db, poll_id, current_user.id)
+            result = await super_admin_service.force_close_poll(db, poll_id, current_user.id)
             
             if result["success"]:
                 logger.info(f"Super admin {current_user.username} force closed poll {poll_id}")

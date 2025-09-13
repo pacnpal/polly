@@ -450,150 +450,49 @@ async def close_poll_htmx(
     bot,
     current_user: DiscordUser = Depends(require_auth),
 ):
-    """Close an active poll via HTMX"""
+    """Close an active poll via HTMX using unified closure service for consistent behavior"""
     logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
-    db = get_db_session()
+    
     try:
-        poll = (
-            db.query(Poll)
-            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
-            .first()
+        # Use unified poll closure service for consistent behavior
+        from .poll_closure_service import get_poll_closure_service
+        
+        poll_closure_service = get_poll_closure_service()
+        
+        result = await poll_closure_service.close_poll_unified(
+            poll_id=poll_id,
+            reason="manual",
+            admin_user_id=current_user.id,
+            bot_instance=bot
         )
-        if not poll:
+        
+        if result["success"]:
+            logger.info(f"User {current_user.id} successfully manually closed poll {poll_id}")
+            
+            # Invalidate user polls cache after successful closure
+            await invalidate_user_polls_cache(current_user.id)
+            
+            return templates.TemplateResponse(
+                "htmx/components/alert_success.html",
+                {
+                    "request": request,
+                    "message": "Poll closed successfully! Redirecting to polls...",
+                    "redirect_url": "/htmx/polls",
+                },
+            )
+        else:
+            logger.error(f"User {current_user.id} manual close failed for poll {poll_id}: {result.get('error')}")
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
-                {"request": request, "message": "Poll not found or access denied"},
+                {"request": request, "message": result.get("error", "Error closing poll")},
             )
-
-        if TypeSafeColumn.get_string(poll, "status") != "active":
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": "Only active polls can be closed"},
-            )
-
-        # Extract poll data before closing for role ping notification
-        poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown Poll")
-        ping_role_enabled = TypeSafeColumn.get_bool(poll, "ping_role_enabled", False)
-        ping_role_id = TypeSafeColumn.get_string(poll, "ping_role_id")
-        channel_id = TypeSafeColumn.get_string(poll, "channel_id")
-        ping_role_on_close = TypeSafeColumn.get_bool(poll, "ping_role_on_close", False)
-
-        # Update poll status to closed and set close time to now (timezone-aware)
-        current_time = datetime.now(pytz.UTC)
-        setattr(poll, "status", "closed")
-        setattr(poll, "close_time", current_time)  # Update close time to now
-        setattr(poll, "updated_at", current_time)
-        db.commit()
-
-        logger.info(f"Poll {poll_id} closed by user {current_user.id} at {current_time}")
-
-        # CRITICAL FIX: Update the Discord embed to show closed status
-        try:
-            from .discord_utils import update_poll_message
             
-            logger.info(f"🔄 HTMX CLOSE POLL {poll_id} - Updating Discord embed to show closed status")
-            message_updated = await update_poll_message(bot, poll)
-            
-            if message_updated:
-                logger.info(f"✅ HTMX CLOSE POLL {poll_id} - Successfully updated Discord embed to show closed status")
-            else:
-                logger.warning(f"⚠️ HTMX CLOSE POLL {poll_id} - Discord embed update returned False")
-                
-        except Exception as embed_error:
-            logger.error(f"❌ HTMX CLOSE POLL {poll_id} - Error updating Discord embed: {embed_error}")
-            # Don't fail the poll closure if embed update fails, but log it
-
-        # Remove the scheduled closing job since poll is now closed
-        try:
-            from .background_tasks import get_scheduler
-            scheduler = get_scheduler()
-            if scheduler:
-                scheduler.remove_job(f"close_poll_{poll_id}")
-                logger.info(f"Removed scheduled closing job for manually closed poll {poll_id}")
-        except Exception as e:
-            logger.debug(f"Job close_poll_{poll_id} not found or already removed: {e}")
-
-        # Generate static content for the closed poll (same as automatic closure)
-        try:
-            from .static_page_generator import generate_static_content_on_poll_close
-            
-            logger.info(f"🔧 HTMX CLOSE POLL {poll_id} - Generating static content for manually closed poll")
-            static_success = await generate_static_content_on_poll_close(poll_id, bot)
-            
-            if static_success:
-                logger.info(f"✅ HTMX CLOSE POLL {poll_id} - Static content generated successfully")
-            else:
-                logger.warning(f"⚠️ HTMX CLOSE POLL {poll_id} - Static content generation failed")
-        except Exception as static_error:
-            logger.error(f"❌ HTMX CLOSE POLL {poll_id} - Error generating static content: {static_error}")
-            # Don't fail the poll closure if static generation fails
-
-        if (
-            ping_role_enabled
-            and ping_role_id
-            and bot
-            and channel_id
-            and ping_role_on_close
-        ):
-            try:
-                import discord
-
-                channel = bot.get_channel(int(channel_id))
-                if channel and isinstance(channel, discord.TextChannel):
-                    logger.info(
-                        f"🔔 HTMX CLOSE - Sending role ping notification for poll {poll_id} manual closure"
-                    )
-
-                    # Send role ping notification for manual poll closure
-                    try:
-                        message_content = f"<@&{ping_role_id}> 📊 **Poll '{poll_name}' has been manually closed!**"
-                        await channel.send(content=message_content)
-                        logger.info(
-                            f"✅ HTMX CLOSE - Sent role ping notification for poll {poll_id} manual closure"
-                        )
-                    except discord.Forbidden:
-                        # Role ping failed due to permissions, send without role ping
-                        logger.warning(
-                            f"⚠️ HTMX CLOSE - Role ping failed due to permissions for poll {poll_id}"
-                        )
-                        try:
-                            fallback_content = (
-                                f"📊 **Poll '{poll_name}' has been manually closed!**"
-                            )
-                            await channel.send(content=fallback_content)
-                            logger.info(
-                                f"✅ HTMX CLOSE - Sent fallback notification without role ping for poll {poll_id}"
-                            )
-                        except Exception as fallback_error:
-                            logger.error(
-                                f"❌ HTMX CLOSE - Fallback notification also failed for poll {poll_id}: {fallback_error}"
-                            )
-            except Exception as ping_error:
-                logger.error(
-                    f"❌ HTMX CLOSE - Error sending role ping notification for poll {poll_id}: {ping_error}"
-                )
-
-        # Invalidate user polls cache after successful closure
-        await invalidate_user_polls_cache(current_user.id)
-
-        return templates.TemplateResponse(
-            "htmx/components/alert_success.html",
-            {
-                "request": request,
-                "message": "Poll closed successfully! Redirecting to polls...",
-                "redirect_url": "/htmx/polls",
-            },
-        )
-
     except Exception as e:
-        logger.error(f"Error closing poll {poll_id}: {e}")
-        db.rollback()
+        logger.error(f"Error in manual poll closure for poll {poll_id}: {e}")
         return templates.TemplateResponse(
             "htmx/components/inline_error.html",
             {"request": request, "message": f"Error closing poll: {str(e)}"},
         )
-    finally:
-        db.close()
 
 
 async def open_poll_now_htmx(

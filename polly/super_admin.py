@@ -261,33 +261,49 @@ class SuperAdminService:
             raise
     
     @staticmethod
-    def force_close_poll(db_session, poll_id: int, admin_user_id: str) -> Dict[str, Any]:
-        """Force close a poll (super admin only)"""
+    async def force_close_poll(db_session, poll_id: int, admin_user_id: str) -> Dict[str, Any]:
+        """Force close a poll (super admin only) using unified closure procedures"""
         try:
+            # First check if poll exists and can be closed
             poll = db_session.query(Poll).filter(Poll.id == poll_id).first()
             if not poll:
                 return {"success": False, "error": "Poll not found"}
-            
+
             if poll.status == "closed":
-                return {"success": False, "error": "Poll is already closed"}
+                return {"success": False, "error": "Poll already closed"}
+
+            poll_name = poll.name
+            logger.info(f"Super admin {admin_user_id} initiating force close for poll {poll_id}: '{poll_name}'")
+
+            # Use the unified closure service for consistent behavior
+            from .poll_closure_service import poll_closure_service
             
-            # Update poll status
-            poll.status = "closed"
-            setattr(poll, "close_time", datetime.now(pytz.UTC))
-            db_session.commit()
-            
-            logger.info(f"Super admin {admin_user_id} force closed poll {poll_id}")
-            
-            return {
-                "success": True,
-                "message": f"Poll '{poll.name}' has been force closed",
-                "poll_id": poll_id
-            }
-            
+            result = await poll_closure_service.close_poll_unified(
+                poll_id=poll_id,
+                reason="force_close",
+                admin_user_id=admin_user_id
+            )
+
+            if result["success"]:
+                logger.info(f"Super admin {admin_user_id} successfully force closed poll {poll_id}")
+                return {
+                    "success": True,
+                    "message": f"Poll '{poll_name}' has been force closed with full cleanup",
+                    "poll_id": poll_id,
+                    "details": result
+                }
+            else:
+                logger.error(f"Super admin {admin_user_id} force close failed for poll {poll_id}: {result.get('error')}")
+                return {
+                    "success": False,
+                    "error": f"Force close failed: {result.get('error', 'Unknown error')}",
+                    "poll_id": poll_id
+                }
+
         except Exception as e:
-            logger.error(f"Error force closing poll {poll_id}: {e}")
+            logger.error(f"Error in super admin force close for poll {poll_id}: {e}")
             db_session.rollback()
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": f"Unexpected error: {str(e)}"}
     
     @staticmethod
     async def reopen_poll(
