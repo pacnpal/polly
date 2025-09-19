@@ -38,10 +38,10 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
     volumes:
       # Persistent data volumes
-      - polly_db:/app/db
-      - polly_data:/app/data
-      - polly_logs:/app/logs
-      - polly_static:/app/static
+      - ./db:/app/db
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./static:/app/static
       # Development volumes (comment out for production)
       # - ./templates:/app/templates:ro
       # - ./polly:/app/polly:ro
