@@ -1,6 +1,47 @@
-# Active Context - Memory Optimization Complete
+# Active Context - Startup Issues Fixed
 
-## Current Task Status: COMPLETED ✅
+## Current Task Status: STARTUP FIXES COMPLETED ✅
+**Task**: Fix Docker startup issues preventing application launch
+
+## Startup Issues Fixed (2025-09-19) ✅
+
+### Issues Resolved:
+1. **Permission Denied Errors** - Fixed static directory creation
+2. **Scalene Build Failure** - Removed problematic dependency
+3. **Deprecated Configuration** - Updated pyproject.toml format
+
+### Changes Made:
+
+#### 1. [`pyproject.toml`](pyproject.toml) Configuration Update ✅
+- **Changed**: `[tool.uv] dev-dependencies` → `[dependency-groups] dev`
+- **Removed**: `scalene>=1.5.54` (requires make command not available in slim image)
+- **Kept**: Essential memory tools (memray, pytest-memray, psutil)
+- **Result**: Eliminates deprecated configuration warning and build failures
+
+#### 2. [`Dockerfile`](Dockerfile) Permission Fix ✅  
+- **Added**: Directory creation before user switch: `mkdir -p static/uploads static/avatars static/images static/polls logs data db .cache`
+- **Fixed**: Ownership assignment: `chown -R polly:polly /app`
+- **Moved**: Directory creation from runtime to build time
+- **Result**: No more "Permission denied" errors during startup
+
+#### 3. [`docker-entrypoint.sh`](docker-entrypoint.sh) Cleanup ✅
+- **Removed**: Directory creation commands (now handled in Dockerfile)
+- **Simplified**: Startup process to focus on application launch
+- **Result**: Cleaner startup sequence without permission issues
+
+### Technical Context:
+- **Root Cause**: Directories were created at runtime after switching to non-root user
+- **Solution**: Create directories during build phase with proper ownership
+- **Memory Tools**: Scalene removed but core memory monitoring preserved
+- **Compatibility**: All changes backward compatible with existing functionality
+
+### Impact:
+- ✅ **Application Startup**: Now works without permission errors
+- ✅ **Development Environment**: Builds successfully without make dependency
+- ✅ **Memory Monitoring**: Core tools (memray, psutil) still available
+- ✅ **CI/CD Pipeline**: No more build failures from missing dependencies
+
+### Previous Work: Memory Optimization COMPLETED ✅
 **Task**: Optimize for memory usage and prevent memory leaks
 
 ## Work Completed
