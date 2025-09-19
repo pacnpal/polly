@@ -111,7 +111,15 @@ class SuperAdminService:
             if server_filter:
                 count_query = count_query.filter(Poll.server_id == server_filter)
             if creator_filter:
-                count_query = count_query.filter(Poll.creator_id == creator_filter)
+                # Enhanced creator search: by creator_id OR username (same as main query)
+                user_ids_by_username = db_session.query(User.id).filter(
+                    User.username.ilike(f"%{creator_filter}%")
+                ).subquery()
+                
+                count_query = count_query.filter(
+                    (Poll.creator_id == creator_filter) |
+                    (Poll.creator_id.in_(user_ids_by_username))
+                )
             total_count = count_query.count()
             
             # Apply pagination

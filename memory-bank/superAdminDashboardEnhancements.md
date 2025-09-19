@@ -89,12 +89,26 @@ Implemented comprehensive super admin dashboard improvements to enhance user exp
 4. `templates/htmx/super_admin_polls_table_enhanced.html` - Enhanced table display
 5. `templates/htmx/super_admin_poll_details.html` - Fixed image path display
 
+## Bug Fix Applied (2025-01-19 15:49)
+
+### Issue: Query/Int Subtraction Error
+**Error**: `unsupported operand type(s) for -: 'Query' and 'int'` in `get_enhanced_polls_table`
+**Root Cause**: Inconsistency between main query and count query for username search
+**Solution**: Updated count query to use same enhanced search logic as main query
+
+**Fix Details**:
+- **File**: `polly/super_admin.py` lines 107-122
+- **Problem**: Count query still used simple `Poll.creator_id == creator_filter`
+- **Solution**: Applied same username search logic to count query
+- **Impact**: Both queries now consistent, error resolved
+
 ## Testing Recommendations
 1. Test username search with various patterns
 2. Verify avatar display with users who have/don't have custom avatars
 3. Test column resizing across different screen sizes
 4. Verify sorting functionality with large datasets
 5. Check image path display with very long paths
+6. **Test enhanced search functionality** to ensure count query fix works
 
 ## Future Enhancements
 - Consider adding export functionality for filtered data
