@@ -20,13 +20,12 @@ COPY *.py ./
 # Create non-root user
 RUN adduser --disabled-password --gecos "" --uid 1000 polly
 
-# Create static directories and set proper permissions
-RUN mkdir -p static/uploads static/avatars static/images static/polls logs data db .cache && \
-    chown -R polly:polly /app
-
 # Create entrypoint script and make it executable
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
+
+# Change ownership of the app directory to polly user
+RUN chown -R polly:polly /app
 
 # Switch to non-root user
 USER polly

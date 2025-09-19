@@ -40,6 +40,17 @@
 - ✅ **Development Environment**: Builds successfully without make dependency
 - ✅ **Memory Monitoring**: Core tools (memray, psutil) still available
 - ✅ **CI/CD Pipeline**: No more build failures from missing dependencies
+### Volume-Based Data Persistence ✅
+- **Docker Compose Volumes**: Properly configured in [`docker-compose.yml:39-44`](docker-compose.yml:39)
+  - `polly_db:/app/db` - Database persistence
+  - `polly_static:/app/static` - Static files (uploads, avatars, images, polls)
+  - `polly_data:/app/data` - Application data
+  - `polly_logs:/app/logs` - Log files
+- **Database Configuration**: All database connections point to `db/polly.db`
+- **Dockerfile Approach**: No directory creation (volumes handle persistence)
+- **User Permissions**: Container runs as user 1000:1000 matching polly user
+- **Result**: Proper data persistence with Docker volume best practices
+
 
 ### Previous Work: Memory Optimization COMPLETED ✅
 **Task**: Optimize for memory usage and prevent memory leaks
