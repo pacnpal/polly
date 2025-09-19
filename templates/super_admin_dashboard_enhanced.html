@@ -453,12 +453,33 @@
         let currentPage = 1;
         let currentFilters = {};
 
+        // Global bulk operations manager
+        let bulkOperationManager = null;
+
+        // Initialize bulk operations after HTMX content loads
+        function initializeBulkOperations() {
+            if (typeof BulkOperationManager !== 'undefined') {
+                bulkOperationManager = new BulkOperationManager();
+                console.log('Bulk operations manager initialized');
+            } else {
+                console.error('BulkOperationManager class not found');
+            }
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             // Set up HTMX event listeners
             document.body.addEventListener('htmx:afterRequest', function(event) {
                 if (event.detail.xhr.status >= 400) {
                     showAlert('Error', 'An error occurred while processing your request.');
+                }
+            });
+
+            // Initialize bulk operations after HTMX content loads polls table
+            document.body.addEventListener('htmx:afterSwap', function(event) {
+                // Check if this was the polls container being loaded
+                if (event.target.id === 'polls-container') {
+                    setTimeout(initializeBulkOperations, 100); // Small delay to ensure DOM is ready
                 }
             });
             

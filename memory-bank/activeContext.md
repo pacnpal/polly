@@ -28,13 +28,51 @@
 - **Functions Fixed**: `viewBulkOperations()`, `checkActiveOperations()`, selection management, bulk operations
 
 ### Impact:
-- ✅ **Super Admin Dashboard**: Bulk operations "Operations" button now functional
-- ✅ **Bulk Operations Modal**: Displays operations list without TypeError
-- ✅ **Active Operations Monitor**: Real-time status updates work correctly
-- ✅ **Select All Functionality**: Checkbox selection and "select all" works properly
-- ✅ **Bulk Action Buttons**: Delete, Close, Reopen buttons visible and functional
-- ✅ **Selection Management**: Poll selection, filter-based selection operational
-- ✅ **User Experience**: Complete bulk operations workflow restored
+- ✅ **TypeError Fixed**: `operations.map is not a function` error resolved
+- ✅ **Backend API**: Returns correct data format for frontend consumption
+- ✅ **Frontend Data Access**: Robust fallback patterns handle response variations
+- ❌ **CRITICAL ISSUE DISCOVERED**: BulkOperationManager was never being initialized
+
+### CRITICAL FIX APPLIED (2025-09-19 15:29):
+**Problem**: User reported select all and bulk buttons still not working despite API fixes
+**Root Cause**: BulkOperationManager class was never initialized after HTMX loads polls table
+**Solution**: Added HTMX event listener in [`templates/super_admin_dashboard_enhanced.html`](templates/super_admin_dashboard_enhanced.html:456)
+
+#### JavaScript Initialization Fix:
+```javascript
+// Global bulk operations manager
+let bulkOperationManager = null;
+
+// Initialize bulk operations after HTMX content loads
+function initializeBulkOperations() {
+    if (typeof BulkOperationManager !== 'undefined') {
+        bulkOperationManager = new BulkOperationManager();
+        console.log('Bulk operations manager initialized');
+    } else {
+        console.error('BulkOperationManager class not found');
+    }
+}
+
+// Listen for HTMX content swaps
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.target.id === 'polls-container') {
+        setTimeout(initializeBulkOperations, 100);
+    }
+});
+```
+
+#### Template Architecture Understanding:
+1. **Main Dashboard**: `super_admin_dashboard_enhanced.html` loads
+2. **HTMX Auto-Load**: Polls container loads via `/super-admin/htmx/polls-enhanced`
+3. **Backend Renders**: `htmx/super_admin_polls_table_enhanced.html` with checkboxes
+4. **JavaScript Initializes**: BulkOperationManager now properly initialized after HTMX swap
+
+### Expected Results After Fix:
+- ✅ **Select All Functionality**: Should now work - checkbox interactions functional
+- ✅ **Bulk Action Buttons**: Should now be visible and functional (delete, close, reopen)
+- ✅ **Individual Selection**: Poll checkboxes should respond properly
+- ✅ **Operations Button**: Should display operations without errors
+- ✅ **Complete Workflow**: Full bulk operations functionality restored
 
 ---
 
