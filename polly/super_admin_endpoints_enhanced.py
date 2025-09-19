@@ -418,15 +418,16 @@ async def get_enhanced_polls_htmx(
 ) -> HTMLResponse:
     """Enhanced HTMX endpoint for polls table with bulk selection support"""
     
-    # Validate pagination
-    validation_error = SuperAdminValidator.validate_pagination_params(25, (page - 1) * 25)
+    # Ensure page is an integer and validate pagination
+    page_num = int(page) if page else 1
+    limit = 25
+    offset = (page_num - 1) * limit
+    validation_error = SuperAdminValidator.validate_pagination_params(limit, offset)
     if validation_error:
         raise validation_error
     
     db = get_db_session()
     try:
-        limit = 25
-        offset = (page - 1) * limit
         
         result = super_admin_service.get_all_polls(
             db,

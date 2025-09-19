@@ -91,16 +91,22 @@ Implemented comprehensive super admin dashboard improvements to enhance user exp
 
 ## Bug Fix Applied (2025-01-19 15:49)
 
-### Issue: Query/Int Subtraction Error
+### Issue: Query/Int Subtraction Error (RESOLVED)
 **Error**: `unsupported operand type(s) for -: 'Query' and 'int'` in `get_enhanced_polls_table`
-**Root Cause**: Inconsistency between main query and count query for username search
-**Solution**: Updated count query to use same enhanced search logic as main query
+**Root Cause**: FastAPI Query parameter was being used in arithmetic operation before type conversion
+**Solution**: Fixed pagination parameter handling in enhanced polls endpoint
 
 **Fix Details**:
+- **File**: `polly/super_admin_endpoints_enhanced.py` lines 416-426
+- **Problem**: `page` Query parameter used directly in `(page - 1) * 25` calculation
+- **Solution**: Added explicit type conversion and moved calculation before validation
+- **Code**: `page_num = int(page) if page else 1; offset = (page_num - 1) * limit`
+- **Impact**: Pagination now works correctly with proper type handling
+
+**Additional Fix Applied**:
 - **File**: `polly/super_admin.py` lines 107-122
-- **Problem**: Count query still used simple `Poll.creator_id == creator_filter`
-- **Solution**: Applied same username search logic to count query
-- **Impact**: Both queries now consistent, error resolved
+- **Issue**: Count query inconsistency for username search
+- **Solution**: Applied same enhanced search logic to both main and count queries
 
 ## Testing Recommendations
 1. Test username search with various patterns
