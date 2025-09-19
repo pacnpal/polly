@@ -1,0 +1,231 @@
+<!-- Bulk Operations Toolbar -->
+<div id="bulk-operations-toolbar" class="card mb-3 hidden">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-square text-primary me-2"></i>
+                    <span><strong id="selected-count">0</strong> polls selected</span>
+                    <button id="clear-selection" class="btn btn-sm btn-outline-secondary ms-2">
+                        <i class="fas fa-times me-1"></i>Clear
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div id="bulk-actions" class="d-flex gap-2 justify-content-end">
+                    <button class="btn btn-sm btn-outline-warning bulk-action-btn" data-action="close" title="Bulk Close">
+                        <i class="fas fa-stop me-1"></i>Close Selected
+                    </button>
+                    <button class="btn btn-sm btn-outline-success bulk-action-btn" data-action="reopen" title="Bulk Reopen">
+                        <i class="fas fa-play me-1"></i>Reopen Selected
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger bulk-action-btn" data-action="delete" title="Bulk Delete">
+                        <i class="fas fa-trash me-1"></i>Delete Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Selection by Filter -->
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row align-items-end">
+            <div class="col-md-3">
+                <label for="status-filter" class="form-label">Status Filter</label>
+                <select class="form-select form-select-sm" id="status-filter">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active Only</option>
+                    <option value="scheduled">Scheduled Only</option>
+                    <option value="closed">Closed Only</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="server-filter" class="form-label">Server Filter</label>
+                <input type="text" class="form-control form-control-sm" id="server-filter" placeholder="Server ID">
+            </div>
+            <div class="col-md-3">
+                <label for="creator-filter" class="form-label">Creator Filter</label>
+                <input type="text" class="form-control form-control-sm" id="creator-filter" placeholder="Creator ID">
+            </div>
+            <div class="col-md-3">
+                <button id="select-by-filter" class="btn btn-sm btn-primary me-2">
+                    <i class="fas fa-filter me-1"></i>Select by Filter
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="applyFilters()">
+                    <i class="fas fa-search me-1"></i>Filter Table
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover poll-table mb-0">
+        <thead class="table-dark">
+            <tr>
+                <th style="width: 50px;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="select-all" title="Select All Visible">
+                    </div>
+                </th>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Server</th>
+                <th>Creator</th>
+                <th>Votes</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for poll in polls %}
+            <tr>
+                <td>
+                    <div class="form-check">
+                        <input class="form-check-input poll-checkbox" type="checkbox" value="{{ poll.id }}" 
+                               title="Select Poll #{{ poll.id }}">
+                    </div>
+                </td>
+                <td>
+                    <span class="badge bg-secondary">#{{ poll.id }}</span>
+                </td>
+                <td>
+                    <div class="fw-bold">{{ poll.name[:30] }}{% if poll.name|length > 30 %}...{% endif %}</div>
+                    <small class="text-muted">{{ poll.question[:50] }}{% if poll.question|length > 50 %}...{% endif %}</small>
+                </td>
+                <td>
+                    <span class="badge status-badge {% if poll.status == 'active' %}bg-success{% elif poll.status == 'scheduled' %}bg-warning{% else %}bg-secondary{% endif %}">
+                        {{ poll.status.upper() }}
+                    </span>
+                    {% if poll.anonymous %}
+                    <br><small class="text-muted"><i class="fas fa-eye-slash"></i> Anonymous</small>
+                    {% endif %}
+                    {% if poll.multiple_choice %}
+                    <br><small class="text-muted"><i class="fas fa-list"></i> Multiple Choice</small>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="fw-bold">{{ poll.server_name[:20] }}{% if poll.server_name|length > 20 %}...{% endif %}</div>
+                    <small class="text-muted">#{{ poll.channel_name }}</small>
+                    <br><small class="text-muted">{{ poll.server_id }}</small>
+                </td>
+                <td>
+                    <div>{{ poll.creator_username or 'Unknown' }}</div>
+                    <small class="text-muted">{{ poll.creator_id[:8] }}...</small>
+                </td>
+                <td>
+                    <div class="fw-bold">{{ poll.vote_count }}</div>
+                    <small class="text-muted">{{ poll.unique_voters }} unique</small>
+                </td>
+                <td>
+                    <div>{{ poll.created_at.strftime('%m/%d/%y') }}</div>
+                    <small class="text-muted">{{ poll.created_at.strftime('%H:%M') }}</small>
+                </td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewPollDetails({{ poll.id }})" title="View Details">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-info" onclick="editPoll({{ poll.id }})" title="Edit Poll">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        {% if poll.status != 'closed' %}
+                        <button class="btn btn-sm btn-outline-warning" onclick="forceClosePoll({{ poll.id }}, '{{ poll.name|replace("'", "\\'") }}')" title="Force Close">
+                            <i class="fas fa-stop"></i>
+                        </button>
+                        {% else %}
+                        <button class="btn btn-sm btn-outline-success" onclick="reopenPoll({{ poll.id }}, '{{ poll.name|replace("'", "\\'") }}')" title="Reopen Poll">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-sm btn-outline-danger" onclick="deletePoll({{ poll.id }}, '{{ poll.name|replace("'", "\\'") }}')" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if polls|length == 0 %}
+<div class="text-center p-4">
+    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+    <h5 class="text-muted">No polls found</h5>
+    <p class="text-muted">No polls match the current filters.</p>
+</div>
+{% endif %}
+
+<!-- Pagination -->
+{% if total_count > 25 %}
+<div class="d-flex justify-content-between align-items-center p-3 border-top">
+    <div class="text-muted">
+        Showing {{ ((current_page - 1) * 25) + 1 }} to {{ ((current_page - 1) * 25) + polls|length }} of {{ total_count }} polls
+    </div>
+    <div>
+        {% if current_page > 1 %}
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="loadPage({{ current_page - 1 }})">
+            <i class="fas fa-chevron-left"></i> Previous
+        </button>
+        {% endif %}
+        
+        <span class="mx-2">Page {{ current_page }}</span>
+        
+        {% if has_more %}
+        <button class="btn btn-sm btn-outline-primary ms-1" onclick="loadPage({{ current_page + 1 }})">
+            Next <i class="fas fa-chevron-right"></i>
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<style>
+.hidden {
+    display: none !important;
+}
+
+.bulk-action-btn {
+    transition: all 0.2s ease;
+}
+
+.bulk-action-btn:hover {
+    transform: translateY(-1px);
+}
+
+.poll-checkbox:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.form-check-input:indeterminate {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10h8'/%3e%3c/svg%3e");
+}
+
+#bulk-operations-toolbar {
+    border-left: 4px solid #0d6efd;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.action-buttons .btn {
+    margin-right: 0.25rem;
+    margin-bottom: 0.25rem;
+}
+
+@media (max-width: 768px) {
+    .bulk-actions {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .bulk-action-btn {
+        width: 100%;
+    }
+}
+</style>

@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Super Admin Dashboard - Polly</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/polly_favicon.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="/static/polly_icon_64.png">
+    <link rel="icon" type="image/png" sizes="128x128" href="/static/polly_icon_128.png">
+    <link rel="icon" type="image/png" sizes="256x256" href="/static/polly_icon.png">
+    <link rel="apple-touch-icon" href="/static/polly_icon_128.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/polly-custom.css" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .super-admin-header {
+            background: linear-gradient(135deg, #dc3545, #fd7e14);
+            color: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        
+        .poll-table {
+            font-size: 0.9rem;
+        }
+        
+        .status-badge {
+            font-size: 0.75rem;
+        }
+        
+        .filter-section {
+            background-color: #f8f9fa;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .action-buttons .btn {
+            margin-right: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .table-responsive {
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .loading-spinner {
+            display: none;
+        }
+        
+        .htmx-request .loading-spinner {
+            display: inline-block;
+        }
+        
+        .htmx-request .btn-text {
+            display: none;
+        }
+        
+        .top-servers-list, .top-creators-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .modal-lg {
+            max-width: 900px;
+        }
+        
+        .vote-item {
+            border-left: 3px solid #007bff;
+            padding-left: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .vote-item:nth-child(odd) {
+            background-color: #f8f9fa;
+        }
+        
+        .bulk-operations-panel {
+            background: linear-gradient(135deg, #6c757d, #495057);
+            color: white;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .operations-status {
+            background-color: #f8f9fa;
+            border-radius: 0.375rem;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .operation-item {
+            background: white;
+            border-radius: 0.375rem;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-left: 4px solid #007bff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .operation-item.completed {
+            border-left-color: #28a745;
+        }
+        
+        .operation-item.failed {
+            border-left-color: #dc3545;
+        }
+        
+        .operation-item.cancelled {
+            border-left-color: #ffc107;
+        }
+        
+        #alert-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1050;
+            max-width: 400px;
+        }
+        
+        .enhanced-feature-badge {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Alert Container -->
+    <div id="alert-container"></div>
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-danger">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <img src="/static/polly_favicon.png" class="navbar-logo-icon" alt="Polly">
+                <strong>Polly Super Admin</strong>
+                <span class="enhanced-feature-badge ms-2">Enhanced</span>
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <i class="fas fa-crown me-1"></i>{{ user.username }}
+                </span>
+                <a class="nav-link" href="/dashboard">
+                    <i class="fas fa-user me-1"></i>User Dashboard
+                </a>
+                <form method="post" action="/logout" class="d-inline">
+                    <button type="submit" class="btn btn-outline-light btn-sm ms-2">
+                        <i class="fas fa-sign-out-alt me-1"></i>Logout
+                    </button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Enhanced Super Admin Header -->
+        <div class="super-admin-header">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-2">
+                        <i class="fas fa-shield-alt me-2"></i>Enhanced Super Admin Dashboard
+                    </h1>
+                    <p class="mb-0 opacity-75">
+                        System-wide poll management with bulk operations and enhanced error handling
+                    </p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="d-flex justify-content-end gap-2">
+                        <button class="btn btn-light" onclick="refreshStats()">
+                            <i class="fas fa-sync-alt me-1"></i>Refresh Stats
+                        </button>
+                        <button class="btn btn-outline-light" onclick="exportSystemData()">
+                            <i class="fas fa-download me-1"></i>Export Data
+                        </button>
+                        <button class="btn btn-outline-light" onclick="viewBulkOperations()">
+                            <i class="fas fa-tasks me-1"></i>Operations
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Operations Status Panel -->
+        <div class="bulk-operations-panel">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h5 class="mb-1">
+                        <i class="fas fa-cogs me-2"></i>Bulk Operations Center
+                    </h5>
+                    <p class="mb-0 opacity-75">
+                        Manage multiple polls efficiently with bulk operations
+                    </p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <button class="btn btn-light btn-sm" onclick="showBulkOperationsHelp()">
+                        <i class="fas fa-question-circle me-1"></i>How to Use
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Operations Status -->
+        <div id="active-operations-status" class="operations-status d-none">
+            <h6><i class="fas fa-spinner fa-spin me-2"></i>Active Operations</h6>
+            <div id="active-operations-list">
+                <!-- Active operations will be populated here -->
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-poll fa-2x text-primary mb-2"></i>
+                        <div class="stat-number text-primary">{{ stats.polls.total }}</div>
+                        <div class="text-muted">Total Polls</div>
+                        <small class="text-success">
+                            <i class="fas fa-plus me-1"></i>{{ stats.polls.recent_24h }} in 24h
+                        </small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-vote-yea fa-2x text-success mb-2"></i>
+                        <div class="stat-number text-success">{{ stats.votes.total }}</div>
+                        <div class="text-muted">Total Votes</div>
+                        <small class="text-info">
+                            <i class="fas fa-users me-1"></i>{{ stats.votes.unique_voters }} unique voters
+                        </small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-server fa-2x text-warning mb-2"></i>
+                        <div class="stat-number text-warning">{{ stats.servers.total }}</div>
+                        <div class="text-muted">Active Servers</div>
+                        <small class="text-primary">
+                            <i class="fas fa-chart-line me-1"></i>{{ stats.users.poll_creators }} creators
+                        </small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-users fa-2x text-info mb-2"></i>
+                        <div class="stat-number text-info">{{ stats.users.total }}</div>
+                        <div class="text-muted">Registered Users</div>
+                        <small class="text-warning">
+                            <i class="fas fa-clock me-1"></i>{{ stats.votes.recent_24h }} votes today
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Overview -->
+        <div class="row mb-4">
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Poll Status</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Active</span>
+                            <span class="badge bg-success">{{ stats.polls.active }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Scheduled</span>
+                            <span class="badge bg-warning">{{ stats.polls.scheduled }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Closed</span>
+                            <span class="badge bg-secondary">{{ stats.polls.closed }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-trophy me-2"></i>Top Servers</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="top-servers-list">
+                            {% for server in stats.servers.top_servers[:5] %}
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-truncate" title="{{ server.name }}">
+                                    {{ server.name[:25] }}{% if server.name|length > 25 %}...{% endif %}
+                                </span>
+                                <span class="badge bg-primary">{{ server.poll_count }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-star me-2"></i>Top Creators</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="top-creators-list">
+                            {% for creator in stats.users.top_creators[:5] %}
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-truncate">
+                                    User {{ creator.id[:8] }}...
+                                </span>
+                                <span class="badge bg-info">{{ creator.poll_count }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enhanced Polls Management -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Enhanced Poll Management
+                    <span class="enhanced-feature-badge ms-2">Bulk Operations</span>
+                </h5>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm" onclick="refreshPolls()">
+                        <span class="btn-text"><i class="fas fa-sync-alt me-1"></i>Refresh</span>
+                        <span class="loading-spinner spinner-border spinner-border-sm" role="status"></span>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="polls-container" 
+                     hx-get="/super-admin/htmx/polls-enhanced" 
+                     hx-trigger="load"
+                     hx-indicator="#loading-indicator">
+                    <div class="text-center p-4" id="loading-indicator">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading enhanced polls interface...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Poll Details Modal -->
+    <div class="modal fade" id="pollDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Poll Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="poll-details-content">
+                    <!-- Content loaded via HTMX -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Operations Help Modal -->
+    <div class="modal fade" id="bulkOperationsHelpModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-question-circle me-2"></i>Bulk Operations Guide
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-check-square text-primary me-2"></i>Selection</h6>
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-arrow-right text-muted me-2"></i>Use checkboxes to select individual polls</li>
+                                <li><i class="fas fa-arrow-right text-muted me-2"></i>Use "Select All" to select all visible polls</li>
+                                <li><i class="fas fa-arrow-right text-muted me-2"></i>Use "Select by Filter" to select polls matching criteria</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-cogs text-success me-2"></i>Operations</h6>
+                            <ul class="list-unstyled">
+                                <li><i class="fas fa-stop text-warning me-2"></i><strong>Bulk Close:</strong> Close multiple active polls</li>
+                                <li><i class="fas fa-play text-success me-2"></i><strong>Bulk Reopen:</strong> Reopen closed polls</li>
+                                <li><i class="fas fa-trash text-danger me-2"></i><strong>Bulk Delete:</strong> Permanently delete polls</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="alert alert-info mt-3">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Progress Tracking:</strong> All bulk operations show real-time progress with detailed status updates.
+                        You can cancel operations in progress if needed.
+                    </div>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Safety Features:</strong> Destructive operations (delete, close) require confirmation.
+                        Maximum 1000 polls per operation to prevent system overload.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Got it!</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Bulk Operations JS -->
+    <script src="/static/polly-bulk-operations.js"></script>
+    
+    <script>
+        // Global variables
+        let currentPage = 1;
+        let currentFilters = {};
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set up HTMX event listeners
+            document.body.addEventListener('htmx:afterRequest', function(event) {
+                if (event.detail.xhr.status >= 400) {
+                    showAlert('Error', 'An error occurred while processing your request.');
+                }
+            });
+            
+            // Check for active operations on load
+            checkActiveOperations();
+            
+            // Set up periodic checks for active operations
+            setInterval(checkActiveOperations, 30000); // Check every 30 seconds
+        });
+
+        // Enhanced functions
+        function showBulkOperationsHelp() {
+            const modal = new bootstrap.Modal(document.getElementById('bulkOperationsHelpModal'));
+            modal.show();
+        }
+        
+        function viewBulkOperations() {
+            // Show bulk operations modal or navigate to operations page
+            fetch('/super-admin/api/bulk/operations')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayBulkOperationsStatus(data.data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch bulk operations:', error);
+                });
+        }
+        
+        function checkActiveOperations() {
+            fetch('/super-admin/api/bulk/operations?status=running')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.data.length > 0) {
+                        showActiveOperations(data.data);
+                    } else {
+                        hideActiveOperations();
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to check active operations:', error);
+                });
+        }
+        
+        function showActiveOperations(operations) {
+            const container = document.getElementById('active-operations-status');
+            const list = document.getElementById('active-operations-list');
+            
+            list.innerHTML = operations.map(op => `
+                <div class="operation-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${op.operation_type}</strong>
+                            <small class="text-muted d-block">${op.processed_items}/${op.total_items} completed</small>
+                        </div>
+                        <div class="text-end">
+                            <div class="progress" style="width: 100px; height: 10px;">
+                                <div class="progress-bar" style="width: ${op.progress_percentage}%"></div>
+                            </div>
+                            <small class="text-muted">${Math.round(op.progress_percentage)}%</small>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            container.classList.remove('d-none');
+        }
+        
+        function hideActiveOperations() {
+            const container = document.getElementById('active-operations-status');
+            container.classList.add('d-none');
+        }
+        
+        function displayBulkOperationsStatus(operations) {
+            // Create and show a modal with operations status
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Bulk Operations Status</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            ${operations.length === 0 ? 
+                                '<p class="text-muted">No recent bulk operations.</p>' :
+                                operations.map(op => `
+                                    <div class="operation-item ${op.status}">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>${op.operation_type}</strong>
+                                                <span class="badge bg-${op.status === 'completed' ? 'success' : op.status === 'failed' ? 'danger' : 'warning'} ms-2">
+                                                    ${op.status}
+                                                </span>
+                                                <small class="text-muted d-block">
+                                                    ${op.processed_items}/${op.total_items} items | 
+                                                    ${op.successful_items} successful, ${op.failed_items} failed
+                                                </small>
+                                            </div>
+                                            <div class="text-end">
+                                                <small class="text-muted">${new Date(op.created_at).toLocaleString()}</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            bsModal._element.addEventListener('hidden.bs.modal', () => {
+                document.body.removeChild(modal);
+            });
+        }
+
+        // Filter functions
+        function applyFilters() {
+            currentFilters = {
+                status: document.getElementById('status-filter')?.value || '',
+                server: document.getElementById('server-filter')?.value || '',
+                creator: document.getElementById('creator-filter')?.value || ''
+            };
+            currentPage = 1;
+            loadPolls();
+        }
+
+        function clearFilters() {
+            const statusFilter = document.getElementById('status-filter');
+            const serverFilter = document.getElementById('server-filter');
+            const creatorFilter = document.getElementById('creator-filter');
+            
+            if (statusFilter) statusFilter.value = '';
+            if (serverFilter) serverFilter.value = '';
+            if (creatorFilter) creatorFilter.value = '';
+            
+            currentFilters = {};
+            currentPage = 1;
+            loadPolls();
+        }
+
+        function loadPolls() {
+            const params = new URLSearchParams({
+                page: currentPage,
+                ...currentFilters
+            });
+            
+            htmx.ajax('GET', `/super-admin/htmx/polls-enhanced?${params}`, {
+                target: '#polls-container',
+                indicator: '#loading-indicator'
+            });
+        }
+
+        function refreshPolls() {
+            loadPolls();
+        }
+
+        function refreshStats() {
+            location.reload();
+        }
+
+        // Poll actions (existing functions)
+        function viewPollDetails(pollId) {
+            document.getElementById('poll-details-content').innerHTML = '<div class="text-center p-4"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading poll details...</p></div>';
+            
+            const modal = new bootstrap.Modal(document.getElementById('pollDetailsModal'));
+            modal.show();
+            
+            htmx.ajax('GET', `/super-admin/htmx/poll/${pollId}/details?t=${Date.now()}`, {
+                target: '#poll-details-content'
+            });
+        }
+
+        function forceClosePoll(pollId, pollName) {
+            showConfirmation(
+                'Force Close Poll',
+                `Are you sure you want to force close the poll "${pollName}"? This action cannot be undone.`,
+                () => {
+                    fetch(`/super-admin/api/poll/${pollId}/force-close`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showAlert('Success', data.message);
+                            refreshPolls();
+                        } else {
+                            showAlert('Error', data.error || 'Failed to close poll');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showAlert('Error', 'An error occurred while closing the poll');
+                    });
+                }
+            );
+        }
+
+        function editPoll(pollId) {
+            document.getElementById('poll-details-content').innerHTML = '<div class="text-center p-4"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading edit form...</p></div>';
+            
+            const modal = new bootstrap.Modal(document.getElementById('pollDetailsModal'));
+            modal.show();
+            
+            htmx.ajax('GET', `/super-admin/htmx/poll/${pollId}/edit?t=${Date.now()}`, {
+                target: '#poll-details-content'
+            });
+        }
+
+        function deletePoll(pollId, pollName) {
+            showConfirmation(
+                'Delete Poll',
+                `Are you sure you want to permanently delete the poll "${pollName}"? This will also delete all votes and cannot be undone.`,
+                () => {
+                    fetch(`/super-admin/api/poll/${pollId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showAlert('Success', data.message);
+                            refreshPolls();
+                        } else {
+                            showAlert('Error', data.error || 'Failed to delete poll');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showAlert('Error', 'An error occurred while deleting the poll');
+                    });
+                }
+            );
+        }
+
+        function reopenPoll(pollId, pollName) {
+            showConfirmation(
+                'Reopen Poll',
+                `Are you sure you want to reopen the poll "${pollName}"?`,
+                () => {
+                    fetch(`/super-admin/api/poll/${pollId}/reopen`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showAlert('Success', data.message);
+                            refreshPolls();
+                        } else {
+                            showAlert('Error', data.error || 'Failed to reopen poll');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showAlert('Error', 'An error occurred while reopening the poll');
+                    });
+                }
+            );
+        }
+
+        function loadPage(page) {
+            currentPage = page;
+            loadPolls();
+        }
+
+        function exportSystemData() {
+            // Placeholder for export functionality
+            showAlert('Info', 'Export functionality will be available soon.');
+        }
+
+        // Utility functions
+        function showAlert(title, message, type = 'info') {
+            const alertContainer = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type} alert-dismissible fade show`;
+            alert.innerHTML = `
+                <strong>${title}:</strong> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            alertContainer.appendChild(alert);
+            
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.parentNode.removeChild(alert);
+                }
+            }, 5000);
+        }
+
+        function showConfirmation(title, message, callback) {
+            if (confirm(`${title}\n\n${message}`)) {
+                callback();
+            }
+        }
+    </script>
+</body>
+</html>

@@ -76,7 +76,7 @@ async def get_super_admin_dashboard(
                         logger.warning(f"Cache write failed: {e}")
             
             return templates.TemplateResponse(
-                "super_admin_dashboard_new.html",
+                "super_admin_dashboard_enhanced.html",
                 {
                     "request": request,
                     "user": current_user,
