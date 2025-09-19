@@ -221,7 +221,7 @@ async def on_reaction_add(reaction, user):
                         f"✅ Vote confirmation DM sent to user {user.id} for poll {poll_id} (action: {vote_action})"
                     )
                 else:
-                    logger.warning(
+                    logger.info(
                         f"⚠️ Vote confirmation DM not sent to user {user.id} (DMs disabled or error) (action: {vote_action})"
                     )
             except Exception as dm_error:
