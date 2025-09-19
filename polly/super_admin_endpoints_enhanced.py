@@ -435,6 +435,10 @@ async def get_enhanced_polls_htmx(
     db = get_db_session()
     try:
         
+        # Ensure string parameters for sorting
+        sort_by_str = str(sort_by) if sort_by else "created_at"
+        sort_order_str = str(sort_order) if sort_order else "desc"
+        
         result = super_admin_service.get_all_polls(
             db,
             status_filter=status,
@@ -442,8 +446,8 @@ async def get_enhanced_polls_htmx(
             creator_filter=creator,
             limit=limit,
             offset=offset,
-            sort_by=sort_by or "created_at",
-            sort_order=sort_order or "desc"
+            sort_by=sort_by_str,
+            sort_order=sort_order_str
         )
         
         # Get current selection
