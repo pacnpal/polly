@@ -25,6 +25,7 @@ COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
 # Change ownership of the app directory to polly user
+USER root
 RUN chown -R polly:polly /app
 
 # Switch to non-root user
