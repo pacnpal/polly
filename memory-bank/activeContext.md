@@ -275,3 +275,81 @@ async def cleanup_polls_with_deleted_messages():
 - **Regression Prevention**: Automated memory limit testing in CI/CD
 
 The memory optimization implementation is **COMPLETE** and ready for production deployment. All memory leaks identified have been addressed with both immediate fixes and long-term monitoring infrastructure.
+
+---
+
+## COMPLETED TASK: Super Admin Dashboard Enhancements (2025-01-19)
+
+**Status**: Completed ✅
+**Priority**: High
+
+### Task Requirements - All Completed ✅
+- ✅ Show user names instead of user IDs in super admin dashboard
+- ✅ Show avatars when available 
+- ✅ Allow resizing of columns on the dashboard
+- ✅ Allow sorting by columns
+- ✅ Allow searching by user (enhanced to search by username)
+- ✅ Prevent image path in poll view to overlap other text
+
+### Implementation Summary
+All requested super admin dashboard enhancements have been successfully implemented:
+
+1. **User Display Enhancement**: Replaced user IDs with actual usernames and added Discord avatars
+2. **Interactive Table Features**: Added column resizing and sorting capabilities
+3. **Enhanced Search**: Upgraded search functionality to work with usernames in addition to user IDs
+4. **UI Fixes**: Resolved image path overlap issues in poll detail views
+
+### Files Modified
+- [`polly/super_admin_endpoints_enhanced.py`](polly/super_admin_endpoints_enhanced.py) - Enhanced user data loading
+- [`polly/super_admin.py`](polly/super_admin.py) - Added username search capability
+- [`templates/super_admin_dashboard_enhanced.html`](templates/super_admin_dashboard_enhanced.html) - JavaScript functionality
+- [`templates/htmx/super_admin_polls_table_enhanced.html`](templates/htmx/super_admin_polls_table_enhanced.html) - Enhanced table display
+- [`templates/htmx/super_admin_poll_details.html`](templates/htmx/super_admin_poll_details.html) - Fixed image path display
+
+### Key Technical Implementations
+
+#### 1. Username Search Enhancement
+**File**: [`polly/super_admin.py`](polly/super_admin.py:87-97)
+```python
+if creator_filter:
+    # Enhanced creator search: by creator_id OR username
+    # First, try to find user by username
+    user_ids_by_username = db_session.query(User.id).filter(
+        User.username.ilike(f"%{creator_filter}%")
+    ).subquery()
+    
+    # Filter by either direct creator_id match OR username match
+    query = query.filter(
+        (Poll.creator_id == creator_filter) |
+        (Poll.creator_id.in_(user_ids_by_username))
+    )
+```
+
+#### 2. User Data Integration
+**File**: [`polly/super_admin_endpoints_enhanced.py`](polly/super_admin_endpoints_enhanced.py)
+- Added batch user lookup for performance
+- Integrated Discord avatar URL generation
+- Added fallback handling for missing user data
+
+#### 3. Interactive Table Features
+**File**: [`templates/super_admin_dashboard_enhanced.html`](templates/super_admin_dashboard_enhanced.html)
+- Column resizing with mouse drag
+- Client-side sorting with visual indicators
+- Maintained HTMX compatibility
+
+#### 4. Avatar Display
+**File**: [`templates/htmx/super_admin_polls_table_enhanced.html`](templates/htmx/super_admin_polls_table_enhanced.html)
+- 24x24px rounded Discord avatars
+- Proper fallback to default avatar
+- Aligned with username display
+
+### Documentation
+Complete implementation details documented in [`memory-bank/superAdminDashboardEnhancements.md`](memory-bank/superAdminDashboardEnhancements.md)
+
+### Impact
+- Enhanced admin user experience with intuitive user identification
+- Improved table usability with resizing and sorting
+- Better search functionality with username support
+- Resolved UI overlap issues for better readability
+
+**Task Status**: All requirements implemented and documented ✅

@@ -13,7 +13,7 @@ import pytz
 from decouple import config
 
 from .auth import require_auth, DiscordUser
-from .database import Poll, Vote, TypeSafeColumn
+from .database import Poll, Vote, User, TypeSafeColumn
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
@@ -85,7 +85,17 @@ class SuperAdminService:
                 query = query.filter(Poll.server_id == server_filter)
             
             if creator_filter:
-                query = query.filter(Poll.creator_id == creator_filter)
+                # Enhanced creator search: by creator_id OR username
+                # First, try to find user by username
+                user_ids_by_username = db_session.query(User.id).filter(
+                    User.username.ilike(f"%{creator_filter}%")
+                ).subquery()
+                
+                # Filter by either direct creator_id match OR username match
+                query = query.filter(
+                    (Poll.creator_id == creator_filter) |
+                    (Poll.creator_id.in_(user_ids_by_username))
+                )
             
             # Apply sorting
             sort_column = getattr(Poll, sort_by, Poll.created_at)

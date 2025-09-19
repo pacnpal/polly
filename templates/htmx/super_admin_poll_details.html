@@ -67,21 +67,28 @@
             {% endif %}
             {% if poll_details.poll.image_path %}
             <tr>
-                <td class="fw-bold">Image:</td>
+                <td class="fw-bold" style="vertical-align: top;">Image:</td>
                 <td>
                     <div class="mb-2">
                         <img src="/{{ poll_details.poll.image_path }}" class="img-thumbnail border" style="max-width: 300px; max-height: 200px; cursor: pointer;" alt="Poll Image" onclick="window.open('/{{ poll_details.poll.image_path }}', '_blank')">
                     </div>
-                    <small class="text-muted">Path: {{ poll_details.poll.image_path }}</small>
-                    <div class="mt-1">
-                        <small class="text-info">
-                            <i class="fas fa-info-circle me-1"></i>Click image to view full size
-                        </small>
+                    <div class="d-flex flex-column gap-1">
+                        <div>
+                            <small class="text-muted fw-bold">Path:</small>
+                            <div class="bg-light p-1 rounded text-break" style="font-family: monospace; font-size: 0.8em; word-break: break-all; max-width: 350px;">
+                                {{ poll_details.poll.image_path }}
+                            </div>
+                        </div>
+                        <div>
+                            <small class="text-info">
+                                <i class="fas fa-info-circle me-1"></i>Click image to view full size
+                            </small>
+                        </div>
                     </div>
                     {% if poll_details.poll.image_message_text %}
                     <div class="mt-2 p-2 bg-light rounded">
                         <strong><i class="fas fa-comment me-1"></i>Image Message:</strong>
-                        <div class="mt-1">{{ poll_details.poll.image_message_text }}</div>
+                        <div class="mt-1 text-break">{{ poll_details.poll.image_message_text }}</div>
                     </div>
                     {% endif %}
                 </td>

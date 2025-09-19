@@ -20,7 +20,8 @@ from .super_admin_error_handler import (
 from .super_admin_bulk_operations import (
     bulk_operation_service, BulkOperationType, BulkOperationRequest
 )
-from .database import get_db_session
+from .database import get_db_session, User
+from .avatar_cache_service import AvatarCacheService
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
@@ -410,6 +411,8 @@ async def get_enhanced_polls_htmx(
     status: Optional[str] = Query(None),
     server: Optional[str] = Query(None),
     creator: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("created_at"),
+    sort_order: Optional[str] = Query("desc"),
     page: int = Query(1, ge=1),
     current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
@@ -432,17 +435,47 @@ async def get_enhanced_polls_htmx(
             creator_filter=creator,
             limit=limit,
             offset=offset,
-            sort_by="created_at",
-            sort_order="desc"
+            sort_by=sort_by or "created_at",
+            sort_order=sort_order or "desc"
         )
         
         # Get current selection
         selected_polls = selection_manager.get_selection(current_user.id)
         
-        # Add selection status to polls
+        # Get unique creator IDs for user info lookup
+        creator_ids = list(set(poll.get("creator_id") for poll in result["polls"] if poll.get("creator_id")))
+        
+        # Fetch user information for creators
+        user_info = {}
+        if creator_ids:
+            users_query = db.query(User).filter(User.id.in_(creator_ids)).all()
+            for user in users_query:
+                user_info[user.id] = {
+                    "username": user.username,
+                    "avatar": user.avatar
+                }
+        
+        # Initialize avatar cache service for avatar URL generation
+        avatar_service = AvatarCacheService()
+        
+        # Add selection status and enhanced user info to polls
         for poll in result["polls"]:
             poll["is_selected"] = poll["id"] in selected_polls
-            poll["creator_username"] = f"User {poll['creator_id'][:8]}..." if poll["creator_id"] else "Unknown"
+            
+            creator_id = poll.get("creator_id")
+            if creator_id and creator_id in user_info:
+                user = user_info[creator_id]
+                poll["creator_username"] = user["username"]
+                
+                # Generate avatar URL if avatar hash exists
+                if user["avatar"]:
+                    poll["creator_avatar_url"] = f"https://cdn.discordapp.com/avatars/{creator_id}/{user['avatar']}.png"
+                else:
+                    poll["creator_avatar_url"] = None
+            else:
+                # Fallback for users not in database
+                poll["creator_username"] = f"User {creator_id[:8]}..." if creator_id else "Unknown"
+                poll["creator_avatar_url"] = None
         
         return templates.TemplateResponse(
             "htmx/super_admin_polls_table_enhanced.html",

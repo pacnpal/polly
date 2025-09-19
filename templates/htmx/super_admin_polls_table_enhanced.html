@@ -47,7 +47,7 @@
             </div>
             <div class="col-md-3">
                 <label for="creator-filter" class="form-label">Creator Filter</label>
-                <input type="text" class="form-control form-control-sm" id="creator-filter" placeholder="Creator ID">
+                <input type="text" class="form-control form-control-sm" id="creator-filter" placeholder="Username or ID">
             </div>
             <div class="col-md-3">
                 <button id="select-by-filter" class="btn btn-sm btn-primary me-2">
@@ -65,19 +65,33 @@
     <table class="table table-hover poll-table mb-0">
         <thead class="table-dark">
             <tr>
-                <th style="width: 50px;">
+                <th style="width: 50px; resize: horizontal; overflow: auto;">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="select-all" title="Select All Visible">
                     </div>
                 </th>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Server</th>
-                <th>Creator</th>
-                <th>Votes</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th class="sortable" data-sort="id" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    ID <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th class="sortable" data-sort="name" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    Name <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th class="sortable" data-sort="status" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    Status <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th class="sortable" data-sort="server_name" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    Server <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th class="sortable" data-sort="creator_username" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    Creator <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th class="sortable" data-sort="vote_count" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    Votes <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th class="sortable" data-sort="created_at" style="cursor: pointer; resize: horizontal; overflow: auto;">
+                    Created <i class="fas fa-sort text-muted"></i>
+                </th>
+                <th style="resize: horizontal; overflow: auto;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -113,8 +127,22 @@
                     <br><small class="text-muted">{{ poll.server_id }}</small>
                 </td>
                 <td>
-                    <div>{{ poll.creator_username or 'Unknown' }}</div>
-                    <small class="text-muted">{{ poll.creator_id[:8] }}...</small>
+                    <div class="d-flex align-items-center">
+                        {% if poll.creator_avatar_url %}
+                        <img src="{{ poll.creator_avatar_url }}" class="rounded-circle me-2" width="24" height="24" alt="Avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="bg-secondary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px; display: none;">
+                            <i class="fas fa-user text-white" style="font-size: 12px;"></i>
+                        </div>
+                        {% else %}
+                        <div class="bg-secondary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
+                            <i class="fas fa-user text-white" style="font-size: 12px;"></i>
+                        </div>
+                        {% endif %}
+                        <div>
+                            <div class="fw-bold">{{ poll.creator_username or 'Unknown' }}</div>
+                            <small class="text-muted">{{ poll.creator_id[:8] }}...</small>
+                        </div>
+                    </div>
                 </td>
                 <td>
                     <div class="fw-bold">{{ poll.vote_count }}</div>
@@ -227,5 +255,44 @@
     .bulk-action-btn {
         width: 100%;
     }
+}
+
+/* Column resizing and sorting styles */
+.sortable:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.sortable .fas {
+    font-size: 0.8em;
+    margin-left: 0.25rem;
+}
+
+.sortable[data-sort-direction="asc"] .fas:before {
+    content: "\f0de"; /* fa-sort-up */
+}
+
+.sortable[data-sort-direction="desc"] .fas:before {
+    content: "\f0dd"; /* fa-sort-down */
+}
+
+.table th {
+    position: relative;
+    min-width: 80px;
+}
+
+/* Resizable columns */
+.table th::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+}
+
+.table th:hover::after {
+    background: rgba(255, 255, 255, 0.3);
 }
 </style>

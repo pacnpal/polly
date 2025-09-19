@@ -480,6 +480,7 @@
                 // Check if this was the polls container being loaded
                 if (event.target.id === 'polls-container') {
                     setTimeout(initializeBulkOperations, 100); // Small delay to ensure DOM is ready
+                    setTimeout(initializeTableFeatures, 100); // Initialize table sorting and resizing
                 }
             });
             
@@ -489,6 +490,126 @@
             // Set up periodic checks for active operations
             setInterval(checkActiveOperations, 30000); // Check every 30 seconds
         });
+
+        // Initialize table sorting and resizing features
+        function initializeTableFeatures() {
+            initializeTableSorting();
+            initializeColumnResizing();
+        }
+
+        // Table sorting functionality
+        function initializeTableSorting() {
+            const sortableHeaders = document.querySelectorAll('.sortable');
+            sortableHeaders.forEach(header => {
+                header.addEventListener('click', function() {
+                    const sortColumn = this.getAttribute('data-sort');
+                    const currentDirection = this.getAttribute('data-sort-direction') || 'none';
+                    
+                    // Clear all other sort indicators
+                    sortableHeaders.forEach(h => {
+                        h.removeAttribute('data-sort-direction');
+                        const icon = h.querySelector('.fas');
+                        if (icon) {
+                            icon.className = 'fas fa-sort text-muted';
+                        }
+                    });
+                    
+                    // Set new sort direction
+                    let newDirection = 'asc';
+                    if (currentDirection === 'asc') {
+                        newDirection = 'desc';
+                    } else if (currentDirection === 'desc') {
+                        newDirection = 'asc';
+                    }
+                    
+                    this.setAttribute('data-sort-direction', newDirection);
+                    const icon = this.querySelector('.fas');
+                    if (icon) {
+                        icon.className = newDirection === 'asc' ? 'fas fa-sort-up text-light' : 'fas fa-sort-down text-light';
+                    }
+                    
+                    // Reload table with sorting
+                    loadTableWithSort(sortColumn, newDirection);
+                });
+            });
+        }
+
+        // Load table with sorting parameters
+        function loadTableWithSort(sortBy, sortOrder) {
+            const currentFilters = {
+                status: document.getElementById('status-filter')?.value || '',
+                server: document.getElementById('server-filter')?.value || '',
+                creator: document.getElementById('creator-filter')?.value || ''
+            };
+            
+            const params = new URLSearchParams({
+                ...currentFilters,
+                sort_by: sortBy,
+                sort_order: sortOrder
+            });
+            
+            htmx.ajax('GET', `/super-admin/htmx/polls-enhanced?${params.toString()}`, {
+                target: '#polls-container',
+                swap: 'innerHTML'
+            });
+        }
+
+        // Column resizing functionality
+        function initializeColumnResizing() {
+            const table = document.querySelector('.poll-table');
+            if (!table) return;
+            
+            const headers = table.querySelectorAll('th');
+            
+            headers.forEach(header => {
+                let isResizing = false;
+                let startX = 0;
+                let startWidth = 0;
+                
+                header.addEventListener('mousedown', function(e) {
+                    const rect = this.getBoundingClientRect();
+                    const isRightEdge = e.clientX > rect.right - 10;
+                    
+                    if (isRightEdge) {
+                        isResizing = true;
+                        startX = e.clientX;
+                        startWidth = parseInt(document.defaultView.getComputedStyle(this).width, 10);
+                        document.addEventListener('mousemove', handleMouseMove);
+                        document.addEventListener('mouseup', handleMouseUp);
+                        e.preventDefault();
+                    }
+                });
+                
+                function handleMouseMove(e) {
+                    if (isResizing) {
+                        const width = startWidth + e.clientX - startX;
+                        header.style.width = Math.max(80, width) + 'px';
+                    }
+                }
+                
+                function handleMouseUp() {
+                    isResizing = false;
+                    document.removeEventListener('mousemove', handleMouseMove);
+                    document.removeEventListener('mouseup', handleMouseUp);
+                }
+            });
+        }
+
+        // Enhanced filter functionality
+        function applyFilters() {
+            const filters = {
+                status: document.getElementById('status-filter')?.value || '',
+                server: document.getElementById('server-filter')?.value || '',
+                creator: document.getElementById('creator-filter')?.value || ''
+            };
+            
+            const params = new URLSearchParams(filters);
+            
+            htmx.ajax('GET', `/super-admin/htmx/polls-enhanced?${params.toString()}`, {
+                target: '#polls-container',
+                swap: 'innerHTML'
+            });
+        }
 
         // Enhanced functions
         function showBulkOperationsHelp() {
