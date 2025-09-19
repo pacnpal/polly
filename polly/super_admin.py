@@ -31,9 +31,19 @@ def get_super_admin_ids() -> List[str]:
 
 SUPER_ADMIN_IDS = get_super_admin_ids()
 
+def safe_get_user_id_for_admin_check(user) -> Optional[str]:
+    """Safely extract user ID for admin check, handling Depends object issues"""
+    try:
+        if hasattr(user, 'id'):
+            return user.id
+        return None
+    except (AttributeError, TypeError):
+        return None
+
 def is_super_admin(user: DiscordUser) -> bool:
     """Check if user is a super admin"""
-    return user.id in SUPER_ADMIN_IDS
+    user_id = safe_get_user_id_for_admin_check(user)
+    return user_id is not None and user_id in SUPER_ADMIN_IDS
 
 async def require_super_admin(
     current_user: DiscordUser = Depends(require_auth),
