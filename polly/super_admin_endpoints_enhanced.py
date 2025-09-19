@@ -308,23 +308,20 @@ async def list_bulk_operations_api(
         limit=limit
     )
     
-    return {
-        "operations": [
-            {
-                "operation_id": op.operation_id,
-                "operation_type": op.operation_type.value,
-                "status": op.status.value,
-                "total_items": op.total_items,
-                "successful_items": op.successful_items,
-                "failed_items": op.failed_items,
-                "progress_percentage": op.progress_percentage,
-                "start_time": op.start_time.isoformat(),
-                "completion_time": op.completion_time.isoformat() if op.completion_time else None
-            }
-            for op in operations
-        ],
-        "total_count": len(operations)
-    }
+    return [
+        {
+            "operation_id": op.operation_id,
+            "operation_type": op.operation_type.value,
+            "status": op.status.value,
+            "total_items": op.total_items,
+            "successful_items": op.successful_items,
+            "failed_items": op.failed_items,
+            "progress_percentage": op.progress_percentage,
+            "start_time": op.start_time.isoformat(),
+            "completion_time": op.completion_time.isoformat() if op.completion_time else None
+        }
+        for op in operations
+    ]
 
 
 @handle_super_admin_errors(operation_name="get_selection")
