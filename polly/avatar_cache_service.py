@@ -54,8 +54,7 @@ class AvatarCacheService:
         self.enhanced_cache = get_enhanced_cache_service()
         
         # Configuration
-        self.max_file_size_mb = 2  # Maximum avatar file size
-        self.max_dimension = 256  # Maximum width/height for avatars
+        # Note: No file size limit for avatar downloads as per user requirement
         self.compression_quality = 85  # JPEG quality for compression
         self.enable_webp = True  # Convert to WebP for better compression
         self.enable_deduplication = True  # Enable deduplication by hash
@@ -130,12 +129,8 @@ class AvatarCacheService:
                         if response.status == 200:
                             content = await response.read()
                             
-                            # Check file size
+                            # Log download size (no size limit enforced)
                             size_mb = len(content) / (1024 * 1024)
-                            if size_mb > self.max_file_size_mb:
-                                logger.warning(f"⚠️ AVATAR DOWNLOAD - Avatar too large ({size_mb:.1f}MB > {self.max_file_size_mb}MB): {avatar_url}")
-                                return None
-                            
                             logger.info(f"✅ AVATAR DOWNLOAD - Downloaded {size_mb:.1f}MB: {avatar_url}")
                             return content
                         else:
@@ -507,7 +502,7 @@ class AvatarCacheService:
             },
             "cache_stats": {},
             "deduplication_enabled": self.enable_deduplication,
-            "max_file_size_mb": self.max_file_size_mb,
+            "max_file_size_mb": None,  # No file size limit for avatar downloads
             "max_dimension": self.max_dimension,
             "timestamp": datetime.now().isoformat()
         }
