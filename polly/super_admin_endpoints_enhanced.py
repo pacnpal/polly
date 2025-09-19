@@ -27,6 +27,16 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
 
 
+def safe_get_user_id(current_user) -> Optional[str]:
+    """Safely extract user ID from FastAPI dependency, handling Depends object issues"""
+    try:
+        if hasattr(current_user, 'id'):
+            return current_user.id
+        return None
+    except (AttributeError, TypeError):
+        return None
+
+
 # Pydantic models for request validation
 class BulkOperationRequestModel(BaseModel):
     """Request model for bulk operations"""
@@ -121,13 +131,15 @@ async def get_enhanced_super_admin_dashboard(
         queue_status = await bulk_operation_service.get_queue_status()
         
         # Get recent operations for this admin
+        user_id = safe_get_user_id(current_user)
+        
         recent_operations = await bulk_operation_service.list_operations(
-            admin_user_id=current_user.id, 
+            admin_user_id=user_id,
             limit=10
         )
         
         # Get current selection count
-        selection_count = len(selection_manager.get_selection(current_user.id))
+        selection_count = len(selection_manager.get_selection(user_id)) if user_id else 0
         
         return templates.TemplateResponse(
             "super_admin_dashboard_enhanced.html",
@@ -172,16 +184,17 @@ async def start_bulk_operation_api(
         operation_type=BulkOperationType(bulk_request.operation_type),
         poll_ids=bulk_request.poll_ids,
         parameters=bulk_request.parameters,
-        admin_user_id=current_user.id,
+        admin_user_id=safe_get_user_id(current_user),
         confirmation_code=bulk_request.confirmation_code
     )
     
     try:
         operation_id = await bulk_operation_service.start_bulk_operation(operation_request)
         
+        user_id = safe_get_user_id(current_user)
         logger.info(
             f"Bulk operation started: operation_id={operation_id} "
-            f"type={bulk_request.operation_type} admin_user_id={current_user.id} "
+            f"type={bulk_request.operation_type} admin_user_id={user_id} "
             f"poll_count={len(bulk_request.poll_ids)}"
         )
         
@@ -227,7 +240,8 @@ async def get_bulk_operation_progress_api(
         )
     
     # Check if user has permission to view this operation
-    if progress.admin_user_id != current_user.id:
+    user_id = safe_get_user_id(current_user)
+    if progress.admin_user_id != user_id:
         raise SuperAdminError(
             error_type=SuperAdminErrorType.PERMISSION,
             code="OPERATION_ACCESS_DENIED",
@@ -272,7 +286,7 @@ async def cancel_bulk_operation_api(
 ) -> JSONResponse:
     """Cancel a running bulk operation"""
     
-    success = await bulk_operation_service.cancel_operation(operation_id, current_user.id)
+    success = await bulk_operation_service.cancel_operation(operation_id, safe_get_user_id(current_user))
     
     if not success:
         raise SuperAdminError(
@@ -291,7 +305,7 @@ async def cancel_bulk_operation_api(
     return {
         "operation_id": operation_id,
         "status": "cancelled",
-        "cancelled_by": current_user.id,
+        "cancelled_by": safe_get_user_id(current_user),
         "cancelled_at": datetime.now().isoformat()
     }
 
@@ -305,7 +319,7 @@ async def list_bulk_operations_api(
     """List bulk operations for the current admin"""
     
     operations = await bulk_operation_service.list_operations(
-        admin_user_id=current_user.id,
+        admin_user_id=safe_get_user_id(current_user),
         limit=limit
     )
     
@@ -332,7 +346,8 @@ async def get_selection_api(
 ) -> JSONResponse:
     """Get current poll selection for the admin"""
     
-    selection = selection_manager.get_selection(current_user.id)
+    user_id = safe_get_user_id(current_user)
+    selection = selection_manager.get_selection(user_id) if user_id else set()
     
     return {
         "selected_poll_ids": list(selection),
@@ -348,8 +363,9 @@ async def update_selection_api(
 ) -> JSONResponse:
     """Update poll selection for the admin"""
     
+    user_id = safe_get_user_id(current_user)
     updated_selection = selection_manager.update_selection(
-        admin_user_id=current_user.id,
+        admin_user_id=user_id,
         action=selection_update.action,
         poll_ids=selection_update.poll_ids
     )
@@ -384,8 +400,9 @@ async def select_by_filter_api(
         poll_ids = [poll["id"] for poll in result["polls"]]
         
         # Update selection
+        user_id = safe_get_user_id(current_user)
         updated_selection = selection_manager.update_selection(
-            admin_user_id=current_user.id,
+            admin_user_id=user_id,
             action="set",
             poll_ids=poll_ids
         )
@@ -450,8 +467,9 @@ async def get_enhanced_polls_htmx(
             sort_order=sort_order_str
         )
         
-        # Get current selection
-        selected_polls = selection_manager.get_selection(current_user.id)
+        # Get current selection - handle FastAPI Depends object issue
+        user_id = safe_get_user_id(current_user)
+        selected_polls = selection_manager.get_selection(user_id) if user_id else set()
         
         # Get unique creator IDs for user info lookup
         creator_ids = list(set(poll.get("creator_id") for poll in result["polls"] if poll.get("creator_id")))

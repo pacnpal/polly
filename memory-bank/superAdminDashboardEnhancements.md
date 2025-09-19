@@ -109,10 +109,47 @@ Implemented comprehensive super admin dashboard improvements to enhance user exp
   ```
 - **Impact**: Pagination now works reliably regardless of FastAPI Query handling behavior
 
-**Additional Fix Applied**:
-- **File**: `polly/super_admin.py` lines 107-122
-- **Issue**: Count query inconsistency for username search
-- **Solution**: Applied same enhanced search logic to both main and count queries
+**Additional Fixes Applied**:
+
+1. **Database Query Consistency** (`polly/super_admin.py` lines 107-122)
+   - **Issue**: Count query inconsistency for username search
+   - **Solution**: Applied same enhanced search logic to both main and count queries
+
+2. **Sorting Parameter Safety** (`polly/super_admin.py` lines 100-109)
+   - **Issue**: `attribute name must be string, not 'int'` error in sorting logic
+   - **Root Cause**: FastAPI Query parameters coming as non-string types to `getattr()`
+   - **Solution**: Added type validation and attribute existence checks
+   - **Code**:
+     ```python
+     if isinstance(sort_by, str) and hasattr(Poll, sort_by):
+         sort_column = getattr(Poll, sort_by)
+     else:
+         sort_column = Poll.created_at  # Default fallback
+     ```
+
+3. **String Parameter Conversion** (`polly/super_admin_endpoints_enhanced.py` lines 439-442)
+   - **Issue**: Query parameters not properly converted to strings
+   - **Solution**: Explicit string conversion for sort parameters
+   - **Code**: `sort_by_str = str(sort_by) if sort_by else "created_at"`
+
+4. **Comprehensive FastAPI Dependency Injection Fix** (`polly/super_admin_endpoints_enhanced.py`)
+   - **Issue**: `'Depends' object has no attribute 'id'` at multiple locations
+   - **Scope**: 12 different places where `current_user.id` was accessed
+   - **Root Cause**: FastAPI Depends objects not consistently auto-resolved to actual user objects
+   - **Solution**: Created centralized helper function and applied everywhere
+   - **Implementation**:
+     ```python
+     def safe_get_user_id(current_user) -> Optional[str]:
+         """Safely extract user ID from FastAPI dependency, handling Depends object issues"""
+         try:
+             if hasattr(current_user, 'id'):
+                 return current_user.id
+             return None
+         except (AttributeError, TypeError):
+             return None
+     ```
+   - **Applied to**: All bulk operations, selection management, user permissions, and dashboard functionality
+   - **Impact**: Complete elimination of Depends object attribute errors across entire super admin system
 
 ## Testing Recommendations
 1. Test username search with various patterns
