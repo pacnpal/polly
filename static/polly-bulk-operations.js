@@ -53,7 +53,7 @@ class BulkOperationManager {
             const data = await response.json();
             
             if (data.success) {
-                this.selectedPollIds = new Set(data.data.selected_poll_ids);
+                this.selectedPollIds = new Set(data.data.selected_poll_ids || data.selected_poll_ids || []);
                 this.updateUI();
             }
         } catch (error) {
@@ -336,13 +336,14 @@ class BulkOperationManager {
             const data = await response.json();
             
             if (data.success) {
-                this.updateProgressUI(data.data);
+                const responseData = data.data || data;
+                this.updateProgressUI(responseData);
                 
-                if (['completed', 'failed', 'cancelled'].includes(data.data.status)) {
+                if (['completed', 'failed', 'cancelled'].includes(responseData.status)) {
                     clearInterval(this.progressInterval);
                     this.progressInterval = null;
                     this.currentOperation = null;
-                    this.showOperationResults(data.data);
+                    this.showOperationResults(responseData);
                 }
             }
         } catch (error) {
