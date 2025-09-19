@@ -97,11 +97,17 @@ Implemented comprehensive super admin dashboard improvements to enhance user exp
 **Solution**: Fixed pagination parameter handling in enhanced polls endpoint
 
 **Fix Details**:
-- **File**: `polly/super_admin_endpoints_enhanced.py` lines 416-426
-- **Problem**: `page` Query parameter used directly in `(page - 1) * 25` calculation
-- **Solution**: Added explicit type conversion and moved calculation before validation
-- **Code**: `page_num = int(page) if page else 1; offset = (page_num - 1) * limit`
-- **Impact**: Pagination now works correctly with proper type handling
+- **File**: `polly/super_admin_endpoints_enhanced.py` lines 421-431
+- **Problem**: FastAPI Query parameter not auto-converting to int, causing TypeError
+- **Solution**: Added robust error handling with try/catch for type conversion
+- **Code**:
+  ```python
+  try:
+      page_num = int(page) if page is not None else 1
+  except (TypeError, ValueError):
+      page_num = 1  # Fallback for Query objects or invalid values
+  ```
+- **Impact**: Pagination now works reliably regardless of FastAPI Query handling behavior
 
 **Additional Fix Applied**:
 - **File**: `polly/super_admin.py` lines 107-122

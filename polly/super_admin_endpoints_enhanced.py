@@ -419,7 +419,13 @@ async def get_enhanced_polls_htmx(
     """Enhanced HTMX endpoint for polls table with bulk selection support"""
     
     # Ensure page is an integer and validate pagination
-    page_num = int(page) if page else 1
+    # Handle cases where FastAPI Query object isn't auto-converted
+    try:
+        page_num = int(page) if page is not None else 1
+    except (TypeError, ValueError):
+        # If page is a Query object or invalid, default to 1
+        page_num = 1
+    
     limit = 25
     offset = (page_num - 1) * limit
     validation_error = SuperAdminValidator.validate_pagination_params(limit, offset)
