@@ -97,8 +97,13 @@ class SuperAdminService:
                     (Poll.creator_id.in_(user_ids_by_username))
                 )
             
-            # Apply sorting
-            sort_column = getattr(Poll, sort_by, Poll.created_at)
+            # Apply sorting with safety checks
+            # Ensure sort_by is a valid string and exists as Poll attribute
+            if isinstance(sort_by, str) and hasattr(Poll, sort_by):
+                sort_column = getattr(Poll, sort_by)
+            else:
+                sort_column = Poll.created_at  # Default fallback
+            
             if sort_order == "desc":
                 query = query.order_by(desc(sort_column))
             else:
