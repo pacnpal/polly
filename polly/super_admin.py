@@ -528,7 +528,7 @@ class SuperAdminService:
             db_session.delete(poll)
             db_session.commit()
             
-            logger.warning(f"Super admin {admin_user_id} deleted poll {poll_id} ({poll_name})")
+            logger.info(f"Super admin {admin_user_id} deleted poll {poll_id} ({poll_name})")
             
             return {
                 "success": True,

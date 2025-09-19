@@ -207,13 +207,13 @@ def setup_automatic_bot_owner_notifications():
     # Create and configure the handler
     _bot_owner_log_handler = BotOwnerLogHandler(level=logging.WARNING)
 
-    # Add to root logger to catch all WARNING+ logs
-    root_logger = logging.getLogger()
-    root_logger.addHandler(_bot_owner_log_handler)
-
-    # Also add to polly-specific loggers
+    # Add to polly-specific logger only to prevent duplication
+    # All polly.* module loggers will propagate to this handler
     polly_logger = logging.getLogger("polly")
     polly_logger.addHandler(_bot_owner_log_handler)
+    
+    # Note: Removed root logger handler to prevent duplicate notifications
+    # Root logger was causing double processing due to logger hierarchy propagation
 
     return _bot_owner_log_handler
 

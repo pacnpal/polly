@@ -282,7 +282,7 @@ async def delete_poll_api(
             result = super_admin_service.delete_poll(db, poll_id, current_user.id)
             
             if result["success"]:
-                logger.warning(f"Super admin {current_user.username} deleted poll {poll_id}")
+                logger.info(f"Super admin {current_user.username} deleted poll {poll_id}")
                 return JSONResponse(content=result)
             else:
                 return JSONResponse(content=result, status_code=400)
