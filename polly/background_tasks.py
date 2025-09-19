@@ -15,11 +15,13 @@ try:
     from .discord_utils import update_poll_message
     from .timezone_scheduler_fix import TimezoneAwareScheduler
     from .error_handler import PollErrorHandler
+    from .memory_utils import cleanup_background_tasks_memory, memory_cleanup_decorator, force_garbage_collection
 except ImportError:
     from database import get_db_session, Poll, Vote, TypeSafeColumn  # type: ignore
     from discord_utils import update_poll_message  # type: ignore
     from timezone_scheduler_fix import TimezoneAwareScheduler  # type: ignore
     from error_handler import PollErrorHandler  # type: ignore
+    from memory_utils import cleanup_background_tasks_memory, memory_cleanup_decorator, force_garbage_collection  # type: ignore
 # Track failed message fetch attempts for polls during runtime
 # Format: {poll_id: {"count": int, "first_failure": datetime, "last_attempt": datetime}}
 message_fetch_failures = {}
@@ -81,6 +83,7 @@ async def close_poll(poll_id: int):
         logger.error(f"❌ SCHEDULED CLOSE {poll_id} - Error handled: {error_msg}")
 
 
+@memory_cleanup_decorator()
 async def cleanup_polls_with_deleted_messages():
     """
     Check for polls whose Discord messages have been deleted and remove them from the database.
@@ -88,6 +91,9 @@ async def cleanup_polls_with_deleted_messages():
     This function checks all active and scheduled polls to see if their Discord messages still exist.
     If a message has been deleted, the poll is removed from the database to maintain consistency.
     """
+    # Clean up memory from global dictionaries to prevent memory leaks
+    cleanup_background_tasks_memory()
+    
     logger.info("🧹 MESSAGE CLEANUP - Starting cleanup of polls with deleted messages")
 
     from .discord_bot import get_bot_instance
