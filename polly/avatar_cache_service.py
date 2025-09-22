@@ -54,7 +54,7 @@ class AvatarCacheService:
         self.enhanced_cache = get_enhanced_cache_service()
         
         # Configuration
-        # Note: No file size limit for avatar downloads as per user requirement
+        self.max_file_size_mb = 2  # Maximum avatar file size
         self.compression_quality = 85  # JPEG quality for compression
         self.enable_webp = True  # Convert to WebP for better compression
         self.enable_deduplication = True  # Enable deduplication by hash
@@ -131,14 +131,18 @@ class AvatarCacheService:
                             
                             # Log download size (no size limit enforced)
                             size_mb = len(content) / (1024 * 1024)
+                            if size_mb > self.max_file_size_mb:
+                                logger.info(f"⚠️ AVATAR DOWNLOAD - Avatar too large ({size_mb:.1f}MB > {self.max_file_size_mb}MB): {avatar_url}")
+                                return None
+                            
                             logger.info(f"✅ AVATAR DOWNLOAD - Downloaded {size_mb:.1f}MB: {avatar_url}")
                             return content
                         else:
-                            logger.warning(f"⚠️ AVATAR DOWNLOAD - HTTP {response.status}: {avatar_url}")
+                            logger.info(f"⚠️ AVATAR DOWNLOAD - HTTP {response.status}: {avatar_url}")
                             return None
                             
             except asyncio.TimeoutError:
-                logger.warning(f"⏰ AVATAR DOWNLOAD - Timeout downloading: {avatar_url}")
+                logger.info(f"⏰ AVATAR DOWNLOAD - Timeout downloading: {avatar_url}")
                 return None
             except Exception as e:
                 logger.error(f"❌ AVATAR DOWNLOAD - Error downloading {avatar_url}: {e}")
@@ -171,10 +175,8 @@ class AvatarCacheService:
                 # Auto-orient based on EXIF
                 img = ImageOps.exif_transpose(img)
                 
-                # Resize if too large
-                if img.width > self.max_dimension or img.height > self.max_dimension:
-                    img.thumbnail((self.max_dimension, self.max_dimension), Image.Resampling.LANCZOS)
-                    logger.debug(f"📏 AVATAR RESIZE - Resized to {img.size}")
+                # Skip resizing - keep original dimensions to avoid attribute errors
+                logger.debug(f"📏 AVATAR SIZE - Keeping original size: {img.size}")
                 
                 # Convert format if needed
                 if target_format == 'webp':
@@ -502,8 +504,7 @@ class AvatarCacheService:
             },
             "cache_stats": {},
             "deduplication_enabled": self.enable_deduplication,
-            "max_file_size_mb": None,  # No file size limit for avatar downloads
-            "max_dimension": self.max_dimension,
+            "max_file_size_mb": self.max_file_size_mb,
             "timestamp": datetime.now().isoformat()
         }
         
