@@ -322,7 +322,7 @@ async def cleanup_used_fallback_token_delayed(token: str, delay_seconds: int):
 
 async def get_user_preferences(user_id: str) -> dict:
     """Get user preferences for poll creation with Redis caching"""
-    from .cache_service import get_cache_service
+    from .services.cache.cache_service import get_cache_service
 
     cache_service = get_cache_service()
 
@@ -375,7 +375,7 @@ async def save_user_preferences(
     user_id: str, server_id: str = None, channel_id: str = None, timezone: str = None
 ):
     """Save user preferences for poll creation with cache invalidation"""
-    from .cache_service import get_cache_service
+    from .services.cache.cache_service import get_cache_service
 
     cache_service = get_cache_service()
 
@@ -650,7 +650,7 @@ def add_core_routes(app: FastAPI):
     @app.get("/health")
     async def health_check():
         """Health check endpoint including Redis status"""
-        from .cache_service import get_cache_service
+        from .services.cache.cache_service import get_cache_service
 
         cache_service = get_cache_service()
         redis_health = await cache_service.health_check()

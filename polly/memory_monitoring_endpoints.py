@@ -14,7 +14,6 @@ try:
     from .memory_optimizer import get_memory_stats as get_advanced_memory_stats
 except ImportError:
     from memory_utils import cleanup_global_dict, force_garbage_collection  # type: ignore
-    from memory_optimizer import get_advanced_memory_stats  # type: ignore
 
 
 def get_system_memory_info() -> Dict[str, Any]:

@@ -309,7 +309,7 @@ class SuperAdminService:
             logger.info(f"Super admin {admin_user_id} initiating force close for poll {poll_id}: '{poll_name}'")
 
             # Use the unified closure service for consistent behavior
-            from .poll_closure_service import poll_closure_service
+            from .services.poll.poll_closure_service import poll_closure_service
             
             result = await poll_closure_service.close_poll_unified(
                 poll_id=poll_id,
@@ -371,7 +371,7 @@ class SuperAdminService:
             logger.info(f"🔄 SUPER ADMIN REOPEN - Starting reopen for poll {poll_id} '{poll_name}'")
             
             # Use the unified reopening service for all reopen operations
-            from .poll_reopen_service import poll_reopening_service
+            from .services.poll.poll_reopen_service import poll_reopening_service
             from .discord_bot import get_bot_instance
             
             bot = get_bot_instance()

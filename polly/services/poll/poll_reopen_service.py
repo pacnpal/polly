@@ -8,12 +8,10 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import pytz
-import discord
-from pathlib import Path
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn
-from .error_handler import PollErrorHandler
-from .discord_utils import update_poll_message
+from ...database import get_db_session, Poll, Vote, TypeSafeColumn
+from ...error_handler import PollErrorHandler
+from ...discord_utils import update_poll_message
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +51,7 @@ class PollReopeningService:
             
             # Get bot instance if not provided
             if not bot_instance:
-                from .discord_bot import get_bot_instance
+                from ...discord_bot import get_bot_instance
                 bot_instance = get_bot_instance()
                 
             if not bot_instance:
@@ -205,8 +203,8 @@ class PollReopeningService:
             # STEP 6: Schedule poll closure if extended
             if extend_minutes and extend_minutes > 0:
                 try:
-                    from .background_tasks import get_scheduler
-                    from .timezone_scheduler_fix import TimezoneAwareScheduler
+                    from ...background_tasks import get_scheduler
+                    from ...timezone_scheduler_fix import TimezoneAwareScheduler
                     
                     scheduler = get_scheduler()
                     if scheduler and scheduler.running:
@@ -227,7 +225,7 @@ class PollReopeningService:
                                 
                                 # Ensure we have a proper datetime object
                                 if poll_close_time and isinstance(poll_close_time, datetime) and poll_close_time > datetime.now(pytz.UTC):
-                                    from .background_tasks import close_poll
+                                    from ...background_tasks import close_poll
                                     
                                     tz_scheduler = TimezoneAwareScheduler(scheduler)
                                     success = tz_scheduler.schedule_poll_closing(
@@ -247,7 +245,7 @@ class PollReopeningService:
 
             # STEP 7: Cache management - invalidate stale caches
             try:
-                from .enhanced_cache_service import get_enhanced_cache_service
+                from ..cache.enhanced_cache_service import get_enhanced_cache_service
                 
                 enhanced_cache = get_enhanced_cache_service()
                 if enhanced_cache:

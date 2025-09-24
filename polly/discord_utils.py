@@ -1447,3 +1447,64 @@ def user_has_admin_permissions(member: discord.Member) -> bool:
         or member.guild_permissions.manage_guild
         or member.guild_permissions.manage_channels
     )
+
+
+
+async def update_poll_message_content(bot: commands.Bot, poll_id: int) -> Dict[str, Any]:
+    """
+    Update Discord message content after poll editing - wrapper for poll edit contexts
+    
+    This function is specifically designed for the poll edit service to update Discord
+    messages when polls are edited. It fetches the poll and uses the existing 
+    update_poll_message function.
+    
+    Args:
+        bot: Discord bot instance
+        poll_id: ID of the poll to update
+        
+    Returns:
+        Dict with success status and details
+    """
+    try:
+        logger.info(f"🔄 UPDATE CONTENT - Starting Discord message update for poll {poll_id}")
+        
+        if not bot:
+            logger.error(f"❌ UPDATE CONTENT - Bot instance not available for poll {poll_id}")
+            return {"success": False, "error": "Bot instance not available"}
+            
+        # Fetch the poll from database
+        db = get_db_session()
+        try:
+            poll = db.query(Poll).filter(Poll.id == poll_id).first()
+            if not poll:
+                logger.error(f"❌ UPDATE CONTENT - Poll {poll_id} not found in database")
+                return {"success": False, "error": f"Poll {poll_id} not found"}
+                
+            # Use the existing update_poll_message function
+            success = await update_poll_message(bot, poll)
+            
+            if success:
+                logger.info(f"✅ UPDATE CONTENT - Successfully updated Discord message for poll {poll_id}")
+                return {
+                    "success": True, 
+                    "message": f"Discord message updated for poll {poll_id}",
+                    "poll_id": poll_id
+                }
+            else:
+                logger.warning(f"⚠️ UPDATE CONTENT - Discord message update returned false for poll {poll_id}")
+                return {
+                    "success": False, 
+                    "error": f"Discord message update failed for poll {poll_id}",
+                    "poll_id": poll_id
+                }
+                
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ UPDATE CONTENT - Error updating Discord message for poll {poll_id}: {e}")
+        return {
+            "success": False, 
+            "error": f"Discord update failed: {str(e)}",
+            "poll_id": poll_id
+        }

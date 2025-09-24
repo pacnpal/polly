@@ -4,12 +4,10 @@ Unified poll closure procedures for consistent behavior across all closing metho
 """
 
 import logging
-from datetime import datetime
 from typing import Dict, Any, Optional
-import pytz
 import discord
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn
+from .database import get_db_session, Poll, TypeSafeColumn
 from .error_handler import PollErrorHandler
 
 logger = logging.getLogger(__name__)

@@ -21,7 +21,7 @@ except ImportError:
     from discord_utils import update_poll_message  # type: ignore
     from timezone_scheduler_fix import TimezoneAwareScheduler  # type: ignore
     from error_handler import PollErrorHandler  # type: ignore
-    from memory_utils import cleanup_background_tasks_memory, memory_cleanup_decorator, force_garbage_collection  # type: ignore
+    from memory_utils import cleanup_background_tasks_memory, memory_cleanup_decorator  # type: ignore
 # Track failed message fetch attempts for polls during runtime
 # Format: {poll_id: {"count": int, "first_failure": datetime, "last_attempt": datetime}}
 message_fetch_failures = {}
@@ -58,7 +58,7 @@ async def close_poll(poll_id: int):
         logger.info(f"🏁 SCHEDULED CLOSE {poll_id} - Starting scheduled poll closure")
         
         # Use the unified closure service for consistent behavior
-        from .poll_closure_service import poll_closure_service
+        from .services.poll.poll_closure_service import poll_closure_service
         
         result = await poll_closure_service.close_poll_unified(
             poll_id=poll_id,
@@ -339,7 +339,7 @@ async def fix_closed_polls_discord_messages_on_startup():
     try:
         from .discord_bot import get_bot_instance
         from sqlalchemy.orm import joinedload
-        from .enhanced_cache_service import get_enhanced_cache_service
+        from .services.cache.enhanced_cache_service import get_enhanced_cache_service
         import discord
         
         logger.info("🔧 STARTUP FIX - Starting Discord message fix for existing closed polls")
@@ -647,7 +647,7 @@ async def run_static_content_recovery_on_startup():
                 poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
 
                 # Schedule poll opening using unified opening service
-                from .poll_open_service import poll_opening_service
+                from .services.poll.poll_open_service import poll_opening_service
                 
                 async def open_poll_scheduled(bot_instance, poll_id):
                     """Wrapper function for scheduled poll opening"""

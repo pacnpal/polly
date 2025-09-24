@@ -66,7 +66,7 @@ async def on_ready():
 async def on_guild_role_create(role):
     """Handle guild role creation - invalidate role cache"""
     try:
-        from .enhanced_cache_service import get_enhanced_cache_service
+        from .services.cache.enhanced_cache_service import get_enhanced_cache_service
         cache_service = get_enhanced_cache_service()
         
         invalidated = await cache_service.invalidate_guild_roles_cache(str(role.guild.id))
@@ -79,7 +79,7 @@ async def on_guild_role_create(role):
 async def on_guild_role_delete(role):
     """Handle guild role deletion - invalidate role cache"""
     try:
-        from .enhanced_cache_service import get_enhanced_cache_service
+        from .services.cache.enhanced_cache_service import get_enhanced_cache_service
         cache_service = get_enhanced_cache_service()
         
         invalidated = await cache_service.invalidate_guild_roles_cache(str(role.guild.id))
@@ -100,7 +100,7 @@ async def on_guild_role_update(before, after):
         )
         
         if permissions_changed:
-            from .enhanced_cache_service import get_enhanced_cache_service
+            from .services.cache.enhanced_cache_service import get_enhanced_cache_service
             cache_service = get_enhanced_cache_service()
             
             invalidated = await cache_service.invalidate_guild_roles_cache(str(after.guild.id))

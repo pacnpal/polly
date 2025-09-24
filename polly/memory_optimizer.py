@@ -82,7 +82,7 @@ def memory_profile(func):
             memory_monitor.log_memory_checkpoint(f"{func_name}_end")
             memory_monitor.compare_checkpoints(f"{func_name}_start", f"{func_name}_end")
             return result
-        except Exception as e:
+        except Exception:
             memory_monitor.log_memory_checkpoint(f"{func_name}_error")
             memory_monitor.compare_checkpoints(f"{func_name}_start", f"{func_name}_error")
             raise
@@ -97,7 +97,7 @@ def memory_profile(func):
             memory_monitor.log_memory_checkpoint(f"{func_name}_end")
             memory_monitor.compare_checkpoints(f"{func_name}_start", f"{func_name}_end")
             return result
-        except Exception as e:
+        except Exception:
             memory_monitor.log_memory_checkpoint(f"{func_name}_error")
             memory_monitor.compare_checkpoints(f"{func_name}_start", f"{func_name}_error")
             raise

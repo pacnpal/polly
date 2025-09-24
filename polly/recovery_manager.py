@@ -180,7 +180,7 @@ class RecoveryManager:
             
             # Use unified opening service to recover the poll
             try:
-                from .poll_open_service import poll_opening_service
+                from .services.poll.poll_open_service import poll_opening_service
                 
                 result = await poll_opening_service.open_poll_unified(
                     poll_id=poll_id,
@@ -217,7 +217,7 @@ class RecoveryManager:
                 
                 # Message was deleted - use unified opening service to recreate it
                 try:
-                    from .poll_open_service import poll_opening_service
+                    from .services.poll.poll_open_service import poll_opening_service
                     
                     result = await poll_opening_service.open_poll_unified(
                         poll_id=poll_id,
@@ -409,7 +409,7 @@ class RecoveryManager:
         logger.info("🔥 RECOVERY MANAGER - Warming caches")
         
         try:
-            from .enhanced_cache_service import get_enhanced_cache_service
+            from .services.cache.enhanced_cache_service import get_enhanced_cache_service
             cache_service = get_enhanced_cache_service()
             
             # Warm guild emoji caches for active polls

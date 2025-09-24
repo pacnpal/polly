@@ -598,7 +598,7 @@ class DiscordEmojiHandler:
         """
         try:
             # Import enhanced cache service
-            from .enhanced_cache_service import get_enhanced_cache_service
+            from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
             enhanced_cache = get_enhanced_cache_service()
 

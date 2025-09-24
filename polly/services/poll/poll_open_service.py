@@ -10,8 +10,8 @@ import pytz
 import discord
 from pathlib import Path
 
-from .database import get_db_session, Poll, Vote, TypeSafeColumn
-from .error_handler import PollErrorHandler
+from ...database import get_db_session, Poll, TypeSafeColumn
+from ...error_handler import PollErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class PollOpeningService:
             
             # Get bot instance if not provided
             if not bot_instance:
-                from .discord_bot import get_bot_instance
+                from ...discord_bot import get_bot_instance
                 bot_instance = get_bot_instance()
                 
             if not bot_instance:
@@ -97,7 +97,7 @@ class PollOpeningService:
             # STEP 2: Comprehensive field validation
             logger.info(f"🔍 UNIFIED OPEN {poll_id} - Running comprehensive field validation")
             try:
-                from .poll_field_validator import PollFieldValidator
+                from ...poll_field_validator import PollFieldValidator
                 
                 validation_result = await PollFieldValidator.validate_poll_fields_before_posting(
                     poll_id, bot_instance
@@ -176,7 +176,7 @@ class PollOpeningService:
             # STEP 5: Post poll to Discord using existing robust function with role mention
             logger.info(f"📊 UNIFIED OPEN {poll_id} - Posting poll to Discord")
             try:
-                from .discord_utils import post_poll_to_channel
+                from ...discord_utils import post_poll_to_channel
                 
                 post_result = await post_poll_to_channel(bot_instance, poll_id, role_mention_content)
                 
@@ -234,8 +234,8 @@ class PollOpeningService:
 
             # STEP 7: Schedule poll closure if not already scheduled
             try:
-                from .background_tasks import get_scheduler
-                from .timezone_scheduler_fix import TimezoneAwareScheduler
+                from ...background_tasks import get_scheduler
+                from ...timezone_scheduler_fix import TimezoneAwareScheduler
                 
                 scheduler = get_scheduler()
                 if scheduler and scheduler.running:
@@ -253,7 +253,7 @@ class PollOpeningService:
                                 poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
                                 
                                 if poll_close_time and poll_close_time > datetime.now(pytz.UTC):
-                                    from .background_tasks import close_poll
+                                    from ...background_tasks import close_poll
                                     
                                     tz_scheduler = TimezoneAwareScheduler(scheduler)
                                     success = tz_scheduler.schedule_poll_closing(
@@ -276,7 +276,7 @@ class PollOpeningService:
 
             # STEP 8: Cache management - invalidate stale caches and warm new ones
             try:
-                from .enhanced_cache_service import get_enhanced_cache_service
+                from ..cache.enhanced_cache_service import get_enhanced_cache_service
                 
                 enhanced_cache = get_enhanced_cache_service()
                 if enhanced_cache:

@@ -4,7 +4,7 @@ Provides optimized database connection management with pooling and monitoring.
 """
 
 import logging
-from sqlalchemy import create_engine, pool
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager

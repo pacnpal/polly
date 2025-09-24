@@ -6,7 +6,7 @@ Basic memory management utilities without external dependencies.
 import gc
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Callable, Optional
 
 logger = logging.getLogger(__name__)
 

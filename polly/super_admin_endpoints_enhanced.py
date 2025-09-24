@@ -4,24 +4,23 @@ Provides comprehensive bulk operation capabilities and standardized error respon
 """
 
 import logging
-import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from fastapi import Request, Depends, HTTPException, Query, BackgroundTasks
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi import Request, Depends, Query, BackgroundTasks
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 
 from .super_admin import require_super_admin, super_admin_service, DiscordUser
 from .super_admin_error_handler import (
     handle_super_admin_errors, SuperAdminValidator, SuperAdminErrorType,
-    super_admin_error_handler, SuperAdminError
+    SuperAdminError
 )
-from .super_admin_bulk_operations import (
+from .services.admin.bulk_operations_service import (
     bulk_operation_service, BulkOperationType, BulkOperationRequest
 )
 from .database import get_db_session, User
-from .avatar_cache_service import AvatarCacheService
+from .services.cache.avatar_cache_service import AvatarCacheService
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
@@ -637,7 +636,7 @@ async def reopen_poll_api(
                 )
                 
             # Use the unified reopening service directly for enhanced functionality
-            from .poll_reopen_service import poll_reopening_service
+            from .services.poll.poll_reopen_service import poll_reopening_service
             
             # Convert extend_hours to extend_minutes for the service
             extend_minutes = extend_hours * 60 if extend_hours else None

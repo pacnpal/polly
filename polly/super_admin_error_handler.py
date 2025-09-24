@@ -8,7 +8,7 @@ import traceback
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, Optional, List, Callable, Union
+from typing import Dict, Any, Optional, List, Callable
 from functools import wraps
 from dataclasses import dataclass, asdict
 from fastapi import HTTPException, Request

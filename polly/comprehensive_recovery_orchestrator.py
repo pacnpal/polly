@@ -16,7 +16,7 @@ try:
     from .enhanced_recovery_validator import get_enhanced_recovery_validator, perform_enhanced_recovery_validation
     from .static_recovery import get_static_recovery
     from .background_tasks import restore_scheduled_jobs
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
     from .database import TypeSafeColumn
 except ImportError:
     # Fallback for direct execution

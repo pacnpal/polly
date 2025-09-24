@@ -15,8 +15,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 try:
     from .htmx_endpoints import format_datetime_for_user
     from .database import get_db_session, Poll, Vote, TypeSafeColumn
-    from .enhanced_cache_service import get_enhanced_cache_service
-    from .avatar_cache_service import get_avatar_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.avatar_cache_service import get_avatar_cache_service
     from .data_utils import sanitize_data_for_json
 except ImportError:
     from htmx_endpoints import format_datetime_for_user  # type: ignore

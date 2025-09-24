@@ -455,7 +455,7 @@ async def close_poll_htmx(
     
     try:
         # Use unified poll closure service for consistent behavior
-        from .poll_closure_service import get_poll_closure_service
+        from .services.poll.poll_closure_service import get_poll_closure_service
         
         poll_closure_service = get_poll_closure_service()
         
@@ -541,7 +541,7 @@ async def open_poll_now_htmx(
 
         # Post the poll to Discord immediately using unified opening service
         try:
-            from .poll_open_service import poll_opening_service
+            from .services.poll.poll_open_service import poll_opening_service
             
             result = await poll_opening_service.open_poll_unified(
                 poll_id=poll_id,
@@ -1956,7 +1956,7 @@ def _reconstruct_polls_from_cache(cached_polls: list) -> list:
 async def invalidate_user_polls_cache(user_id: str, enhanced_cache=None):
     """Clear all poll cache variations for a user"""
     if enhanced_cache is None:
-        from .enhanced_cache_service import get_enhanced_cache_service
+        from .services.cache.enhanced_cache_service import get_enhanced_cache_service
         enhanced_cache = get_enhanced_cache_service()
     
     try:
@@ -1990,7 +1990,7 @@ async def get_polls_htmx(
     current_user: DiscordUser = Depends(require_auth),
 ):
     """Get user's polls as HTML for HTMX with Redis caching and 30-second TTL"""
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
     
@@ -2209,7 +2209,7 @@ async def get_stats_htmx(
     request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
     """Get dashboard stats as HTML for HTMX with caching to prevent rate limiting"""
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
 
@@ -2637,7 +2637,7 @@ async def get_channels_htmx(
     preselect_last_channel: bool = True,
 ):
     """Get channels for a server as HTML options for HTMX with caching to prevent rate limiting"""
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
 
@@ -2788,7 +2788,7 @@ async def get_roles_htmx(
     preselect_last_role: bool = True,
 ):
     """Get roles for a server as HTML options for HTMX with caching to prevent rate limiting"""
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
 
@@ -3864,7 +3864,7 @@ async def create_poll_htmx(
             
             # Open poll immediately using unified opening service
             try:
-                from .poll_open_service import poll_opening_service
+                from .services.poll.poll_open_service import poll_opening_service
                 
                 immediate_result = await poll_opening_service.open_poll_unified(
                     poll_id=poll_id,
@@ -3922,7 +3922,7 @@ async def create_poll_htmx(
                 # Create wrapper function for scheduled poll opening using unified service
                 async def open_poll_scheduled_wrapper(bot_instance, poll_id):
                     """Wrapper function for scheduled poll opening using unified service"""
-                    from .poll_open_service import poll_opening_service
+                    from .services.poll.poll_open_service import poll_opening_service
                     
                     result = await poll_opening_service.open_poll_unified(
                         poll_id=poll_id,
@@ -4111,7 +4111,7 @@ async def get_poll_results_realtime_htmx(
     poll_id: int, request: Request, current_user: DiscordUser = Depends(require_auth)
 ):
     """Get real-time poll results as HTML for HTMX with caching optimized for 10-second polling intervals"""
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
 
@@ -4253,7 +4253,7 @@ async def get_poll_dashboard_htmx(
     current_user: DiscordUser = Depends(require_auth),
 ):
     """Get poll dashboard with spreadsheet-style live results for HTMX with caching optimized for 10-second polling"""
-    from .enhanced_cache_service import get_enhanced_cache_service
+    from .services.cache.enhanced_cache_service import get_enhanced_cache_service
 
     enhanced_cache = get_enhanced_cache_service()
 
@@ -4486,7 +4486,7 @@ async def get_poll_dashboard_htmx(
                     # Cache user avatar with deduplication and optimization
                     if avatar_url:
                         try:
-                            from .avatar_cache_service import get_avatar_cache_service
+                            from .services.cache.avatar_cache_service import get_avatar_cache_service
                             avatar_service = get_avatar_cache_service()
                             cached_avatar_url = await avatar_service.cache_user_avatar(user_id, avatar_url, username)
                             if cached_avatar_url:
@@ -5432,7 +5432,7 @@ async def update_poll_htmx(
         # Create wrapper function for scheduled poll opening using unified service
         async def open_poll_scheduled_wrapper(poll_id):
             """Wrapper function for scheduled poll opening using unified service"""
-            from .poll_open_service import poll_opening_service
+            from .services.poll.poll_open_service import poll_opening_service
             
             result = await poll_opening_service.open_poll_unified(
                 poll_id=poll_id,

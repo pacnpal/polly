@@ -81,7 +81,7 @@ async def get_system_health(
     """Get system health information"""
 
     try:
-        from .cache_service import get_cache_service
+        from .services.cache.cache_service import get_cache_service
         from .discord_bot import get_bot_instance
 
         cache_service = get_cache_service()

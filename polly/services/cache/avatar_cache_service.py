@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 try:
     from .enhanced_cache_service import get_enhanced_cache_service
 except ImportError:
-    from enhanced_cache_service import get_enhanced_cache_service  # type: ignore
+    from ...enhanced_cache_service import get_enhanced_cache_service  # type: ignore
 
 logger = logging.getLogger(__name__)
 
