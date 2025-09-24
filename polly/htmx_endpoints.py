@@ -402,7 +402,6 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
 async def cleanup_image(image_path: str) -> bool:
     """Safely delete an image file; ensure path is within uploads dir"""
     try:
-     alert-autofix-37
         # Only allow deletion if the file is within the uploads directory
         if not image_path or not isinstance(image_path, str):
             return False
@@ -429,6 +428,7 @@ async def cleanup_image(image_path: str) -> bool:
         if os.path.exists(abs_image_path):
             os.remove(abs_image_path)
             logger.info(f"Cleaned up image: {abs_image_path}")
+         main
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
