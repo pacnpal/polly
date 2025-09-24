@@ -853,8 +853,8 @@
             const modal = bootstrap.Modal.getInstance(document.getElementById('reopenPollModal'));
             modal.hide();
             
-            // Make the API request
-            fetch(`/super-admin/api/poll/${pollId}/reopen`, {
+            // Make the API request to ENHANCED super admin endpoint
+            fetch(`/super-admin-enhanced/api/poll/${pollId}/reopen`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
