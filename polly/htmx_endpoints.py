@@ -14,6 +14,9 @@ import os
 UPLOADS_DIR = os.path.abspath("static/uploads")
 
 from fastapi import Request, Depends
+
+# Ensure UPLOADS_DIR is ALWAYS absolute and normalized
+UPLOADS_DIR = os.path.abspath(os.path.normpath("static/uploads"))
 from fastapi.templating import Jinja2Templates
 from apscheduler.triggers.date import DateTrigger
 
@@ -399,22 +402,24 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
 async def cleanup_image(image_path: str) -> bool:
     """Safely delete an image file; ensure path is within uploads dir"""
     try:
-        if (
-            not image_path
-            or not isinstance(image_path, str)
-            or os.path.isabs(image_path)
-            or ".." in image_path.split(os.path.sep)
-            or "/" in image_path
-            or "\\" in image_path
-        ):
-            logger.warning(f"Rejected suspicious image_path for cleanup: {image_path!r}")
-            return False
-
-        # Always join with UPLOADS_DIR and resolve absolute path
-        abs_uploads_dir = UPLOADS_DIR
-        abs_image_path = os.path.abspath(os.path.normpath(os.path.join(abs_uploads_dir, image_path)))
-
+     alert-autofix-37
         # Only allow deletion if the file is within the uploads directory
+        if not image_path or not isinstance(image_path, str):
+            return False
+        # Disallow absolute paths outright
+        if os.path.isabs(image_path):
+            logger.warning(f"Rejected absolute path for image deletion: {image_path}")
+            return False
+        # Prevent path traversal with '..'
+        if ".." in image_path.split(os.path.sep):
+            logger.warning(f"Rejected path traversal attempt: {image_path}")
+            return False
+        # Only use base filename component to avoid user-controlled directories
+        safe_filename = os.path.basename(image_path)
+        abs_uploads_dir = UPLOADS_DIR
+        abs_image_path = os.path.abspath(os.path.join(abs_uploads_dir, safe_filename))
+        # Ensure final path is under the uploads directory
+        main
         if os.path.commonpath([abs_uploads_dir, abs_image_path]) != abs_uploads_dir:
             logger.warning(f"Tried to remove file outside of uploads dir: {abs_image_path}")
             return False

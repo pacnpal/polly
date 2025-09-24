@@ -87,15 +87,20 @@ scheduler = AsyncIOScheduler()
 
 # Utility functions for error handling and image management
 async def cleanup_image(image_path: str) -> bool:
-    """Safely delete an image file"""
+    """Safely delete an image file, validating the path to prevent traversal"""
     try:
-        if image_path and os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up image: {image_path}")
+        uploads_dir = os.path.abspath("static/uploads")
+        # Compute safe absolute path
+        candidate_path = os.path.abspath(os.path.normpath(os.path.join(uploads_dir, os.path.relpath(image_path, uploads_dir))))
+        if not candidate_path.startswith(uploads_dir + os.sep):
+            logger.error(f"Attempt to delete image outside uploads directory: {candidate_path}")
+            return False
+        if os.path.exists(candidate_path):
+            os.remove(candidate_path)
+            logger.info(f"Cleaned up image: {candidate_path}")
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
-        # EASY BOT OWNER NOTIFICATION - JUST ADD THIS LINE!
         from .error_handler import notify_error
 
         notify_error(e, "Image Cleanup", image_path=image_path)
