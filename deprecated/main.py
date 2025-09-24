@@ -71,6 +71,7 @@ init_database()
 
 # Create directories
 os.makedirs("static/uploads", exist_ok=True)
+UPLOADS_DIR = os.path.abspath("static/uploads")
 os.makedirs("templates", exist_ok=True)
 
 # Discord bot setup
@@ -87,17 +88,21 @@ scheduler = AsyncIOScheduler()
 
 # Utility functions for error handling and image management
 async def cleanup_image(image_path: str) -> bool:
-    """Safely delete an image file, validating the path to prevent traversal"""
+ alert-autofix-30
+    """Safely delete an image file if it's inside the uploads directory"""
     try:
-        uploads_dir = os.path.abspath("static/uploads")
-        # Compute safe absolute path
-        candidate_path = os.path.abspath(os.path.normpath(os.path.join(uploads_dir, os.path.relpath(image_path, uploads_dir))))
-        if not candidate_path.startswith(uploads_dir + os.sep):
-            logger.error(f"Attempt to delete image outside uploads directory: {candidate_path}")
+        if not image_path:
             return False
-        if os.path.exists(candidate_path):
-            os.remove(candidate_path)
-            logger.info(f"Cleaned up image: {candidate_path}")
+        # Resolve the absolute, normalized path to the image within uploads dir
+        requested_path = os.path.abspath(os.path.normpath(os.path.join(UPLOADS_DIR, image_path)))
+        # Ensure the resulting path starts with the allowed upload directory
+        if not requested_path.startswith(UPLOADS_DIR + os.sep):
+            logger.warning(f"Attempt to delete a file outside upload dir: {requested_path}")
+            return False
+        if os.path.exists(requested_path):
+            os.remove(requested_path)
+            logger.info(f"Cleaned up image: {requested_path}")
+       main
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
