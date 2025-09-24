@@ -636,13 +636,19 @@ async def reopen_poll_api(
                     status_code=403
                 )
                 
-            result = await super_admin_service.reopen_poll(
-                db,
-                poll_id,
-                user_id,
-                new_close_time=new_close_time,
-                extend_hours=extend_hours,
-                reset_votes=reset_votes
+            # Use the unified reopening service directly for enhanced functionality
+            from .poll_reopen_service import poll_reopening_service
+            
+            # Convert extend_hours to extend_minutes for the service
+            extend_minutes = extend_hours * 60 if extend_hours else None
+            
+            result = await poll_reopening_service.reopen_poll_unified(
+                poll_id=poll_id,
+                reason="admin_enhanced",
+                admin_user_id=user_id,
+                bot_instance=None,  # Will be fetched automatically
+                reset_votes=reset_votes,
+                extend_minutes=extend_minutes
             )
             
             if result["success"]:

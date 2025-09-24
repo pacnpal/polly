@@ -483,31 +483,33 @@ class SuperAdminService:
                 logger.error(f"❌ Error scheduling close time for reopened poll {poll_id}: {schedule_error}")
                 # Don't fail the reopen operation if scheduling fails
             
-            # Step 6: Use unified opening service for consistent Discord handling
+            # Step 6: Use unified reopening service for consistent Discord handling
             try:
-                from .poll_open_service import poll_opening_service
+                from .poll_reopen_service import poll_reopening_service
                 from .discord_bot import get_bot_instance
                 
                 bot = get_bot_instance()
                 if bot and bot.is_ready():
-                    # Use unified opening service for consistent behavior
-                    open_result = await poll_opening_service.open_poll_unified(
+                    # Use unified reopening service for consistent behavior
+                    reopen_result = await poll_reopening_service.reopen_poll_unified(
                         poll_id=poll_id,
-                        reason="reopen",
+                        reason="admin",
                         admin_user_id=admin_user_id,
-                        bot_instance=bot
+                        bot_instance=bot,
+                        reset_votes=reset_votes,
+                        extend_minutes=extend_hours * 60 if extend_hours else None
                     )
                     
-                    if open_result["success"]:
-                        logger.info(f"✅ Unified opening service successfully handled reopened poll {poll_id}")
+                    if reopen_result["success"]:
+                        logger.info(f"✅ Unified reopening service successfully handled poll {poll_id}")
                     else:
-                        logger.warning(f"⚠️ Unified opening service failed for reopened poll {poll_id}: {open_result.get('error')}")
+                        logger.warning(f"⚠️ Unified reopening service failed for poll {poll_id}: {reopen_result.get('error')}")
                 else:
-                    logger.warning(f"⚠️ Discord bot not ready, skipping unified opening for poll {poll_id}")
+                    logger.warning(f"⚠️ Discord bot not ready, skipping unified reopening for poll {poll_id}")
                     
-            except Exception as opening_error:
-                logger.error(f"❌ Error in unified opening service for reopened poll {poll_id}: {opening_error}")
-                # Don't fail the reopen operation if opening service fails
+            except Exception as reopening_error:
+                logger.error(f"❌ Error in unified reopening service for poll {poll_id}: {reopening_error}")
+                # Don't fail the reopen operation if reopening service fails
             
             # Step 7: Generate comprehensive success response
             poll_name = TypeSafeColumn.get_string(poll, "name")
