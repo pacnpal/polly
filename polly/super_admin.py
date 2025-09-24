@@ -340,15 +340,15 @@ class SuperAdminService:
     
     @staticmethod
     async def reopen_poll(
-        db_session, 
-        poll_id: int, 
+        db_session,
+        poll_id: int,
         admin_user_id: str,
         new_close_time: Optional[datetime] = None,
         extend_hours: Optional[int] = None,
         reset_votes: bool = False
     ) -> Dict[str, Any]:
         """
-        Comprehensive method to re-open a closed poll with multiple options.
+        Streamlined method to re-open a closed poll using the unified reopen service.
         
         Args:
             db_session: Database session
@@ -362,188 +362,90 @@ class SuperAdminService:
             Dict with success status and details
         """
         try:
-            # Step 1: Validate poll exists and can be reopened
+            # Validate poll exists
             poll = db_session.query(Poll).filter(Poll.id == poll_id).first()
             if not poll:
                 return {"success": False, "error": "Poll not found"}
             
-            current_status = TypeSafeColumn.get_string(poll, "status")
-            if current_status != "closed":
+            poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+            logger.info(f"🔄 SUPER ADMIN REOPEN - Starting reopen for poll {poll_id} '{poll_name}'")
+            
+            # Use the unified reopening service for all reopen operations
+            from .poll_reopen_service import poll_reopening_service
+            from .discord_bot import get_bot_instance
+            
+            bot = get_bot_instance()
+            if not bot or not bot.is_ready():
                 return {
-                    "success": False, 
-                    "error": f"Poll is not closed (current status: {current_status}). Only closed polls can be reopened."
+                    "success": False,
+                    "error": "Discord bot not ready. Poll reopen requires bot connection for message updates."
                 }
             
-            # Step 2: Determine new close time
-            now = datetime.now(pytz.UTC)
-            original_close_time = TypeSafeColumn.get_datetime(poll, "close_time")
-            
-            if new_close_time:
-                # Use specific new close time
-                if new_close_time <= now:
-                    return {
-                        "success": False,
-                        "error": "New close time must be in the future"
-                    }
-                final_close_time = new_close_time
-                time_description = f"until {new_close_time.strftime('%Y-%m-%d %H:%M UTC')}"
-                
-            elif extend_hours:
-                # Extend by specified hours from now
+            # Convert extend hours to minutes for the unified service
+            extend_minutes = None
+            if extend_hours:
                 if extend_hours <= 0 or extend_hours > 8760:  # Max 1 year
                     return {
                         "success": False,
                         "error": "Extension hours must be between 1 and 8760 (1 year)"
                     }
-                final_close_time = now + timedelta(hours=extend_hours)
-                time_description = f"for {extend_hours} hours (until {final_close_time.strftime('%Y-%m-%d %H:%M UTC')})"
-                
-            else:
-                # Default: extend by 24 hours from now
-                final_close_time = now + timedelta(hours=24)
-                time_description = "for 24 hours (default extension)"
-            
-            # Step 3: Handle vote reset if requested
-            votes_cleared = 0
-            if reset_votes:
-                try:
-                    # Count votes before deletion for logging
-                    votes_cleared = db_session.query(Vote).filter(Vote.poll_id == poll_id).count()
-                    
-                    # Delete all votes for this poll
-                    db_session.query(Vote).filter(Vote.poll_id == poll_id).delete()
-                    
-                    logger.info(f"Cleared {votes_cleared} votes from poll {poll_id} during reopen")
-                    
-                except Exception as e:
-                    logger.error(f"Error clearing votes for poll {poll_id}: {e}")
-                    db_session.rollback()
+                extend_minutes = extend_hours * 60
+            elif new_close_time:
+                # For specific close times, calculate minutes from now
+                now = datetime.now(pytz.UTC)
+                if new_close_time <= now:
                     return {
                         "success": False,
-                        "error": f"Failed to clear votes: {str(e)}"
+                        "error": "New close time must be in the future"
                     }
+                time_diff = new_close_time - now
+                extend_minutes = int(time_diff.total_seconds() / 60)
+            else:
+                # Default: extend by 24 hours
+                extend_minutes = 24 * 60
             
-            # Step 4: Update poll status and times
-            try:
-                # Set poll to active status
-                setattr(poll, "status", "active")
-                
-                # Update close time
-                setattr(poll, "close_time", final_close_time)
-                
-                # Optionally update open time to now if it was in the past
-                current_open_time = TypeSafeColumn.get_datetime(poll, "open_time")
-                if current_open_time and current_open_time < now:
-                    setattr(poll, "open_time", now)
-                
-                # Commit all changes
-                db_session.commit()
-                
-            except Exception as e:
-                logger.error(f"Error updating poll {poll_id} during reopen: {e}")
-                db_session.rollback()
-                return {
-                    "success": False,
-                    "error": f"Failed to update poll: {str(e)}"
-                }
-            
-            # Step 5: Schedule the new close time with timezone-aware scheduler
-            try:
-                from .background_tasks import get_scheduler
-                from .timezone_scheduler_fix import TimezoneAwareScheduler
-                from .background_tasks import close_poll
-                
-                scheduler = get_scheduler()
-                if scheduler and scheduler.running:
-                    # Remove any existing close job for this poll
-                    try:
-                        if scheduler.get_job(f"close_poll_{poll_id}"):
-                            scheduler.remove_job(f"close_poll_{poll_id}")
-                            logger.info(f"🗑️ Removed existing close job for reopened poll {poll_id}")
-                    except Exception as remove_error:
-                        logger.warning(f"⚠️ Error removing existing close job for poll {poll_id}: {remove_error}")
-                    
-                    # Schedule new close time using timezone-aware scheduler
-                    tz_scheduler = TimezoneAwareScheduler(scheduler)
-                    poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
-                    
-                    success_close = tz_scheduler.schedule_poll_closing(
-                        poll_id, final_close_time, poll_timezone, close_poll
-                    )
-                    
-                    if success_close:
-                        logger.info(f"✅ Scheduled reopened poll {poll_id} to close at {final_close_time} in timezone {poll_timezone}")
-                    else:
-                        logger.error(f"❌ Failed to schedule close time for reopened poll {poll_id}")
-                        # Don't fail the reopen operation if scheduling fails
-                else:
-                    logger.warning(f"⚠️ Scheduler not available, reopened poll {poll_id} won't auto-close")
-                    
-            except Exception as schedule_error:
-                logger.error(f"❌ Error scheduling close time for reopened poll {poll_id}: {schedule_error}")
-                # Don't fail the reopen operation if scheduling fails
-            
-            # Step 6: Use unified reopening service for consistent Discord handling
-            try:
-                from .poll_reopen_service import poll_reopening_service
-                from .discord_bot import get_bot_instance
-                
-                bot = get_bot_instance()
-                if bot and bot.is_ready():
-                    # Use unified reopening service for consistent behavior
-                    reopen_result = await poll_reopening_service.reopen_poll_unified(
-                        poll_id=poll_id,
-                        reason="admin",
-                        admin_user_id=admin_user_id,
-                        bot_instance=bot,
-                        reset_votes=reset_votes,
-                        extend_minutes=extend_hours * 60 if extend_hours else None
-                    )
-                    
-                    if reopen_result["success"]:
-                        logger.info(f"✅ Unified reopening service successfully handled poll {poll_id}")
-                    else:
-                        logger.warning(f"⚠️ Unified reopening service failed for poll {poll_id}: {reopen_result.get('error')}")
-                else:
-                    logger.warning(f"⚠️ Discord bot not ready, skipping unified reopening for poll {poll_id}")
-                    
-            except Exception as reopening_error:
-                logger.error(f"❌ Error in unified reopening service for poll {poll_id}: {reopening_error}")
-                # Don't fail the reopen operation if reopening service fails
-            
-            # Step 7: Generate comprehensive success response
-            poll_name = TypeSafeColumn.get_string(poll, "name")
-            
-            # Log the admin action with full details
-            logger.warning(
-                f"Super admin poll reopen: poll_id={poll_id} admin_user_id={admin_user_id} "
-                f"poll_name='{poll_name}' new_close_time='{final_close_time}' "
-                f"votes_cleared={votes_cleared} original_close_time='{original_close_time}'"
+            # Call the unified reopening service
+            reopen_result = await poll_reopening_service.reopen_poll_unified(
+                poll_id=poll_id,
+                reason="admin",
+                admin_user_id=admin_user_id,
+                bot_instance=bot,
+                reset_votes=reset_votes,
+                extend_minutes=extend_minutes
             )
             
-            success_message = f"Poll '{poll_name}' has been successfully reopened {time_description}"
-            if votes_cleared > 0:
-                success_message += f" (cleared {votes_cleared} existing votes)"
-            
-            return {
-                "success": True,
-                "message": success_message,
-                "poll_id": poll_id,
-                "poll_name": poll_name,
-                "new_status": "active",
-                "new_close_time": final_close_time.isoformat() if final_close_time else None,
-                "original_close_time": original_close_time.isoformat() if original_close_time else None,
-                "votes_cleared": votes_cleared,
-                "reopened_by": admin_user_id,
-                "reopened_at": now.isoformat()
-            }
-            
+            # Log the admin action
+            if reopen_result["success"]:
+                final_close_time = datetime.now(pytz.UTC) + timedelta(minutes=extend_minutes) if extend_minutes else "unknown"
+                logger.info(
+                    f"✅ Super admin poll reopen: poll_id={poll_id} admin_user_id={admin_user_id} "
+                    f"poll_name='{poll_name}' new_close_time='{final_close_time}' "
+                    f"reset_votes={reset_votes} extend_minutes={extend_minutes}"
+                )
+                
+                return {
+                    "success": True,
+                    "message": f"Poll '{poll_name}' successfully reopened",
+                    "poll_id": poll_id,
+                    "poll_name": poll_name,
+                    "new_close_time": str(final_close_time),
+                    "extend_minutes": extend_minutes,
+                    "reset_votes": reset_votes,
+                    "votes_cleared": 0 if not reset_votes else reopen_result.get("votes_cleared", 0),
+                    "discord_updated": True
+                }
+            else:
+                logger.error(f"❌ Super admin poll reopen failed: {reopen_result.get('error')}")
+                return {
+                    "success": False,
+                    "error": reopen_result.get("error", "Unknown error during poll reopen")
+                }
+                
         except Exception as e:
-            logger.error(f"Error reopening poll {poll_id} by admin {admin_user_id}: {e}")
-            db_session.rollback()
+            logger.error(f"❌ Critical error in super admin poll reopen for poll {poll_id}: {e}")
             return {
                 "success": False,
-                "error": f"Unexpected error during poll reopen: {str(e)}"
+                "error": f"Critical error during poll reopen: {str(e)}"
             }
     
     @staticmethod
