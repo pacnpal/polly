@@ -7,9 +7,9 @@ import logging
 from typing import Any, Optional, Dict, List
 from datetime import datetime
 try:
-    from .redis_client import get_redis_client
+    from ...redis_client import get_redis_client
 except ImportError:
-    from redis_client import get_redis_client  # type: ignore
+    from polly.redis_client import get_redis_client  # type: ignore
 
 logger = logging.getLogger(__name__)
 

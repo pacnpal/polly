@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 try:
     from .cache_service import CacheService
 except ImportError:
-    from cache_service import CacheService  # type: ignore
+    from polly.services.cache.cache_service import CacheService  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ class EnhancedCacheService(CacheService):
             
             # Sanitize retrieved data to handle any HTML entities that might cause issues
             try:
-                from .data_utils import sanitize_data_for_json
+                from ...data_utils import sanitize_data_for_json
                 sanitized_data = sanitize_data_for_json(cached_data)
                 logger.info(
                     f"🔍 CACHE DEBUG - Retrieved data keys: {list(sanitized_data.keys())}"
@@ -255,7 +255,7 @@ class EnhancedCacheService(CacheService):
             cached_data = await redis_client.cache_get(cache_key)
             if cached_data:
                 # Sanitize retrieved data to handle any HTML entities
-                from .data_utils import sanitize_data_for_json
+                from ...data_utils import sanitize_data_for_json
                 return sanitize_data_for_json(cached_data)
             return cached_data
         except Exception as e:
@@ -301,7 +301,7 @@ class EnhancedCacheService(CacheService):
         try:
             cached_data = await redis_client.cache_get(cache_key)
             if cached_data:
-                from .data_utils import sanitize_data_for_json
+                from ...data_utils import sanitize_data_for_json
                 return sanitize_data_for_json(cached_data)
             return cached_data
         except Exception as e:
@@ -803,7 +803,7 @@ class EnhancedCacheService(CacheService):
             # Cache guild roles for ping functionality
             if not cached_roles:
                 # Import here to avoid circular imports
-                from .discord_utils import get_guild_roles
+                from ...discord_utils import get_guild_roles
 
                 roles = await get_guild_roles(bot, guild_id)
                 if roles:
