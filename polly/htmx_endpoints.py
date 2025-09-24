@@ -10,6 +10,9 @@ import uuid
 import aiofiles
 import os
 
+# Define an absolute UPLOADS_DIR early for all upload management operations
+UPLOADS_DIR = os.path.abspath("static/uploads")
+
 from fastapi import Request, Depends
 from fastapi.templating import Jinja2Templates
 from apscheduler.triggers.date import DateTrigger
@@ -396,17 +399,24 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
 async def cleanup_image(image_path: str) -> bool:
     """Safely delete an image file; ensure path is within uploads dir"""
     try:
-        if not image_path or not isinstance(image_path, str):
+        if (
+            not image_path
+            or not isinstance(image_path, str)
+            or os.path.isabs(image_path)
+            or ".." in image_path.split(os.path.sep)
+            or "/" in image_path
+            or "\\" in image_path
+        ):
+            logger.warning(f"Rejected suspicious image_path for cleanup: {image_path!r}")
             return False
 
-        # Enforce path within UPLOADS_DIR to prevent directory traversal or arbitrary file deletion
-        # Normalize and make paths absolute
+        # Always join with UPLOADS_DIR and resolve absolute path
         abs_uploads_dir = UPLOADS_DIR
-        abs_image_path = os.path.abspath(os.path.normpath(image_path if os.path.isabs(image_path) else os.path.join(UPLOADS_DIR, image_path)))
+        abs_image_path = os.path.abspath(os.path.normpath(os.path.join(abs_uploads_dir, image_path)))
 
         # Only allow deletion if the file is within the uploads directory
         if os.path.commonpath([abs_uploads_dir, abs_image_path]) != abs_uploads_dir:
-            logger.warning(f"Tried to remove file outside of uploads dir: {image_path}")
+            logger.warning(f"Tried to remove file outside of uploads dir: {abs_image_path}")
             return False
 
         if os.path.exists(abs_image_path):
