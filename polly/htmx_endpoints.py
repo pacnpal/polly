@@ -422,7 +422,8 @@ async def cleanup_image(image_path: str) -> bool:
         main
         if os.path.commonpath([abs_uploads_dir, abs_image_path]) != abs_uploads_dir:
             logger.warning(f"Tried to remove file outside of uploads dir: {abs_image_path}")
-       main
+        main
+
             return False
 
         if os.path.exists(abs_image_path):
