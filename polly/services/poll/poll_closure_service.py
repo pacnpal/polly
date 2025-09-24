@@ -7,8 +7,8 @@ import logging
 from typing import Dict, Any, Optional
 import discord
 
-from .database import get_db_session, Poll, TypeSafeColumn
-from .error_handler import PollErrorHandler
+from polly.database import get_db_session, Poll, TypeSafeColumn
+from polly.error_handler import PollErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class PollClosureService:
             
             # Get bot instance if not provided
             if not bot_instance:
-                from .discord_bot import get_bot_instance
+                from polly.discord_bot import get_bot_instance
                 bot_instance = get_bot_instance()
                 
             if not bot_instance:
@@ -85,7 +85,7 @@ class PollClosureService:
 
             # STEP 2: Close poll in database using bulletproof operations
             try:
-                from .poll_operations import BulletproofPollOperations
+                from polly.poll_operations import BulletproofPollOperations
                 
                 bulletproof_ops = BulletproofPollOperations(bot_instance)
                 result = await bulletproof_ops.bulletproof_poll_closure(poll_id, reason)
@@ -118,7 +118,7 @@ class PollClosureService:
                 if fresh_poll:
                     # Update the poll embed to show it's closed with final results BEFORE clearing reactions
                     try:
-                        from .discord_utils import update_poll_message
+                        from polly.discord_utils import update_poll_message
                         await update_poll_message(bot_instance, fresh_poll)
                         logger.info(f"✅ UNIFIED CLOSE {poll_id} - Updated poll message to show closed status with final results")
                     except Exception as update_error:
@@ -218,7 +218,7 @@ class PollClosureService:
 
             # STEP 5: Generate static content for closed poll
             try:
-                from .static_page_generator import generate_static_content_on_poll_close
+                from polly.static_page_generator import generate_static_content_on_poll_close
                 
                 logger.info(f"🔧 UNIFIED CLOSE {poll_id} - Generating static content for closed poll")
                 static_success = await generate_static_content_on_poll_close(poll_id, bot_instance)

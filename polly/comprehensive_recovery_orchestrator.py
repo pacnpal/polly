@@ -27,7 +27,7 @@ except ImportError:
     from enhanced_recovery_validator import get_enhanced_recovery_validator
     from static_recovery import get_static_recovery
     from background_tasks import restore_scheduled_jobs
-    from enhanced_cache_service import get_enhanced_cache_service
+    from polly.services.cache.enhanced_cache_service import get_enhanced_cache_service
     from database import TypeSafeColumn
 
 logger = logging.getLogger(__name__)

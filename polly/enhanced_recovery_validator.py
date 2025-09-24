@@ -29,7 +29,7 @@ except ImportError:
     from bulletproof_operations import BulletproofPollOperations
     from background_tasks import get_scheduler
     from static_recovery import get_static_recovery
-    from enhanced_cache_service import get_enhanced_cache_service
+    from polly.services.cache.enhanced_cache_service import get_enhanced_cache_service
 
 logger = logging.getLogger(__name__)
 

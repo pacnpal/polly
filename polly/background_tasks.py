@@ -587,6 +587,9 @@ async def run_static_content_recovery_on_startup():
         now = datetime.now(pytz.UTC)
         logger.debug(f"⏰ SCHEDULER RESTORE - Current time: {now}")
 
+        # Import poll opening service once before loop to avoid closure issues
+        from .services.poll.poll_open_service import poll_opening_service
+
         # Process each scheduled poll
         restored_count = 0
         immediate_closes = 0
@@ -647,11 +650,9 @@ async def run_static_content_recovery_on_startup():
                 poll_timezone = TypeSafeColumn.get_string(poll, "timezone", "UTC")
 
                 # Schedule poll opening using unified opening service
-                from .services.poll.poll_open_service import poll_opening_service
-                
-                async def open_poll_scheduled(bot_instance, poll_id):
+                async def open_poll_scheduled(bot_instance, poll_id, service=poll_opening_service):
                     """Wrapper function for scheduled poll opening"""
-                    result = await poll_opening_service.open_poll_unified(
+                    result = await service.open_poll_unified(
                         poll_id=poll_id,
                         reason="scheduled",
                         bot_instance=bot_instance

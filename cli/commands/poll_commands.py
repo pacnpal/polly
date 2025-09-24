@@ -231,7 +231,7 @@ class PollCommands:
         try:
             async for session in DatabaseHelper.get_db_session():
                 from polly.database import Poll
-                from polly.services.discord.discord_utils import update_poll_message
+                from polly.discord_utils import update_poll_message
                 from polly.discord_bot import get_bot_instance
                 
                 poll = await session.get(Poll, poll_id)
@@ -346,8 +346,8 @@ class PollCommands:
                     return 0
                 
                 # Close the poll
-                closure_service = PollClosureService()
-                result = await closure_service.close_poll(poll_id, reason or "Manually closed via CLI")
+                closure_service = PollClosureService()                from 
+                result = await closure_service.close_poll_unified(poll_id, reason or "Manually closed via CLI")
                 
                 if result["success"]:
                     self.helpers.success(f"Successfully closed poll {poll_id}")
@@ -394,7 +394,7 @@ class PollCommands:
                 
                 # Update Discord message
                 try:
-                    from polly.services.discord.discord_utils import update_poll_message
+                    from polly.discord_utils import update_poll_message
                     from polly.discord_bot import get_bot_instance
                     
                     bot = get_bot_instance()

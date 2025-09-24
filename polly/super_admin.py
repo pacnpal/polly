@@ -309,7 +309,7 @@ class SuperAdminService:
             logger.info(f"Super admin {admin_user_id} initiating force close for poll {poll_id}: '{poll_name}'")
 
             # Use the unified closure service for consistent behavior
-            from .services.poll.poll_closure_service import poll_closure_service
+            from polly.services.poll.poll_closure_service import poll_closure_service
             
             result = await poll_closure_service.close_poll_unified(
                 poll_id=poll_id,

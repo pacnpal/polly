@@ -254,7 +254,7 @@ class BulkOperationService:
         # Check if polls exist and are valid for the operation
         db = get_db_session()
         try:
-            from .super_admin import super_admin_service
+            from polly.super_admin import super_admin_service
             
             invalid_polls = []
             for poll_id in request.poll_ids:
@@ -378,7 +378,7 @@ class BulkOperationService:
                     # Get poll name for display
                     db = get_db_session()
                     try:
-                        from .super_admin import super_admin_service
+                        from polly.super_admin import super_admin_service
                         poll_details = super_admin_service.get_poll_details(db, poll_id)
                         progress.current_item_name = poll_details["poll"]["name"] if poll_details else f"Poll {poll_id}"
                     finally:
@@ -483,7 +483,7 @@ class BulkOperationService:
         try:
             db = get_db_session()
             try:
-                from .super_admin import super_admin_service
+                from polly.super_admin import super_admin_service
                 result = await super_admin_service.force_close_poll(db, poll_id, admin_user_id)
                 return result
             finally:
@@ -500,7 +500,7 @@ class BulkOperationService:
         try:
             db = get_db_session()
             try:
-                from .super_admin import super_admin_service
+                from polly.super_admin import super_admin_service
                 result = super_admin_service.delete_poll(db, poll_id, admin_user_id)
                 return result
             finally:
@@ -517,7 +517,7 @@ class BulkOperationService:
         try:
             db = get_db_session()
             try:
-                from .super_admin import super_admin_service
+                from polly.super_admin import super_admin_service
                 
                 # Extract reopen parameters
                 extend_hours = parameters.get("extend_hours")
@@ -553,7 +553,7 @@ class BulkOperationService:
             
             db = get_db_session()
             try:
-                from .database import Poll
+                from polly.database import Poll
                 poll = db.query(Poll).filter(Poll.id == poll_id).first()
                 if not poll:
                     return {
@@ -586,7 +586,7 @@ class BulkOperationService:
         try:
             db = get_db_session()
             try:
-                from .super_admin import super_admin_service
+                from polly.super_admin import super_admin_service
                 
                 # Use existing update_poll method
                 result = super_admin_service.update_poll(db, poll_id, parameters, admin_user_id)
@@ -605,7 +605,7 @@ class BulkOperationService:
         try:
             db = get_db_session()
             try:
-                from .super_admin import super_admin_service
+                from polly.super_admin import super_admin_service
                 poll_details = super_admin_service.get_poll_details(db, poll_id)
                 
                 if not poll_details:
