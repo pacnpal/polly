@@ -394,11 +394,23 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
 
 
 async def cleanup_image(image_path: str) -> bool:
-    """Safely delete an image file"""
+    """Safely delete an image file, protecting against path traversal"""
     try:
-        if image_path and isinstance(image_path, str) and os.path.exists(image_path):
-            os.remove(image_path)
-            logger.info(f"Cleaned up image: {image_path}")
+        if not image_path or not isinstance(image_path, str):
+            return False
+
+        # Only delete files within the uploads directory
+        uploads_dir = os.path.abspath("static/uploads")
+        # Use only basename
+        basename = os.path.basename(image_path)
+        safe_path = os.path.abspath(os.path.join(uploads_dir, basename))
+        # Verify the file is inside the uploads dir
+        if not safe_path.startswith(uploads_dir + os.sep):
+            logger.warning(f"Tried to delete file outside uploads directory: {safe_path}")
+            return False
+        if os.path.exists(safe_path):
+            os.remove(safe_path)
+            logger.info(f"Cleaned up image: {safe_path}")
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
