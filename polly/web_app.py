@@ -905,7 +905,15 @@ def add_static_poll_routes(app: FastAPI):
             from datetime import datetime
             
             # First, check if a pre-generated static file exists
-            static_file_path = f"static/polls/poll_{poll_id}_details.html"
+            # Securely construct the static file path and verify path remains within static/polls
+            base_dir = os.path.abspath(os.path.join("static", "polls"))
+            filename = f"poll_{int(poll_id)}_details.html"
+            static_file_path = os.path.normpath(os.path.join(base_dir, filename))
+            # Ensure the resolved path is still within base_dir
+            if not static_file_path.startswith(base_dir):
+                logger.warning(f"Attempted path traversal in static poll details for poll_id={poll_id} (got: {static_file_path})")
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail="Invalid poll id/path.")
             if os.path.exists(static_file_path):
                 logger.info(f"📄 STATIC SERVE - Serving pre-generated static file for poll {poll_id}: {static_file_path}")
                 return FileResponse(
