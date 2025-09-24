@@ -377,10 +377,10 @@ async def save_image_file(content: bytes, filename: str) -> str | None:
     try:
         file_extension = filename.split(".")[-1].lower()
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
-        image_path = f"static/uploads/{unique_filename}"
+        image_path = os.path.join(UPLOADS_DIR, unique_filename)
 
         # Ensure uploads directory exists
-        os.makedirs("static/uploads", exist_ok=True)
+        os.makedirs(UPLOADS_DIR, exist_ok=True)
 
         # Save file
         async with aiofiles.open(image_path, "wb") as f:
