@@ -365,9 +365,9 @@
                 </div>
             </div>
             <div class="card-body p-0">
-                <div id="polls-container" 
-                     hx-get="/super-admin/htmx/polls-enhanced" 
-                     hx-trigger="load"
+                <div id="polls-container"
+                     hx-get="/super-admin/htmx/polls-enhanced"
+                     hx-trigger="load, refresh"
                      hx-indicator="#loading-indicator">
                     <div class="text-center p-4" id="loading-indicator">
                         <div class="spinner-border" role="status">
