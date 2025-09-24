@@ -208,11 +208,21 @@ async def reopen_poll_api(
         if "application/json" in content_type:
             # Handle JSON request with proper error handling
             try:
-                body = await request.json()
-                extend_hours = body.get("extend_hours")
-                reset_votes = body.get("reset_votes", False)
-                new_close_time_str = body.get("new_close_time")
-            except (ValueError, TypeError, UnicodeDecodeError) as e:
+                # Check if request body is empty first
+                body_bytes = await request.body()
+                if not body_bytes or body_bytes.strip() == b'':
+                    logger.warning(f"Empty JSON request body in reopen_poll_api for poll {poll_id}, using defaults")
+                    extend_hours = None
+                    reset_votes = False
+                    new_close_time_str = None
+                else:
+                    # Parse the body as JSON
+                    import json
+                    body = json.loads(body_bytes.decode('utf-8'))
+                    extend_hours = body.get("extend_hours")
+                    reset_votes = body.get("reset_votes", False)
+                    new_close_time_str = body.get("new_close_time")
+            except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as e:
                 logger.error(f"JSON parsing error in reopen_poll_api for poll {poll_id}: {e}")
                 return JSONResponse(
                     content={"success": False, "error": "Invalid JSON format in request body"},

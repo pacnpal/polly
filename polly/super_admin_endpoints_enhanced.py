@@ -554,18 +554,25 @@ async def reopen_poll_api(
         if "application/json" in content_type:
             # Handle JSON request with proper error handling
             try:
-                body = await request.json()
-                extend_hours = body.get("extend_hours")
-                reset_votes = body.get("reset_votes", False)
-                new_close_time_str = body.get("new_close_time")
-            except (ValueError, TypeError, UnicodeDecodeError) as e:
-                raise SuperAdminError(
-                    error_type=SuperAdminErrorType.VALIDATION,
-                    code="INVALID_JSON",
-                    message="Invalid JSON format in request body",
-                    original_error=str(e),
-                    details={"poll_id": poll_id},
-                    suggestions=["Ensure request body contains valid JSON"]
+                # Check if request body is empty first
+                body_bytes = await request.body()
+                if not body_bytes or body_bytes.strip() == b'':
+                    logger.warning(f"Empty JSON request body in enhanced reopen_poll_api for poll {poll_id}, using defaults")
+                    extend_hours = None
+                    reset_votes = False
+                    new_close_time_str = None
+                else:
+                    # Parse the body as JSON
+                    import json
+                    body = json.loads(body_bytes.decode('utf-8'))
+                    extend_hours = body.get("extend_hours")
+                    reset_votes = body.get("reset_votes", False)
+                    new_close_time_str = body.get("new_close_time")
+            except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as e:
+                logger.error(f"JSON parsing error in enhanced reopen_poll_api for poll {poll_id}: {e}")
+                return JSONResponse(
+                    content={"success": False, "error": "Invalid JSON format in request body"},
+                    status_code=400
                 )
         else:
             # Handle form data
@@ -575,34 +582,29 @@ async def reopen_poll_api(
                 reset_votes = form_data.get("reset_votes") == "true"
                 new_close_time_str = form_data.get("new_close_time")
             except Exception as e:
-                raise SuperAdminError(
-                    error_type=SuperAdminErrorType.VALIDATION,
-                    code="INVALID_FORM_DATA",
-                    message="Failed to parse form data",
-                    original_error=str(e),
-                    details={"poll_id": poll_id},
-                    suggestions=["Ensure form data is properly formatted"]
+                logger.error(f"Form data parsing error in enhanced reopen_poll_api for poll {poll_id}: {e}")
+                return JSONResponse(
+                    content={"success": False, "error": "Failed to parse form data"},
+                    status_code=400
                 )
         
         # Parse extend_hours if provided
         if extend_hours:
             try:
-                extend_hours = int(extend_hours)
-                if extend_hours <= 0 or extend_hours > 8760:  # Max 1 year
-                    raise SuperAdminError(
-                        error_type=SuperAdminErrorType.VALIDATION,
-                        code="INVALID_EXTEND_HOURS",
-                        message="Extension hours must be between 1 and 8760 (1 year)",
-                        details={"poll_id": poll_id, "extend_hours": extend_hours},
-                        suggestions=["Provide a valid number of hours between 1 and 8760"]
+                if isinstance(extend_hours, str):
+                    extend_hours = int(extend_hours)
+                elif extend_hours is not None:
+                    extend_hours = int(extend_hours)
+                    
+                if extend_hours and (extend_hours <= 0 or extend_hours > 8760):  # Max 1 year
+                    return JSONResponse(
+                        content={"success": False, "error": "Extension hours must be between 1 and 8760 (1 year)"},
+                        status_code=400
                     )
             except (ValueError, TypeError):
-                raise SuperAdminError(
-                    error_type=SuperAdminErrorType.VALIDATION,
-                    code="INVALID_EXTEND_HOURS_FORMAT",
-                    message="Invalid extend_hours value - must be a number",
-                    details={"poll_id": poll_id, "extend_hours": extend_hours},
-                    suggestions=["Provide extend_hours as a valid integer"]
+                return JSONResponse(
+                    content={"success": False, "error": "Invalid extend_hours value - must be a number"},
+                    status_code=400
                 )
         
         # Parse new_close_time if provided
@@ -611,66 +613,52 @@ async def reopen_poll_api(
             try:
                 from datetime import datetime
                 import pytz
-                # Parse ISO format datetime
-                new_close_time = datetime.fromisoformat(new_close_time_str.replace('Z', '+00:00'))
-                # Ensure timezone-aware
-                if new_close_time.tzinfo is None:
-                    new_close_time = pytz.UTC.localize(new_close_time)
+                # Handle string conversion
+                if hasattr(new_close_time_str, 'replace'):
+                    # Parse ISO format datetime
+                    new_close_time = datetime.fromisoformat(new_close_time_str.replace('Z', '+00:00'))
+                    # Ensure timezone-aware
+                    if new_close_time.tzinfo is None:
+                        new_close_time = pytz.UTC.localize(new_close_time)
             except (ValueError, TypeError) as e:
-                raise SuperAdminError(
-                    error_type=SuperAdminErrorType.VALIDATION,
-                    code="INVALID_CLOSE_TIME_FORMAT",
-                    message=f"Invalid new_close_time format: {str(e)}",
-                    details={"poll_id": poll_id, "new_close_time": new_close_time_str},
-                    suggestions=["Provide new_close_time in ISO format (YYYY-MM-DDTHH:MM:SS)"]
+                return JSONResponse(
+                    content={"success": False, "error": f"Invalid new_close_time format: {str(e)}"},
+                    status_code=400
                 )
         
         # Call the super admin service
         db = get_db_session()
         try:
+            user_id = safe_get_user_id(current_user)
+            if not user_id:
+                return JSONResponse(
+                    content={"success": False, "error": "Unable to identify admin user"},
+                    status_code=403
+                )
+                
             result = await super_admin_service.reopen_poll(
                 db,
                 poll_id,
-                safe_get_user_id(current_user),
+                user_id,
                 new_close_time=new_close_time,
                 extend_hours=extend_hours,
                 reset_votes=reset_votes
             )
             
             if result["success"]:
-                user_id = safe_get_user_id(current_user)
                 logger.info(f"Enhanced super admin reopen: poll_id={poll_id} admin_user_id={user_id}")
-                return result
+                return JSONResponse(content=result)
             else:
-                raise SuperAdminError(
-                    error_type=SuperAdminErrorType.BUSINESS_LOGIC,
-                    code="REOPEN_FAILED",
-                    message=result.get("error", "Failed to reopen poll"),
-                    details={
-                        "poll_id": poll_id,
-                        "result": result
-                    },
-                    suggestions=[
-                        "Check if the poll exists and is in closed status",
-                        "Verify the poll can be reopened"
-                    ]
-                )
+                return JSONResponse(content=result, status_code=400)
                 
         finally:
             db.close()
             
-    except SuperAdminError:
-        # Re-raise SuperAdminError as-is
-        raise
     except Exception as e:
-        # Wrap unexpected errors
-        raise SuperAdminError(
-            error_type=SuperAdminErrorType.SYSTEM,
-            code="UNEXPECTED_REOPEN_ERROR",
-            message=f"Unexpected error during poll reopen: {str(e)}",
-            original_error=str(e),
-            details={"poll_id": poll_id},
-            suggestions=["Check system logs for more details", "Try again later"]
+        logger.error(f"Unexpected error in enhanced reopen_poll_api for poll {poll_id}: {e}")
+        return JSONResponse(
+            content={"success": False, "error": f"Unexpected error during poll reopen: {str(e)}"},
+            status_code=500
         )
 
 
