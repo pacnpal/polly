@@ -206,17 +206,37 @@ async def reopen_poll_api(
         content_type = request.headers.get("content-type", "")
         
         if "application/json" in content_type:
-            # Handle JSON request
-            body = await request.json()
-            extend_hours = body.get("extend_hours")
-            reset_votes = body.get("reset_votes", False)
-            new_close_time_str = body.get("new_close_time")
+            # Handle JSON request with proper error handling
+            try:
+                body = await request.json()
+                extend_hours = body.get("extend_hours")
+                reset_votes = body.get("reset_votes", False)
+                new_close_time_str = body.get("new_close_time")
+            except (ValueError, TypeError, UnicodeDecodeError) as e:
+                logger.error(f"JSON parsing error in reopen_poll_api for poll {poll_id}: {e}")
+                return JSONResponse(
+                    content={"success": False, "error": "Invalid JSON format in request body"},
+                    status_code=400
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error parsing JSON in reopen_poll_api for poll {poll_id}: {e}")
+                return JSONResponse(
+                    content={"success": False, "error": "Failed to parse request body"},
+                    status_code=400
+                )
         else:
             # Handle form data
-            form_data = await request.form()
-            extend_hours = form_data.get("extend_hours")
-            reset_votes = form_data.get("reset_votes") == "true"
-            new_close_time_str = form_data.get("new_close_time")
+            try:
+                form_data = await request.form()
+                extend_hours = form_data.get("extend_hours")
+                reset_votes = form_data.get("reset_votes") == "true"
+                new_close_time_str = form_data.get("new_close_time")
+            except Exception as e:
+                logger.error(f"Form data parsing error in reopen_poll_api for poll {poll_id}: {e}")
+                return JSONResponse(
+                    content={"success": False, "error": "Failed to parse form data"},
+                    status_code=400
+                )
         
         # Parse extend_hours if provided
         if extend_hours:

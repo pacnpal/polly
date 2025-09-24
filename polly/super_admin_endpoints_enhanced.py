@@ -539,6 +539,141 @@ async def get_queue_status_api(
     return queue_status
 
 
+@handle_super_admin_errors(operation_name="reopen_poll")
+async def reopen_poll_api(
+    poll_id: int,
+    request: Request,
+    current_user: DiscordUser = Depends(require_super_admin)
+) -> JSONResponse:
+    """Reopen a closed poll with comprehensive options and enhanced error handling"""
+    
+    # Parse form data or JSON body with enhanced error handling
+    content_type = request.headers.get("content-type", "")
+    
+    try:
+        if "application/json" in content_type:
+            # Handle JSON request with proper error handling
+            try:
+                body = await request.json()
+                extend_hours = body.get("extend_hours")
+                reset_votes = body.get("reset_votes", False)
+                new_close_time_str = body.get("new_close_time")
+            except (ValueError, TypeError, UnicodeDecodeError) as e:
+                raise SuperAdminError(
+                    error_type=SuperAdminErrorType.VALIDATION,
+                    code="INVALID_JSON",
+                    message="Invalid JSON format in request body",
+                    original_error=str(e),
+                    details={"poll_id": poll_id},
+                    suggestions=["Ensure request body contains valid JSON"]
+                )
+        else:
+            # Handle form data
+            try:
+                form_data = await request.form()
+                extend_hours = form_data.get("extend_hours")
+                reset_votes = form_data.get("reset_votes") == "true"
+                new_close_time_str = form_data.get("new_close_time")
+            except Exception as e:
+                raise SuperAdminError(
+                    error_type=SuperAdminErrorType.VALIDATION,
+                    code="INVALID_FORM_DATA",
+                    message="Failed to parse form data",
+                    original_error=str(e),
+                    details={"poll_id": poll_id},
+                    suggestions=["Ensure form data is properly formatted"]
+                )
+        
+        # Parse extend_hours if provided
+        if extend_hours:
+            try:
+                extend_hours = int(extend_hours)
+                if extend_hours <= 0 or extend_hours > 8760:  # Max 1 year
+                    raise SuperAdminError(
+                        error_type=SuperAdminErrorType.VALIDATION,
+                        code="INVALID_EXTEND_HOURS",
+                        message="Extension hours must be between 1 and 8760 (1 year)",
+                        details={"poll_id": poll_id, "extend_hours": extend_hours},
+                        suggestions=["Provide a valid number of hours between 1 and 8760"]
+                    )
+            except (ValueError, TypeError):
+                raise SuperAdminError(
+                    error_type=SuperAdminErrorType.VALIDATION,
+                    code="INVALID_EXTEND_HOURS_FORMAT",
+                    message="Invalid extend_hours value - must be a number",
+                    details={"poll_id": poll_id, "extend_hours": extend_hours},
+                    suggestions=["Provide extend_hours as a valid integer"]
+                )
+        
+        # Parse new_close_time if provided
+        new_close_time = None
+        if new_close_time_str:
+            try:
+                from datetime import datetime
+                import pytz
+                # Parse ISO format datetime
+                new_close_time = datetime.fromisoformat(new_close_time_str.replace('Z', '+00:00'))
+                # Ensure timezone-aware
+                if new_close_time.tzinfo is None:
+                    new_close_time = pytz.UTC.localize(new_close_time)
+            except (ValueError, TypeError) as e:
+                raise SuperAdminError(
+                    error_type=SuperAdminErrorType.VALIDATION,
+                    code="INVALID_CLOSE_TIME_FORMAT",
+                    message=f"Invalid new_close_time format: {str(e)}",
+                    details={"poll_id": poll_id, "new_close_time": new_close_time_str},
+                    suggestions=["Provide new_close_time in ISO format (YYYY-MM-DDTHH:MM:SS)"]
+                )
+        
+        # Call the super admin service
+        db = get_db_session()
+        try:
+            result = await super_admin_service.reopen_poll(
+                db,
+                poll_id,
+                safe_get_user_id(current_user),
+                new_close_time=new_close_time,
+                extend_hours=extend_hours,
+                reset_votes=reset_votes
+            )
+            
+            if result["success"]:
+                user_id = safe_get_user_id(current_user)
+                logger.info(f"Enhanced super admin reopen: poll_id={poll_id} admin_user_id={user_id}")
+                return result
+            else:
+                raise SuperAdminError(
+                    error_type=SuperAdminErrorType.BUSINESS_LOGIC,
+                    code="REOPEN_FAILED",
+                    message=result.get("error", "Failed to reopen poll"),
+                    details={
+                        "poll_id": poll_id,
+                        "result": result
+                    },
+                    suggestions=[
+                        "Check if the poll exists and is in closed status",
+                        "Verify the poll can be reopened"
+                    ]
+                )
+                
+        finally:
+            db.close()
+            
+    except SuperAdminError:
+        # Re-raise SuperAdminError as-is
+        raise
+    except Exception as e:
+        # Wrap unexpected errors
+        raise SuperAdminError(
+            error_type=SuperAdminErrorType.SYSTEM,
+            code="UNEXPECTED_REOPEN_ERROR",
+            message=f"Unexpected error during poll reopen: {str(e)}",
+            original_error=str(e),
+            details={"poll_id": poll_id},
+            suggestions=["Check system logs for more details", "Try again later"]
+        )
+
+
 def add_enhanced_super_admin_routes(app):
     """Add enhanced super admin routes to the FastAPI app"""
     
@@ -548,6 +683,13 @@ def add_enhanced_super_admin_routes(app):
         request: Request, current_user: DiscordUser = Depends(require_super_admin)
     ):
         return await get_enhanced_super_admin_dashboard(request, current_user)
+    
+    # Enhanced reopen poll endpoint
+    @app.post("/super-admin-enhanced/api/poll/{poll_id}/reopen")
+    async def enhanced_reopen_poll(
+        poll_id: int, request: Request, current_user: DiscordUser = Depends(require_super_admin)
+    ):
+        return await reopen_poll_api(poll_id, request, current_user)
     
     # Bulk operations
     @app.post("/super-admin/api/bulk/operation")
