@@ -662,7 +662,7 @@ async def reopen_poll_api(
     except Exception as e:
         logger.error(f"Unexpected error in enhanced reopen_poll_api for poll {poll_id}: {e}")
         return JSONResponse(
-            content={"success": False, "error": f"Unexpected error during poll reopen: {str(e)}"},
+            content={"success": False, "error": "An internal error occurred while trying to reopen the poll."},
             status_code=500
         )
 
