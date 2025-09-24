@@ -6,6 +6,7 @@ Tests FastAPI routes, HTMX endpoints, and web functionality.
 import pytest
 from unittest.mock import Mock, patch
 from fastapi import status
+from urllib.parse import urlparse
 
 from polly.web_app import (
     create_app,
@@ -54,7 +55,8 @@ class TestCoreRoutes:
         ):
             response = web_client.get("/login", follow_redirects=False)
             assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
-            assert "discord.com" in response.headers["location"]
+            location_host = urlparse(response.headers["location"]).hostname
+            assert location_host == "discord.com"
 
     def test_auth_callback_success(self, web_client):
         """Test successful OAuth callback."""
