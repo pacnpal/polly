@@ -284,6 +284,11 @@
 <script>
 // Client-side poll filtering for better performance
 function filterPolls(filterType) {
+    // Defense-in-depth: restrict filterType to allowed list.
+    const allowedFilters = ['all', 'published', 'draft', 'archived'];
+    if (!allowedFilters.includes(filterType)) {
+        filterType = 'all';
+    }
     console.log('🔍 FILTER DEBUG - Filtering polls by:', filterType);
     
     // Update active tab
@@ -344,8 +349,12 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('🔍 FILTER DEBUG - Initializing client-side filtering');
     
     // Set initial filter based on URL or default to 'all'
+    const allowedFilters = ['all', 'published', 'draft', 'archived'];  // Add all the valid filter options here
     const urlParams = new URLSearchParams(window.location.search);
-    const initialFilter = urlParams.get('filter') || 'all';
+    let initialFilter = urlParams.get('filter') || 'all';
+    if (!allowedFilters.includes(initialFilter)) {
+        initialFilter = 'all';
+    }
     
     // Apply initial filter
     filterPolls(initialFilter);
