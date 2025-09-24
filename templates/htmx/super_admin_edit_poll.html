@@ -8,7 +8,7 @@
                 </button>
             </div>
 
-            <form id="edit-poll-form" hx-put="/super-admin/api/poll/{{ poll.id }}" hx-target="#main-content" 
+            <form id="edit-poll-form" hx-put="/super-admin/api/poll/{{ poll.id }}" hx-swap="none"
                   hx-encoding="multipart/form-data" hx-indicator="#loading-indicator">
                 
                 <div class="card">
@@ -575,12 +575,18 @@
                 
                 // If successful, show success message and redirect back to polls
                 if (event.detail.xhr.status === 200) {
-                    const response = JSON.parse(event.detail.xhr.responseText);
-                    if (response.success) {
-                        showNotification('success', response.message);
-                        setTimeout(() => {
-                            loadPolls();
-                        }, 1500);
+                    try {
+                        const response = JSON.parse(event.detail.xhr.responseText);
+                        if (response.success) {
+                            showNotification('success', response.message);
+                            setTimeout(() => {
+                                loadPolls();
+                            }, 1500);
+                        } else {
+                            showNotification('error', response.error || 'Update failed');
+                        }
+                    } catch (e) {
+                        showNotification('error', 'Invalid response from server');
                     }
                 }
             }
@@ -593,8 +599,12 @@
                     loadingText.classList.add('d-none');
                 }
                 
-                const response = JSON.parse(event.detail.xhr.responseText);
-                showNotification('error', response.error || 'Error updating poll');
+                try {
+                    const response = JSON.parse(event.detail.xhr.responseText);
+                    showNotification('error', response.error || 'Error updating poll');
+                } catch (e) {
+                    showNotification('error', 'Server error occurred while updating poll');
+                }
             }
         });
     }
