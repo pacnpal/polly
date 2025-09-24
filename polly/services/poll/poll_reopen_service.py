@@ -98,8 +98,8 @@ class PollReopeningService:
                     return {"success": False, "error": "Poll has no channel ID"}
                 
             except Exception as e:
-                logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error fetching poll data: {e}")
-                return {"success": False, "error": f"Database error: {str(e)}"}
+                logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error fetching poll data: {e}", exc_info=True)
+                return {"success": False, "error": "A database error occurred while fetching poll data."}
             finally:
                 db.close()
 
@@ -113,8 +113,8 @@ class PollReopeningService:
                     logger.info(f"✅ UNIFIED REOPEN {poll_id} - Deleted {votes_deleted} votes")
                 except Exception as e:
                     db.rollback()
-                    logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error resetting votes: {e}")
-                    return {"success": False, "error": f"Failed to reset votes: {str(e)}"}
+                    logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error resetting votes: {e}", exc_info=True)
+                    return {"success": False, "error": "Failed to reset votes due to internal error."}
                 finally:
                     db.close()
 
