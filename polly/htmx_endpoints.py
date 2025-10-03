@@ -423,12 +423,11 @@ async def cleanup_image(image_path: str) -> bool:
             logger.warning(f"Tried to remove file outside of uploads dir: {abs_image_path}")
         main
 
-            return False
+        return False
 
         if os.path.exists(abs_image_path):
             os.remove(abs_image_path)
             logger.info(f"Cleaned up image: {abs_image_path}")
-         main
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
