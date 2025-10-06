@@ -283,7 +283,8 @@
 <!-- Client-side filtering JavaScript for efficiency -->
 <script>
 // Map internal filter keys to visible labels for safe rendering
-const filterLabels = {
+// Use window property to avoid redeclaration errors when HTMX reloads this template
+window.filterLabels = window.filterLabels || {
     all: "",
     published: "Published",
     draft: "Draft",
@@ -297,7 +298,7 @@ function filterPolls(filterType) {
         filterType = 'all';
     }
     // Get display label, fallback to safe empty string
-    const filterLabel = filterLabels[filterType] || "";
+    const filterLabel = window.filterLabels[filterType] || "";
     console.log('🔍 FILTER DEBUG - Filtering polls by:', filterType);
     
     // Update active tab
