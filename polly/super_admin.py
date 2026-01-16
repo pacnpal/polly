@@ -327,9 +327,10 @@ class SuperAdminService:
                 }
             else:
                 logger.error(f"Super admin {admin_user_id} force close failed for poll {poll_id}: {result.get('error')}")
+                # Return a generic error message so that internal details from result['error'] are not exposed
                 return {
                     "success": False,
-                    "error": f"Force close failed: {result.get('error', 'Unknown error')}",
+                    "error": "Force close failed due to an internal error",
                     "poll_id": poll_id
                 }
 

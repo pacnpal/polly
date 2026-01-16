@@ -735,7 +735,11 @@ class BulletproofPollOperations:
 
         except Exception as e:
             logger.error(f"Poll closure failed: {e}")
-            return {"success": False, "error": f"Poll closure failed: {str(e)}"}
+            # Do not expose internal exception details to callers
+            return {
+                "success": False,
+                "error": "Poll closure failed due to an internal error",
+            }
 
     def _generate_poll_results(self, poll: Poll) -> Dict[str, Any]:
         """Generate comprehensive poll results."""
@@ -758,9 +762,10 @@ class BulletproofPollOperations:
         except Exception as e:
             poll_id = TypeSafeColumn.get_int(poll, "id")
             logger.error(f"Failed to generate results for poll {poll_id}: {e}")
+            # Return a generic error message without internal exception details
             return {
                 "poll_id": poll_id,
-                "error": f"Failed to generate results: {str(e)}",
+                "error": "Failed to generate results due to an internal error",
             }
 
 

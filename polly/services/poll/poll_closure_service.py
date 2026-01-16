@@ -79,7 +79,8 @@ class PollClosureService:
 
             except Exception as e:
                 logger.error(f"❌ UNIFIED CLOSE {poll_id} - Error fetching poll data: {e}")
-                return {"success": False, "error": f"Database error: {str(e)}"}
+                # Return a generic database error without exposing internal exception details
+                return {"success": False, "error": "Database error while fetching poll data"}
             finally:
                 db.close()
 
@@ -102,7 +103,11 @@ class PollClosureService:
             except Exception as e:
                 error_msg = await PollErrorHandler.handle_poll_closure_error(e, poll_id, bot_instance)
                 logger.error(f"❌ UNIFIED CLOSE {poll_id} - Bulletproof closure exception: {error_msg}")
-                return {"success": False, "error": f"Database closure failed: {str(e)}"}
+                # Return a generic closure failure message without internal exception details
+                return {
+                    "success": False,
+                    "error": "Database closure failed during poll update",
+                }
 
             # STEP 3: Get fresh poll data and update the existing message to show it's closed FIRST
             db = get_db_session()
@@ -251,9 +256,10 @@ class PollClosureService:
             # Handle unexpected closure errors with bot owner notification
             error_msg = await PollErrorHandler.handle_poll_closure_error(e, poll_id, bot_instance)
             logger.error(f"❌ UNIFIED CLOSE {poll_id} - Unexpected error in unified closure: {error_msg}")
+            # Return a generic unexpected error message without exposing internal details
             return {
                 "success": False,
-                "error": f"Unexpected error during poll closure: {str(e)}",
+                "error": "Unexpected error during poll closure",
                 "poll_id": poll_id
             }
 

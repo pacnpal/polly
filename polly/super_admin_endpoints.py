@@ -20,13 +20,22 @@ templates = Jinja2Templates(directory="templates")
 
 def sanitize_result_for_client(result: dict) -> dict:
     """Sanitize service result dict to prevent leaking sensitive error details to clients."""
-    if not result.get("success") and "error" in result:
-        original_error = result.get("error", "")
+    sanitized = result.copy()
+
+    if not sanitized.get("success"):
+        original_error = sanitized.get("error", "")
         logger.debug(f"Sanitizing error for client response: {original_error}")
-        sanitized = result.copy()
+        # Always replace top-level error message with a generic one
         sanitized["error"] = "Operation failed. Please try again or contact support."
-        return sanitized
-    return result
+
+        # If there is a nested 'details' field that may contain further error info, sanitize that as well
+        details = sanitized.get("details")
+        if isinstance(details, dict) and "error" in details:
+            details = details.copy()
+            details["error"] = "Operation failed due to an internal error"
+            sanitized["details"] = details
+
+    return sanitized
 
 
 async def get_super_admin_dashboard(
