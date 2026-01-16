@@ -17,16 +17,29 @@ templates = Jinja2Templates(directory="templates")
 
 def sanitize_result_for_client(result: dict) -> dict:
     """Sanitize service result dict to prevent leaking sensitive error details to clients."""
-    if not result.get("success") and "error" in result:
-        # Replace potentially sensitive error messages with generic ones
-        original_error = result.get("error", "")
-        # Log the original error for debugging
-        logger.debug(f"Sanitizing error for client response: {original_error}")
-        # Return sanitized result with generic error message
-        sanitized = result.copy()
+    # Always work on a copy so we don't accidentally mutate shared state
+    sanitized = result.copy() if isinstance(result, dict) else {"raw_result": str(result)}
+
+    error_value = sanitized.get("error")
+    success_flag = sanitized.get("success")
+
+    # Log the original error on the server only, for debugging
+    if error_value is not None:
+        logger.debug(f"Sanitizing error for client response: {error_value}")
+
+    # Primary rule: if the operation was not successful and an error is present,
+    # never pass the raw error message back to the client.
+    if success_flag is False and error_value is not None:
         sanitized["error"] = "Operation failed. Please try again or contact support."
         return sanitized
-    return result
+
+    # Additional safeguard: if the error string looks like it may contain
+    # stack-trace or multi-line internal details, replace it as well.
+    if isinstance(error_value, str) and ("\n" in error_value or "Traceback" in error_value):
+        sanitized["error"] = "Operation failed. Please try again or contact support."
+        return sanitized
+
+    return sanitized
 
 
 async def get_security_status(
