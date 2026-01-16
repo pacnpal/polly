@@ -108,7 +108,8 @@ async def get_system_health(
 
     except Exception as e:
         logger.error(f"Error getting system health: {e}")
-        return JSONResponse({"status": "error", "error": str(e)}, status_code=500)
+        logger.exception("Full traceback for system health error:")
+        return JSONResponse({"status": "error", "error": "Failed to get system health"}, status_code=500)
 
 
 async def manual_full_recovery(
@@ -138,9 +139,10 @@ async def manual_full_recovery(
             
     except Exception as e:
         logger.error(f"Manual recovery endpoint error: {e}")
+        logger.exception("Full traceback for manual recovery error:")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "success": False}
+            content={"error": "An unexpected error occurred during recovery", "success": False}
         )
 
 
@@ -171,9 +173,10 @@ async def recover_specific_poll(
             
     except Exception as e:
         logger.error(f"Poll recovery endpoint error: {e}")
+        logger.exception("Full traceback for poll recovery error:")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "success": False}
+            content={"error": "An unexpected error occurred during poll recovery", "success": False}
         )
 
 
@@ -193,9 +196,10 @@ async def get_recovery_stats(
             
     except Exception as e:
         logger.error(f"Recovery stats endpoint error: {e}")
+        logger.exception("Full traceback for recovery stats error:")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "success": False}
+            content={"error": "Failed to get recovery statistics", "success": False}
         )
 
 
@@ -214,9 +218,10 @@ async def regenerate_static_content(
             
     except Exception as e:
         logger.error(f"Static content regeneration error: {e}")
+        logger.exception("Full traceback for static content regeneration error:")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "success": False}
+            content={"error": "Failed to regenerate static content", "success": False}
         )
 
 
@@ -234,9 +239,10 @@ async def get_static_content_stats(
             
     except Exception as e:
         logger.error(f"Static content stats error: {e}")
+        logger.exception("Full traceback for static content stats error:")
         return JSONResponse(
             status_code=500,
-            content={"error": str(e), "success": False}
+            content={"error": "Failed to get static content statistics", "success": False}
         )
 
 
