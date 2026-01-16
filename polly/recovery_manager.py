@@ -482,8 +482,14 @@ class RecoveryManager:
                 db.close()
                 
         except Exception as e:
+            # Log detailed error information and stack trace for diagnostics,
+            # but do not expose internal exception details to callers.
             logger.error(f"❌ RECOVERY MANAGER - Failed to recover poll {poll_id}: {e}")
-            return {"success": False, "error": str(e)}
+            logger.exception("Full traceback for poll recovery failure:")
+            return {
+                "success": False,
+                "error": "Failed to recover poll. Please try again later or contact an administrator."
+            }
     
     def get_recovery_stats(self) -> Dict[str, Any]:
         """Get current recovery statistics"""
