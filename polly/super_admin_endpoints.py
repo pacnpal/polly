@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
 
 
+def sanitize_result_for_client(result: dict) -> dict:
+    """Sanitize service result dict to prevent leaking sensitive error details to clients."""
+    if not result.get("success") and "error" in result:
+        original_error = result.get("error", "")
+        logger.debug(f"Sanitizing error for client response: {original_error}")
+        sanitized = result.copy()
+        sanitized["error"] = "Operation failed. Please try again or contact support."
+        return sanitized
+    return result
+
+
 async def get_super_admin_dashboard(
     request: Request, current_user: DiscordUser = Depends(require_super_admin)
 ) -> HTMLResponse:
@@ -185,7 +196,7 @@ async def force_close_poll_api(
                 logger.info(f"Super admin {current_user.username} force closed poll {poll_id}")
                 return JSONResponse(content=result)
             else:
-                return JSONResponse(content=result, status_code=400)
+                return JSONResponse(content=sanitize_result_for_client(result), status_code=400)
                 
         finally:
             db.close()

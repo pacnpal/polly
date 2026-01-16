@@ -15,6 +15,20 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
 
 
+def sanitize_result_for_client(result: dict) -> dict:
+    """Sanitize service result dict to prevent leaking sensitive error details to clients."""
+    if not result.get("success") and "error" in result:
+        # Replace potentially sensitive error messages with generic ones
+        original_error = result.get("error", "")
+        # Log the original error for debugging
+        logger.debug(f"Sanitizing error for client response: {original_error}")
+        # Return sanitized result with generic error message
+        sanitized = result.copy()
+        sanitized["error"] = "Operation failed. Please try again or contact support."
+        return sanitized
+    return result
+
+
 async def get_security_status(
     request: Request, current_user: DiscordUser = Depends(require_auth)
 ) -> JSONResponse:
@@ -135,7 +149,7 @@ async def manual_full_recovery(
             return JSONResponse(content=recovery_result)
         else:
             logger.error(f"Manual recovery failed for {current_user.username}: {recovery_result.get('error')}")
-            return JSONResponse(status_code=500, content=recovery_result)
+            return JSONResponse(status_code=500, content=sanitize_result_for_client(recovery_result))
             
     except Exception as e:
         logger.error(f"Manual recovery endpoint error: {e}")
@@ -169,7 +183,7 @@ async def recover_specific_poll(
             return JSONResponse(content=recovery_result)
         else:
             logger.error(f"Poll {poll_id} recovery failed for {current_user.username}: {recovery_result.get('error')}")
-            return JSONResponse(status_code=500, content=recovery_result)
+            return JSONResponse(status_code=500, content=sanitize_result_for_client(recovery_result))
             
     except Exception as e:
         logger.error(f"Poll recovery endpoint error: {e}")
