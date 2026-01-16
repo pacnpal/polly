@@ -159,7 +159,7 @@ async def manual_full_recovery(
         
         if recovery_result["success"]:
             logger.info(f"Manual recovery completed successfully by {current_user.username}")
-            return JSONResponse(content=recovery_result)
+            return JSONResponse(content=sanitize_result_for_client(recovery_result))
         else:
             logger.error(f"Manual recovery failed for {current_user.username}: {recovery_result.get('error')}")
             return JSONResponse(status_code=500, content=sanitize_result_for_client(recovery_result))
