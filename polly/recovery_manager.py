@@ -88,9 +88,11 @@ class RecoveryManager:
         except Exception as e:
             self.recovery_stats["errors_encountered"] += 1
             logger.error(f"❌ RECOVERY MANAGER - Full recovery failed: {e}")
+            # Log full traceback on the server for debugging, but do not expose details to clients
+            logger.exception("Full traceback for recovery failure:")
             return {
                 "success": False,
-                "error": str(e),
+                "error": "Full recovery failed due to an internal error.",
                 "stats": self.recovery_stats.copy(),
                 "message": "Recovery failed with errors"
             }
