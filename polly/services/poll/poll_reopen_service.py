@@ -143,7 +143,10 @@ class PollReopeningService:
                 except Exception as e:
                     db.rollback()
                     logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error extending poll duration: {e}")
-                    return {"success": False, "error": f"Failed to extend poll duration: {str(e)}"}
+                    return {
+                        "success": False,
+                        "error": "Failed to extend poll duration due to an internal error.",
+                    }
                 finally:
                     db.close()
 
@@ -162,7 +165,10 @@ class PollReopeningService:
             except Exception as e:
                 db.rollback()
                 logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error updating poll status: {e}")
-                return {"success": False, "error": f"Database update failed: {str(e)}"}
+                return {
+                    "success": False,
+                    "error": "Database update failed due to an internal error.",
+                }
             finally:
                 db.close()
 
@@ -198,7 +204,10 @@ class PollReopeningService:
                     
             except Exception as e:
                 logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error updating Discord message: {e}")
-                return {"success": False, "error": f"Discord update failed: {str(e)}"}
+                return {
+                    "success": False,
+                    "error": "Discord update failed due to an internal error.",
+                }
 
             # STEP 6: Schedule poll closure if extended
             if extend_minutes and extend_minutes > 0:
@@ -294,8 +303,8 @@ class PollReopeningService:
                 
             return {
                 "success": False,
-                "error": f"Unexpected error during poll reopening: {str(e)}",
-                "poll_id": poll_id
+                "error": "Unexpected error during poll reopening.",
+                "poll_id": poll_id,
             }
 
 
