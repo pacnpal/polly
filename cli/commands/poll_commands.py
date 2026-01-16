@@ -346,7 +346,7 @@ class PollCommands:
                     return 0
                 
                 # Close the poll
-                closure_service = PollClosureService()                from 
+                closure_service = PollClosureService()
                 result = await closure_service.close_poll_unified(poll_id, reason or "Manually closed via CLI")
                 
                 if result["success"]:

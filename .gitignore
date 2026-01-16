@@ -1,28 +1,84 @@
-/.DS_Store
-/.venv
-/cline_docs
-/context_portal
-/polly.db
-WARP.md
-.clinerules/bulletproof-operations.md
-.clinerules/
-polly/__pycache__/
-.env
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+wheels/
+pip-wheel-metadata/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.pyre/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Logs
 logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.sqlite3
+polly.db
+tests/polly.db
+
+# Uploads and generated static files
 static/uploads/
-polly/_pycache_
-polly/__pycache__/discord_utils.cpython-313.pyc
-polly/__pycache__/main.cpython-313.pyc
-uv.lock
-tests/__pycache__/
+static/polls/
+static/images/
+static/avatars/
+
+# Project-specific
+cline_docs/
+context_portal/
+.clinerules/
+WARP.md
 MIGRATION_SYSTEM.md
 test_migration.py
 test_app_migration.py
-uv.lock
-tests/polly.db
-polly.db
-static/polls/
-static/images/
 polly/static_page_generator.py
-static/avatars/
-.snapshots
+.snapshots/
+
+# Lock files (if not using for reproducibility)
+uv.lock

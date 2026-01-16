@@ -63,3 +63,17 @@ async def test_unified_opening_service():
                 if 'poll_opening_service' in content:
                     print("✅ htmx_endpoints.py contains poll_opening_service reference")
                 else:
+                    print("❌ htmx_endpoints.py does not contain poll_opening_service reference")
+        except Exception as e:
+            print(f"❌ Failed to check htmx_endpoints.py: {e}")
+        
+        print("\n" + "=" * 50)
+        print("🧪 TESTING COMPLETE")
+        
+    except Exception as e:
+        print(f"❌ Test failed with error: {e}")
+        logger.exception("Test failed")
+
+
+if __name__ == "__main__":
+    asyncio.run(test_unified_opening_service())

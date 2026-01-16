@@ -88,7 +88,6 @@ scheduler = AsyncIOScheduler()
 
 # Utility functions for error handling and image management
 async def cleanup_image(image_path: str) -> bool:
- alert-autofix-30
     """Safely delete an image file if it's inside the uploads directory"""
     try:
         if not image_path:
@@ -102,7 +101,6 @@ async def cleanup_image(image_path: str) -> bool:
         if os.path.exists(requested_path):
             os.remove(requested_path)
             logger.info(f"Cleaned up image: {requested_path}")
-       main
             return True
     except Exception as e:
         logger.error(f"Failed to cleanup image {image_path}: {e}")
