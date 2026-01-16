@@ -3142,7 +3142,7 @@ async def save_settings_htmx(
 
         return templates.TemplateResponse(
             "htmx/components/inline_error.html",
-            {"request": request, "message": f"Error saving settings: {str(e)}"},
+            {"request": request, "message": "Error saving settings. Please try again."},
         )
 
 
@@ -3334,7 +3334,7 @@ async def get_guild_emojis_htmx(
         print(
             f"🔍 DISCORD EMOJI DEBUG - Exception getting guild emojis for server {server_id}: {e}"
         )
-        return {"emojis": [], "error": str(e)}
+        return {"success": False, "emojis": [], "error": "Failed to load emojis"}
 
 
 def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list, dict]:

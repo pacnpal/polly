@@ -335,8 +335,9 @@ class SuperAdminService:
 
         except Exception as e:
             logger.error(f"Error in super admin force close for poll {poll_id}: {e}")
+            logger.exception("Full traceback for force close error:")
             db_session.rollback()
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+            return {"success": False, "error": "An unexpected error occurred while closing the poll"}
     
     @staticmethod
     async def reopen_poll(
@@ -443,9 +444,10 @@ class SuperAdminService:
                 
         except Exception as e:
             logger.error(f"❌ Critical error in super admin poll reopen for poll {poll_id}: {e}")
+            logger.exception("Full traceback for poll reopen error:")
             return {
                 "success": False,
-                "error": f"Critical error during poll reopen: {str(e)}"
+                "error": "An unexpected error occurred while reopening the poll"
             }
     
     @staticmethod
@@ -475,8 +477,9 @@ class SuperAdminService:
             
         except Exception as e:
             logger.error(f"Error deleting poll {poll_id}: {e}")
+            logger.exception("Full traceback for delete poll error:")
             db_session.rollback()
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "An unexpected error occurred while deleting the poll"}
     
     @staticmethod
     def get_poll_details(db_session, poll_id: int) -> Optional[Dict[str, Any]]:
@@ -668,8 +671,9 @@ class SuperAdminService:
             
         except Exception as e:
             logger.error(f"Error updating poll {poll_id} by admin {admin_user_id}: {e}")
+            logger.exception("Full traceback for update poll error:")
             db_session.rollback()
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "An unexpected error occurred while updating the poll"}
 
 # Global service instance
 super_admin_service = SuperAdminService()
