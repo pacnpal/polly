@@ -1861,9 +1861,9 @@ async def save_settings_htmx(
         from .error_handler import notify_error_async
 
         await notify_error_async(e, "User Settings Save", user_id=current_user.id)
-        return f"""
+        return """
         <div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle me-2"></i>Error saving settings: {str(e)}
+            <i class="fas fa-exclamation-triangle me-2"></i>Error saving settings. Please try again.
         </div>
         """
 
@@ -2493,9 +2493,9 @@ async def update_poll(
         await notify_error_async(
             e, "Poll Update", poll_id=poll_id, user_id=current_user.id
         )
-        return f"""
+        return """
         <div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle me-2"></i>Error updating poll: {str(e)}
+            <i class="fas fa-exclamation-triangle me-2"></i>Error updating poll. Please try again.
         </div>
         """
     finally:
@@ -2584,9 +2584,9 @@ async def close_poll_manually(
         await notify_error_async(
             e, "Manual Poll Closure", poll_id=poll_id, user_id=current_user.id
         )
-        return f"""
+        return """
         <div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle me-2"></i>Error closing poll: {str(e)}
+            <i class="fas fa-exclamation-triangle me-2"></i>Error closing poll. Please try again.
         </div>
         """
     finally:
@@ -2687,9 +2687,9 @@ async def delete_poll(poll_id: int, current_user: DiscordUser = Depends(require_
         await notify_error_async(
             e, "Poll Deletion", poll_id=poll_id, user_id=current_user.id
         )
-        return f"""
+        return """
         <div class="alert alert-danger">
-            <i class="fas fa-exclamation-triangle me-2"></i>Error deleting poll: {str(e)}
+            <i class="fas fa-exclamation-triangle me-2"></i>Error deleting poll. Please try again.
         </div>
         """
     finally:

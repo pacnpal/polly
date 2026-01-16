@@ -270,8 +270,9 @@ async def reopen_poll_api(
                 if new_close_time.tzinfo is None:
                     new_close_time = pytz.UTC.localize(new_close_time)
             except (ValueError, TypeError) as e:
+                logger.error(f"Invalid new_close_time format for poll {poll_id}: {e}")
                 return JSONResponse(
-                    content={"success": False, "error": f"Invalid new_close_time format: {str(e)}"},
+                    content={"success": False, "error": "Invalid new_close_time format. Use ISO format (YYYY-MM-DDTHH:MM:SS)."},
                     status_code=400
                 )
         
