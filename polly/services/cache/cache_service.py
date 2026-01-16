@@ -425,10 +425,11 @@ class CacheService:
             }
 
         except Exception as e:
+            logger.error(f"Redis health check failed: {e}")
             return {
                 "status": "unhealthy",
                 "connected": redis_client.is_connected,
-                "error": str(e),
+                "error": "Health check failed",
             }
 
 
