@@ -74,7 +74,13 @@ class TypeSafeColumn:
 
 # Database setup
 DATABASE_URL = config("DATABASE_URL", default="sqlite:///./db/polly.db")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -92,11 +98,11 @@ class Poll(Base):
     image_path = Column(String(500), nullable=True)  # Path to uploaded image
     # Optional text for image message
     image_message_text = Column(Text, nullable=True)
-    server_id = Column(String(50), nullable=False)  # Discord server ID
+    server_id = Column(String(50), nullable=False, index=True)  # Discord server ID
     server_name = Column(String(255), nullable=True)  # Discord server name
     channel_id = Column(String(50), nullable=False)  # Discord channel ID
     channel_name = Column(String(255), nullable=True)  # Discord channel name
-    creator_id = Column(String(50), nullable=False)  # Discord user ID
+    creator_id = Column(String(50), nullable=False, index=True)  # Discord user ID
     # Discord message ID when posted
     message_id = Column(String(50), nullable=True)
     # Role to ping when poll opens/closes
@@ -120,7 +126,7 @@ class Poll(Base):
     # Open poll immediately upon creation
     open_immediately = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
-    status = Column(String(20), default="scheduled")  # scheduled/active/closed
+    status = Column(String(20), default="scheduled", index=True)  # scheduled/active/closed
 
     # Relationship to votes
     votes = relationship("Vote", back_populates="poll", cascade="all, delete-orphan")
@@ -151,31 +157,81 @@ class Poll(Base):
         """Set poll emojis from Python list"""
         self.emojis_json = json.dumps(value)
 
-    def get_results(self):
-        """Get vote counts for each option"""
+    def get_results(self, db=None):
+        """Get vote counts for each option using optimized SQL query"""
+        if db is None:
+            # Fallback to old method if no session provided (backward compatibility)
+            results = {i: 0 for i in range(len(self.options))}
+            for vote in self.votes:
+                if vote.option_index in results:
+                    results[vote.option_index] += 1
+            return results
+        
+        # Use SQL GROUP BY for efficient aggregation
+        from sqlalchemy import func as sql_func
+        vote_counts = (
+            db.query(Vote.option_index, sql_func.count(Vote.id))
+            .filter(Vote.poll_id == self.id)
+            .group_by(Vote.option_index)
+            .all()
+        )
+        
+        # Initialize results with all options
         results = {i: 0 for i in range(len(self.options))}
-        for vote in self.votes:
-            if vote.option_index in results:
-                results[vote.option_index] += 1
+        # Update with actual vote counts
+        for option_index, count in vote_counts:
+            if option_index in results:
+                results[option_index] = count
         return results
 
-    def get_total_votes(self):
+    def get_total_votes(self, db=None):
         """Get total number of votes (unique users for multiple choice, total votes for single choice)"""
+        if db is None:
+            # Fallback to old method if no session provided (backward compatibility)
+            if bool(self.multiple_choice):
+                unique_users = set(vote.user_id for vote in self.votes)
+                return len(unique_users)
+            else:
+                return len(self.votes)
+        
+        # Use SQL for efficient counting
+        from sqlalchemy import func as sql_func, distinct
+        
         if bool(self.multiple_choice):
             # For multiple choice, count unique users who voted
-            unique_users = set(vote.user_id for vote in self.votes)
-            return len(unique_users)
+            count = (
+                db.query(sql_func.count(distinct(Vote.user_id)))
+                .filter(Vote.poll_id == self.id)
+                .scalar()
+            )
         else:
             # For single choice, count total votes
-            return len(self.votes)
+            count = (
+                db.query(sql_func.count(Vote.id))
+                .filter(Vote.poll_id == self.id)
+                .scalar()
+            )
+        
+        return count or 0
 
-    def get_total_vote_count(self):
+    def get_total_vote_count(self, db=None):
         """Get total number of individual votes cast (regardless of poll type)"""
-        return len(self.votes)
+        if db is None:
+            # Fallback to old method if no session provided (backward compatibility)
+            return len(self.votes)
+        
+        # Use SQL for efficient counting
+        from sqlalchemy import func as sql_func
+        count = (
+            db.query(sql_func.count(Vote.id))
+            .filter(Vote.poll_id == self.id)
+            .scalar()
+        )
+        return count or 0
 
-    def get_winner(self):
+    def get_winner(self, db=None):
         """Get winning option(s)"""
-        results = self.get_results()
+        results = self.get_results(db)
         if not results:
             return None
 
@@ -214,8 +270,8 @@ class Vote(Base):
     __tablename__ = "votes"
 
     id = Column(Integer, primary_key=True, index=True)
-    poll_id = Column(Integer, ForeignKey("polls.id"), nullable=False)
-    user_id = Column(String(50), nullable=False)  # Discord user ID
+    poll_id = Column(Integer, ForeignKey("polls.id"), nullable=False, index=True)
+    user_id = Column(String(50), nullable=False, index=True)  # Discord user ID
     option_index = Column(Integer, nullable=False)  # Index of chosen option
     voted_at = Column(DateTime, default=func.now())
 
