@@ -13,29 +13,10 @@ from typing import Optional
 
 from .super_admin import require_super_admin, super_admin_service, DiscordUser
 from .database import get_db_session
+from .admin_response_utils import sanitize_result_for_client
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
-
-
-def sanitize_result_for_client(result: dict) -> dict:
-    """Sanitize service result dict to prevent leaking sensitive error details to clients."""
-    sanitized = result.copy()
-
-    if not sanitized.get("success"):
-        original_error = sanitized.get("error", "")
-        logger.debug(f"Sanitizing error for client response: {original_error}")
-        # Always replace top-level error message with a generic one
-        sanitized["error"] = "Operation failed. Please try again or contact support."
-
-        # If there is a nested 'details' field that may contain further error info, sanitize that as well
-        details = sanitized.get("details")
-        if isinstance(details, dict) and "error" in details:
-            details = details.copy()
-            details["error"] = "Operation failed due to an internal error"
-            sanitized["details"] = details
-
-    return sanitized
 
 
 async def get_super_admin_dashboard(
