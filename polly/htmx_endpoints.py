@@ -1864,14 +1864,14 @@ async def get_create_form_json_import_htmx(
 
 
 # Helper functions for Redis caching
-def _serialize_polls_for_cache(polls: list) -> list:
+def _serialize_polls_for_cache(polls: list, db=None) -> list:
     """Convert Poll objects to JSON-serializable dictionaries with pre-calculated expensive operations"""
     serialized_polls = []
     
     for poll in polls:
         try:
             # Pre-calculate expensive operations during serialization
-            total_votes = poll.get_total_votes()
+            total_votes = poll.get_total_votes(db)
             
             # Extract all poll data safely using TypeSafeColumn
             poll_data = {
@@ -2177,7 +2177,7 @@ async def get_polls_htmx(
 
         # Serialize polls for caching (with pre-calculated expensive operations)
         try:
-            serialized_polls = _serialize_polls_for_cache(processed_polls)
+            serialized_polls = _serialize_polls_for_cache(processed_polls, db)
             
             # Prepare cacheable data
             cacheable_data = {
@@ -2301,7 +2301,7 @@ async def get_stats_htmx(
         for poll in polls:
             try:
                 # Use the Poll model's get_total_votes method
-                poll_votes = poll.get_total_votes()
+                poll_votes = poll.get_total_votes(db)
                 if isinstance(poll_votes, int):
                     total_votes += poll_votes
                     logger.debug(
@@ -4191,8 +4191,8 @@ async def get_poll_results_realtime_htmx(
         logger.debug(f"📊 POLL STATUS - Poll {poll_id} status is '{poll_status}'")
 
         # Get poll results
-        total_votes = poll.get_total_votes()
-        results = poll.get_results()
+        total_votes = poll.get_total_votes(db)
+        results = poll.get_results(db)
 
         # Get poll data safely
         options = poll.options  # Use the property method from Poll model
@@ -4363,11 +4363,11 @@ async def get_poll_dashboard_htmx(
 
             # Always calculate fresh summary statistics from the Poll model to avoid cache corruption
             logger.info("🔍 DASHBOARD DEBUG - Calculating fresh summary statistics")
-            fresh_total_votes = poll.get_total_votes()
+            fresh_total_votes = poll.get_total_votes(db)
             fresh_unique_voters = len(
                 set(vote["user_id"] for vote in template_vote_data)
             )
-            fresh_results = poll.get_results()
+            fresh_results = poll.get_results(db)
 
             logger.info("🔍 DASHBOARD DEBUG - Fresh calculations:")
             logger.info(f"🔍 DASHBOARD DEBUG - fresh_total_votes: {fresh_total_votes}")
@@ -4561,7 +4561,7 @@ async def get_poll_dashboard_htmx(
         # Get summary statistics
         total_votes = len(votes)
         unique_voters = len(unique_users)
-        results = poll.get_results()
+        results = poll.get_results(db)
 
         # Prepare cacheable data (exclude non-serializable objects like Poll and functions)
         # Create a JSON-serializable version of vote_data without datetime objects
@@ -4950,7 +4950,7 @@ async def export_poll_json_htmx(
         logger.info(f"🔍 JSON EXPORT - Exporting poll: '{poll_name}' (ID: {poll_id})")
 
         # Export poll to JSON
-        json_string = PollJSONExporter.export_poll_to_json_string(poll, indent=2)
+        json_string = PollJSONExporter.export_poll_to_json_string(poll, indent=2, db=db)
         filename = PollJSONExporter.generate_filename(poll)
 
         logger.info(

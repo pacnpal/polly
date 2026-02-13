@@ -401,7 +401,7 @@ async def fix_closed_polls_discord_messages_on_startup():
                         await asyncio.sleep(api_call_delay)
                         
                         # Update the Discord message to show final results
-                        message_updated = await update_poll_message(bot, poll)
+                        message_updated = await update_poll_message(bot, poll, db)
                         
                         if message_updated:
                             logger.info(f"✅ STARTUP FIX - Successfully updated Discord message for poll {poll_id}")
@@ -1166,7 +1166,7 @@ async def reaction_safeguard_task():
 
                                                         # Update poll embed for live updates
                                                         try:
-                                                            await update_poll_message(bot, poll)
+                                                            await update_poll_message(bot, poll, db)
                                                             logger.debug(f"✅ Safeguard: Poll message updated for poll {poll_id}")
                                                         except Exception as update_error:
                                                             logger.error(f"❌ Safeguard: Failed to update poll message for poll {poll_id}: {update_error}")
@@ -1236,7 +1236,7 @@ async def reaction_safeguard_task():
                                                         # Update poll embed for live updates
                                                         try:
                                                             await update_poll_message(
-                                                                bot, poll
+                                                                bot, poll, db
                                                             )
                                                             logger.debug(
                                                                 f"✅ Safeguard: Poll message updated for poll {poll_id}"

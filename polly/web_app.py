@@ -849,7 +849,7 @@ def add_screenshot_routes(app: FastAPI):
                 # Get summary statistics
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
-                results = poll.get_results()
+                results = poll.get_results(db)
                 
                 # Format datetime function for template
                 from .htmx_endpoints import format_datetime_for_user
@@ -1000,7 +1000,7 @@ def add_static_poll_routes(app: FastAPI):
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
-                results = poll.get_results()
+                results = poll.get_results(db)
                 
                 # Use proper template instead of embedded HTML
                 response = templates.TemplateResponse(
