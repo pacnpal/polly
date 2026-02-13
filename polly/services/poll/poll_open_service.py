@@ -266,21 +266,11 @@ class PollOpeningService:
                 # Don't fail the opening process if scheduling fails
 
             # STEP 8: Cache management - invalidate stale caches and warm new ones
-            try:
-                from ..cache.enhanced_cache_service import get_enhanced_cache_service
-                
-                enhanced_cache = get_enhanced_cache_service()
-                if enhanced_cache:
-                    # Invalidate any stale poll-related caches
-                    invalidated = await enhanced_cache.invalidate_poll_related_cache(poll_id)
-                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Invalidated {invalidated} stale cache entries")
-                    
-                    # Warm caches for the newly active poll (optional - will be populated on first access)
-                    logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Caches will be warmed on first access")
-                    
-            except Exception as cache_error:
-                logger.error(f"❌ UNIFIED OPEN {poll_id} - Error managing caches: {cache_error}")
-                # Don't fail the opening process if cache management fails
+            from ..cache.cache_invalidation_utils import invalidate_poll_cache_safely
+            await invalidate_poll_cache_safely(poll_id, "UNIFIED OPEN")
+            
+            # Warm caches for the newly active poll (optional - will be populated on first access)
+            logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Caches will be warmed on first access")
 
             # STEP 9: Static content generation is handled only at poll closure
             # No static content generation needed during poll opening

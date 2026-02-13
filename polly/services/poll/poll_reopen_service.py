@@ -245,18 +245,8 @@ class PollReopeningService:
                     # Don't fail the reopening process if scheduling fails
 
             # STEP 7: Cache management - invalidate stale caches
-            try:
-                from ..cache.enhanced_cache_service import get_enhanced_cache_service
-                
-                enhanced_cache = get_enhanced_cache_service()
-                if enhanced_cache:
-                    # Invalidate any stale poll-related caches
-                    invalidated = await enhanced_cache.invalidate_poll_related_cache(poll_id)
-                    logger.info(f"✅ UNIFIED REOPEN {poll_id} - Invalidated {invalidated} stale cache entries")
-                    
-            except Exception as cache_error:
-                logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error managing caches: {cache_error}")
-                # Don't fail the reopening process if cache management fails
+            from ..cache.cache_invalidation_utils import invalidate_poll_cache_safely
+            await invalidate_poll_cache_safely(poll_id, "UNIFIED REOPEN")
 
             # Log admin action if this was an admin reopening
             if admin_user_id:
