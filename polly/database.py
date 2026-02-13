@@ -168,9 +168,8 @@ class Poll(Base):
             return results
         
         # Use SQL GROUP BY for efficient aggregation
-        from sqlalchemy import func as sql_func
         vote_counts = (
-            db.query(Vote.option_index, sql_func.count(Vote.id))
+            db.query(Vote.option_index, func.count(Vote.id))
             .filter(Vote.poll_id == self.id)
             .group_by(Vote.option_index)
             .all()
@@ -195,19 +194,19 @@ class Poll(Base):
                 return len(self.votes)
         
         # Use SQL for efficient counting
-        from sqlalchemy import func as sql_func, distinct
+        from sqlalchemy import distinct
         
         if bool(self.multiple_choice):
             # For multiple choice, count unique users who voted
             count = (
-                db.query(sql_func.count(distinct(Vote.user_id)))
+                db.query(func.count(distinct(Vote.user_id)))
                 .filter(Vote.poll_id == self.id)
                 .scalar()
             )
         else:
             # For single choice, count total votes
             count = (
-                db.query(sql_func.count(Vote.id))
+                db.query(func.count(Vote.id))
                 .filter(Vote.poll_id == self.id)
                 .scalar()
             )
@@ -221,9 +220,8 @@ class Poll(Base):
             return len(self.votes)
         
         # Use SQL for efficient counting
-        from sqlalchemy import func as sql_func
         count = (
-            db.query(sql_func.count(Vote.id))
+            db.query(func.count(Vote.id))
             .filter(Vote.poll_id == self.id)
             .scalar()
         )
