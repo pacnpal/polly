@@ -12,9 +12,11 @@ def _sanitize_nested_details(sanitized: dict) -> None:
     """Helper to sanitize nested error details in place."""
     details = sanitized.get("details")
     if isinstance(details, dict) and "error" in details:
-        details = details.copy()
-        details["error"] = "Operation failed due to an internal error"
-        sanitized["details"] = details
+        # Create a copy to avoid mutating the original
+        sanitized["details"] = {
+            **details,
+            "error": "Operation failed due to an internal error"
+        }
 
 
 def sanitize_result_for_client(result: dict) -> dict:

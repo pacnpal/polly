@@ -28,12 +28,14 @@ def get_bot_instance_safe(bot_instance=None):
     return bot_instance
 
 
-def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Any], Optional[Any]]:
+def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Poll], Any]:
     """
     Fetch poll with votes eagerly loaded.
     
     This is a common pattern used across all poll services to fetch a poll
     with its related votes in a single query.
+    
+    Note: The caller is responsible for closing the database session.
     
     Args:
         poll_id: ID of the poll to fetch
@@ -41,11 +43,10 @@ def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Any], Optional[
         
     Returns:
         Tuple of (poll, db_session) or (None, db_session) if poll not found
+        The caller must close the db_session after use.
     """
-    should_close_db = False
     if db is None:
         db = get_db_session()
-        should_close_db = True
     
     try:
         poll = (
@@ -57,8 +58,7 @@ def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Any], Optional[
         return poll, db
     except Exception as e:
         logger.error(f"Error fetching poll {poll_id}: {e}")
-        if should_close_db:
-            db.close()
+        db.close()
         raise
 
 

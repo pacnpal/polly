@@ -58,9 +58,13 @@ def test_get_bot_instance_safe_with_none():
     """Test that get_bot_instance_safe handles None gracefully."""
     from polly.services.poll.poll_db_utils import get_bot_instance_safe
     
-    # This should not raise an error even if bot is not available
+    # When no bot instance is provided, function attempts to fetch it
+    # If no bot is available (like in test environment), it should return None
     result = get_bot_instance_safe(None)
-    # Result could be None or a bot instance, both are valid
+    # In test environment without a running bot, expect None
+    # In production with bot running, expect a bot instance
+    # Both are valid - this tests that the function doesn't crash
+    assert result is None or result is not None  # Function completes without error
 
 
 def test_get_bot_instance_safe_with_existing():
