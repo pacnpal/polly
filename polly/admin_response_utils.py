@@ -8,6 +8,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_nested_details(sanitized: dict) -> None:
+    """Helper to sanitize nested error details in place."""
+    details = sanitized.get("details")
+    if isinstance(details, dict) and "error" in details:
+        details = details.copy()
+        details["error"] = "Operation failed due to an internal error"
+        sanitized["details"] = details
+
+
 def sanitize_result_for_client(result: dict) -> dict:
     """
     Sanitize service result dict to prevent leaking sensitive error details to clients.
@@ -35,20 +44,14 @@ def sanitize_result_for_client(result: dict) -> dict:
     # never pass the raw error message back to the client.
     if success_flag is False and error_value is not None:
         sanitized["error"] = "Operation failed. Please try again or contact support."
-        
-        # If there is a nested 'details' field that may contain further error info, sanitize that as well
-        details = sanitized.get("details")
-        if isinstance(details, dict) and "error" in details:
-            details = details.copy()
-            details["error"] = "Operation failed due to an internal error"
-            sanitized["details"] = details
-            
+        _sanitize_nested_details(sanitized)
         return sanitized
 
     # Additional safeguard: if the error string looks like it may contain
     # stack-trace or multi-line internal details, replace it as well.
     if isinstance(error_value, str) and ("\n" in error_value or "Traceback" in error_value):
         sanitized["error"] = "Operation failed. Please try again or contact support."
+        _sanitize_nested_details(sanitized)
         return sanitized
 
     return sanitized

@@ -40,7 +40,7 @@ class PollClosureService:
             logger.info(f"🏁 UNIFIED CLOSE {poll_id} - Starting unified poll closure (reason: {reason})")
             
             # Get bot instance if not provided
-            from polly.services.poll.poll_db_utils import get_bot_instance_safe, get_poll_with_votes, extract_poll_fields
+            from .poll_db_utils import get_bot_instance_safe, get_poll_with_votes, extract_poll_fields
             
             bot_instance = get_bot_instance_safe(bot_instance)
             if not bot_instance:

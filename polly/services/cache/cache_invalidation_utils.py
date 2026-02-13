@@ -23,7 +23,7 @@ async def invalidate_poll_cache_safely(poll_id: int, operation_name: str = "OPER
         Number of cache entries invalidated (0 if cache service unavailable or error occurs)
     """
     try:
-        from ..cache.enhanced_cache_service import get_enhanced_cache_service
+        from .enhanced_cache_service import get_enhanced_cache_service
         
         enhanced_cache = get_enhanced_cache_service()
         if enhanced_cache:
