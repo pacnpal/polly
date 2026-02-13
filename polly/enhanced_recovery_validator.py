@@ -448,7 +448,7 @@ class EnhancedRecoveryValidator:
                             self.validation_errors.append(f"Discord message title mismatch for poll {poll_id}")
                             # Update the message
                             from .discord_utils import update_poll_message
-                            await update_poll_message(self.bot, poll)
+                            await update_poll_message(self.bot, poll, db)
                             self.recovery_actions.append(f"Updated Discord message for poll {poll_id}")
                             self.metrics["recovery_actions_executed"] += 1
                     
