@@ -50,10 +50,9 @@ class PollReopeningService:
             logger.info(f"🔄 UNIFIED REOPEN {poll_id} - Starting unified poll reopening (reason: {reason})")
             
             # Get bot instance if not provided
-            if not bot_instance:
-                from ...discord_bot import get_bot_instance
-                bot_instance = get_bot_instance()
-                
+            from .poll_db_utils import get_bot_instance_safe, get_poll_with_votes, extract_poll_fields
+            
+            bot_instance = get_bot_instance_safe(bot_instance)
             if not bot_instance:
                 logger.error(f"❌ UNIFIED REOPEN {poll_id} - Bot instance not available")
                 return {"success": False, "error": "Bot instance not available"}
@@ -62,21 +61,17 @@ class PollReopeningService:
             db = get_db_session()
             poll = None
             try:
-                from sqlalchemy.orm import joinedload
-
-                poll = (
-                    db.query(Poll)
-                    .options(joinedload(Poll.votes))
-                    .filter(Poll.id == poll_id)
-                    .first()
-                )
+                poll, db = get_poll_with_votes(poll_id, db)
                 if not poll:
                     logger.error(f"❌ UNIFIED REOPEN {poll_id} - Poll not found in database")
                     return {"success": False, "error": "Poll not found"}
 
-                # Check current status - only allow reopening of closed polls
-                current_status = TypeSafeColumn.get_string(poll, "status")
-                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+                # Extract poll fields
+                poll_data = extract_poll_fields(poll)
+                current_status = poll_data["status"]
+                poll_name = poll_data["name"]
+                message_id = poll_data["message_id"]
+                channel_id = poll_data["channel_id"]
                 
                 logger.info(f"📊 UNIFIED REOPEN {poll_id} - Poll '{poll_name}' found, status: {current_status}")
 
@@ -86,9 +81,6 @@ class PollReopeningService:
                     return {"success": False, "error": f"Poll is not closed (current status: {current_status})"}
 
                 # Check if poll has existing Discord message
-                message_id = TypeSafeColumn.get_string(poll, "message_id")
-                channel_id = TypeSafeColumn.get_string(poll, "channel_id")
-                
                 if not message_id:
                     logger.error(f"❌ UNIFIED REOPEN {poll_id} - Poll has no Discord message ID")
                     return {"success": False, "error": "Poll has no Discord message to update"}

@@ -307,8 +307,8 @@ class PollEditService:
             logger.info(f"🔄 DISCORD UPDATE {poll_id} - Discord update needed for: {[f for f in discord_update_fields if f in edit_data]}")
 
             # Get bot instance
-            from ...discord_bot import get_bot_instance
-            bot_instance = get_bot_instance()
+            from .poll_db_utils import get_bot_instance_safe
+            bot_instance = get_bot_instance_safe()
             
             if not bot_instance:
                 logger.error(f"❌ DISCORD UPDATE {poll_id} - Bot instance not available")
