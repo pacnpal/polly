@@ -81,7 +81,7 @@ class PollOpeningService:
                 
             except Exception as e:
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Error fetching poll data: {e}")
-                return {"success": False, "error": f"Database error: {str(e)}"}
+                return {"success": False, "error": "Database error while fetching poll data"}
             finally:
                 db.close()
 
@@ -219,7 +219,7 @@ class PollOpeningService:
             except Exception as e:
                 db.rollback()
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Database update failed: {e}")
-                return {"success": False, "error": f"Database update failed: {str(e)}"}
+                return {"success": False, "error": "Database update failed"}
             finally:
                 db.close()
 

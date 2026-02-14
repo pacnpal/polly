@@ -35,7 +35,8 @@ def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Poll], Any]:
     This is a common pattern used across all poll services to fetch a poll
     with its related votes in a single query.
     
-    Note: The caller is responsible for closing the database session.
+    Note: The caller is responsible for closing the database session in all cases,
+    including exceptions.
     
     Args:
         poll_id: ID of the poll to fetch
@@ -58,7 +59,7 @@ def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Poll], Any]:
         return poll, db
     except Exception as e:
         logger.error(f"Error fetching poll {poll_id}: {e}")
-        db.close()
+        # Don't close the session - let the caller handle it
         raise
 
 

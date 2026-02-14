@@ -91,7 +91,7 @@ class PollReopeningService:
                 
             except Exception as e:
                 logger.error(f"❌ UNIFIED REOPEN {poll_id} - Error fetching poll data: {e}", exc_info=True)
-                return {"success": False, "error": "A database error occurred while fetching poll data."}
+                return {"success": False, "error": "Database error while fetching poll data"}
             finally:
                 db.close()
 
