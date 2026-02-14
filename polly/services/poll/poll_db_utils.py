@@ -59,7 +59,7 @@ def get_poll_with_votes(poll_id: int, db=None) -> Tuple[Optional[Poll], Any]:
         return poll, db
     except Exception as e:
         logger.error(f"Error fetching poll {poll_id}: {e}")
-        # Don't close the session - let the caller handle it
+        # Do not close the session - let the caller handle it
         raise
 
 
