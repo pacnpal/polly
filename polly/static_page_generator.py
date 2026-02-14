@@ -194,7 +194,7 @@ class StaticPageGenerator:
                 # Get summary statistics
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
-                results = poll.get_results()
+                results = poll.get_results(db)
                 
                 # DISABLED: Screenshot functionality completely disabled per user request
                 # Check if dashboard screenshot exists
@@ -335,7 +335,7 @@ class StaticPageGenerator:
                 # Get summary statistics
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
-                results = poll.get_results()
+                results = poll.get_results(db)
                 
                 # Generate static HTML using the dashboard component template
                 template = self.jinja_env.get_template("htmx/components/poll_dashboard.html")
@@ -399,7 +399,7 @@ class StaticPageGenerator:
                     "emojis": poll.emojis,
                     "total_votes": len(votes),
                     "unique_voters": len(set(TypeSafeColumn.get_string(vote, "user_id") for vote in votes)),
-                    "results": poll.get_results(),
+                    "results": poll.get_results(db),
                     "is_anonymous": TypeSafeColumn.get_bool(poll, "anonymous", False),
                     "multiple_choice": TypeSafeColumn.get_bool(poll, "multiple_choice", False),
                     "close_time": TypeSafeColumn.get_datetime(poll, "close_time").isoformat() if TypeSafeColumn.get_datetime(poll, "close_time") is not None else None,

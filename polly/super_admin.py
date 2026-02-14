@@ -500,7 +500,7 @@ class SuperAdminService:
             unique_voters = len(set(vote.user_id for vote in votes))
             
             # Get results - ensure accurate vote counting
-            results = poll.get_results(db_session)
+            results = poll.get_results(db_session)  # Note: db_session is the parameter name in this function
             
             # Prepare vote data - super admin sees everything, even on anonymous polls
             vote_data = []

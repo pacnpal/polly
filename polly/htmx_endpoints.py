@@ -2063,7 +2063,7 @@ async def get_polls_htmx(
                         
                         # Test the method
                         try:
-                            test_votes = first_poll.get_total_votes()
+                            test_votes = first_poll.get_total_votes(db)
                             logger.debug(f"🔍 CACHE DEBUG - First poll total votes: {test_votes}")
                         except Exception as method_error:
                             logger.error(f"🔍 CACHE DEBUG - Error calling get_total_votes: {method_error}")
@@ -2139,7 +2139,7 @@ async def get_polls_htmx(
                     logger.debug(f"🔍 POLL PROCESSING DEBUG - Poll {TypeSafeColumn.get_int(poll, 'id', 0)} has get_total_votes method")
                     try:
                         # Test the method to ensure it works
-                        test_votes = poll.get_total_votes()
+                        test_votes = poll.get_total_votes(db)
                         logger.debug(f"🔍 POLL PROCESSING DEBUG - Poll {TypeSafeColumn.get_int(poll, 'id', 0)} total votes: {test_votes}")
                     except Exception as method_error:
                         logger.error(f"🔍 POLL PROCESSING DEBUG - Error calling get_total_votes on poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {method_error}")
