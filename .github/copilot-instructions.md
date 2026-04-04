@@ -70,7 +70,7 @@ Copy `.env.example` → `.env` and fill in values. **Tests require a `.env` file
 - `DISCORD_TOKEN` — Discord bot token (required at import time by `polly.discord_bot`)
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` — OAuth credentials
 - `SECRET_KEY` — JWT signing key
-- `REDIS_URL` / `REDIS_HOST` / `REDIS_PORT` — Redis connection (default port 6340)
+- `REDIS_URL` / `REDIS_HOST` / `REDIS_PORT` — Redis connection (Docker maps host port 6340 → container port 6379)
 - `DEBUG` — set `true` for debug logging
 
 ### 3. Database
