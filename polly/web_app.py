@@ -34,6 +34,7 @@ from .security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from .turnstile_middleware import TurnstileSecurityMiddleware
 from .auth_middleware import AuthenticationMiddleware
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from .database import get_async_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
@@ -781,25 +782,19 @@ def add_screenshot_routes(app: FastAPI):
 
             async with get_async_db_session() as db:
                 poll = (
-                    await db.execute(select(Poll).where(Poll.id == poll_id))
+                    await db.execute(
+                        select(Poll)
+                        .where(Poll.id == poll_id)
+                        .options(selectinload(Poll.votes))
+                    )
                 ).scalar_one_or_none()
                 if not poll:
                     from fastapi import HTTPException
                     raise HTTPException(status_code=404, detail="Poll not found")
 
-                # Get all votes for this poll
-                votes = (
-                    (
-                        await db.execute(
-                            select(Vote)
-                            .where(Vote.poll_id == poll_id)
-                            .order_by(Vote.voted_at.desc())
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                
+                # Votes are eagerly loaded; sort in Python to preserve descending order by voted_at
+                votes = sorted(poll.votes, key=lambda v: v.voted_at, reverse=True)
+
                 # Get poll data
                 options = poll.options
                 emojis = poll.emojis
@@ -942,7 +937,11 @@ def add_static_poll_routes(app: FastAPI):
             # Get poll data directly from database since we need the full poll object
             async with get_async_db_session() as db:
                 poll = (
-                    await db.execute(select(Poll).where(Poll.id == poll_id))
+                    await db.execute(
+                        select(Poll)
+                        .where(Poll.id == poll_id)
+                        .options(selectinload(Poll.votes))
+                    )
                 ).scalar_one_or_none()
                 if not poll:
                     from fastapi import HTTPException
@@ -954,18 +953,8 @@ def add_static_poll_routes(app: FastAPI):
                     from fastapi import HTTPException
                     raise HTTPException(status_code=404, detail="Static page only available for closed polls")
 
-                # Get votes for the poll
-                votes = (
-                    (
-                        await db.execute(
-                            select(Vote)
-                            .where(Vote.poll_id == poll_id)
-                            .order_by(Vote.voted_at.desc())
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
+                # Votes are eagerly loaded; sort in Python to preserve descending order by voted_at
+                votes = sorted(poll.votes, key=lambda v: v.voted_at, reverse=True)
                 
                 # Prepare vote data with real Discord usernames (never anonymize for static pages)
                 vote_data = []

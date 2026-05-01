@@ -528,6 +528,17 @@ async def close_poll_htmx(
         )
 
 
+async def _revert_poll_status_to_scheduled(poll_id: int) -> None:
+    """Revert a poll's status back to 'scheduled' (used when an open attempt fails)."""
+    async with get_async_db_session() as db:
+        poll = (
+            await db.execute(select(Poll).where(Poll.id == poll_id))
+        ).scalar_one_or_none()
+        if poll:
+            poll.status = "scheduled"
+            await db.commit()
+
+
 async def open_poll_now_htmx(
     poll_id: int,
     request: Request,
@@ -587,14 +598,7 @@ async def open_poll_now_htmx(
 
             if not result["success"]:
                 logger.error(f"Unified poll opening failed for poll {poll_id}: {result.get('error')}")
-                # Revert status change if opening failed
-                async with get_async_db_session() as db:
-                    revert_poll = (
-                        await db.execute(select(Poll).where(Poll.id == poll_id))
-                    ).scalar_one_or_none()
-                    if revert_poll:
-                        revert_poll.status = "scheduled"
-                        await db.commit()
+                await _revert_poll_status_to_scheduled(poll_id)
                 return templates.TemplateResponse(
                     "htmx/components/inline_error.html",
                     {"request": request, "message": result.get("error", "Error opening poll")},
@@ -603,14 +607,7 @@ async def open_poll_now_htmx(
             logger.info(f"Poll {poll_id} opened immediately by user {current_user.id} via unified service")
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
-            # Revert status change if posting failed
-            async with get_async_db_session() as db:
-                revert_poll = (
-                    await db.execute(select(Poll).where(Poll.id == poll_id))
-                ).scalar_one_or_none()
-                if revert_poll:
-                    revert_poll.status = "scheduled"
-                    await db.commit()
+            await _revert_poll_status_to_scheduled(poll_id)
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
                 {"request": request, "message": "Error posting poll to Discord"},
