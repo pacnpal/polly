@@ -111,7 +111,10 @@ def _is_async_driver_url(url: str) -> bool:
         or "+asyncpg" in url
         or "+asyncmy" in url
         or "+aiomysql" in url
-        or "+psycopg_async" in url
+        # psycopg v3 (the unified ``psycopg`` package, not legacy ``psycopg2``)
+        # ships an async driver under the same dialect name, so a URL of
+        # ``postgresql+psycopg://...`` is async-capable.
+        or "+psycopg://" in url
     )
 
 

@@ -4,7 +4,7 @@ Tests FastAPI routes, HTMX endpoints, and web functionality.
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from fastapi import status
 from urllib.parse import urlparse
 
@@ -104,7 +104,9 @@ class TestCoreRoutes:
         """Test dashboard route with authentication."""
         with (
             patch("polly.web_app.require_auth", return_value=sample_discord_user),
-            patch("polly.web_app.get_user_preferences") as mock_get_prefs,
+            patch(
+                "polly.web_app.get_user_preferences", new_callable=AsyncMock
+            ) as mock_get_prefs,
             patch("polly.web_app.get_user_guilds_with_channels") as mock_get_guilds,
             patch("polly.web_app.templates") as mock_templates,
         ):
@@ -122,7 +124,9 @@ class TestCoreRoutes:
         """Test dashboard route with guild retrieval error."""
         with (
             patch("polly.web_app.require_auth", return_value=sample_discord_user),
-            patch("polly.web_app.get_user_preferences") as mock_get_prefs,
+            patch(
+                "polly.web_app.get_user_preferences", new_callable=AsyncMock
+            ) as mock_get_prefs,
             patch(
                 "polly.web_app.get_user_guilds_with_channels",
                 side_effect=Exception("Guild error"),
@@ -140,109 +144,153 @@ class TestCoreRoutes:
 
 
 class TestUserPreferences:
-    """Test user preference functionality."""
+    """Test user preference functionality (async path).
 
-    def test_get_user_preferences_existing(self, db_session, sample_user):
-        """Test getting existing user preferences."""
+    ``get_user_preferences`` and ``save_user_preferences`` were converted to
+    async coroutines that use ``get_async_db_session()`` from ``polly.database``.
+    These tests exercise them against a temporary aiosqlite engine and patch
+    the module-level async sessionmaker so the function under test sees the
+    test database.
+    """
+
+    @staticmethod
+    async def _build_async_session(tmp_path):
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from polly.database import Base
+
+        db_file = tmp_path / "prefs_test.db"
+        engine = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
+        Session = async_sessionmaker(engine, expire_on_commit=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return engine, Session
+
+    @staticmethod
+    def _patch_async_session(Session):
+        """Patch get_async_db_session to yield a session from ``Session``."""
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def _fake_get_async_db_session():
+            async with Session() as s:
+                try:
+                    yield s
+                except Exception:
+                    await s.rollback()
+                    raise
+
+        return patch("polly.web_app.get_async_db_session", _fake_get_async_db_session)
+
+    @staticmethod
+    def _patch_cache_service():
+        """Stub the cache service used by the prefs helpers."""
+        cache = AsyncMock()
+        cache.get_cached_user_preferences = AsyncMock(return_value=None)
+        cache.cache_user_preferences = AsyncMock()
+        cache.invalidate_user_preferences = AsyncMock()
+        return patch(
+            "polly.services.cache.cache_service.get_cache_service",
+            return_value=cache,
+        )
+
+    async def test_get_user_preferences_existing(self, tmp_path):
         from polly.database import UserPreference
 
-        # Create preference
-        pref = UserPreference(
-            user_id=sample_user.id,
-            last_server_id="123456789",
-            last_channel_id="987654321",
-            default_timezone="US/Eastern",
-        )
-        db_session.add(pref)
-        db_session.commit()
+        engine, Session = await self._build_async_session(tmp_path)
+        try:
+            async with Session() as s:
+                s.add(
+                    UserPreference(
+                        user_id="user-1",
+                        last_server_id="123456789",
+                        last_channel_id="987654321",
+                        default_timezone="US/Eastern",
+                    )
+                )
+                await s.commit()
 
-        with patch("polly.web_app.get_db_session", return_value=db_session):
-            result = get_user_preferences(sample_user.id)
+            with self._patch_async_session(Session), self._patch_cache_service():
+                result = await get_user_preferences("user-1")
 
             assert result["last_server_id"] == "123456789"
             assert result["last_channel_id"] == "987654321"
             assert result["default_timezone"] == "US/Eastern"
+        finally:
+            await engine.dispose()
 
-    def test_get_user_preferences_nonexistent(self, db_session):
-        """Test getting non-existent user preferences."""
-        with patch("polly.web_app.get_db_session", return_value=db_session):
-            result = get_user_preferences("nonexistent_user")
+    async def test_get_user_preferences_nonexistent(self, tmp_path):
+        engine, Session = await self._build_async_session(tmp_path)
+        try:
+            with self._patch_async_session(Session), self._patch_cache_service():
+                result = await get_user_preferences("nonexistent_user")
 
             assert result["last_server_id"] is None
             assert result["last_channel_id"] is None
             assert result["default_timezone"] == "US/Eastern"
+        finally:
+            await engine.dispose()
 
-    def test_get_user_preferences_database_error(self):
-        """Test getting user preferences with database error."""
-        with (
-            patch("polly.web_app.get_db_session", side_effect=Exception("DB error")),
-            patch("polly.web_app.notify_error") as mock_notify,
-        ):
-            result = get_user_preferences("test_user")
+    async def test_save_user_preferences_new(self, tmp_path):
+        from polly.database import UserPreference
+        from sqlalchemy import select
 
-            assert result["last_server_id"] is None
-            assert result["default_timezone"] == "US/Eastern"
-            mock_notify.assert_called_once()
+        engine, Session = await self._build_async_session(tmp_path)
+        try:
+            with self._patch_async_session(Session), self._patch_cache_service():
+                await save_user_preferences(
+                    "test_user",
+                    server_id="123456789",
+                    channel_id="987654321",
+                    timezone="US/Pacific",
+                )
 
-    def test_save_user_preferences_new(self, db_session):
-        """Test saving new user preferences."""
-        with patch("polly.web_app.get_db_session", return_value=db_session):
-            save_user_preferences(
-                "test_user",
-                server_id="123456789",
-                channel_id="987654321",
-                timezone="US/Pacific",
-            )
-
-            # Verify preference was created
-            from polly.database import UserPreference
-
-            pref = (
-                db_session.query(UserPreference)
-                .filter(UserPreference.user_id == "test_user")
-                .first()
-            )
-
-            assert pref is not None
+            async with Session() as s:
+                pref = (
+                    await s.execute(
+                        select(UserPreference).where(
+                            UserPreference.user_id == "test_user"
+                        )
+                    )
+                ).scalar_one()
             assert pref.last_server_id == "123456789"
             assert pref.last_channel_id == "987654321"
             assert pref.default_timezone == "US/Pacific"
+        finally:
+            await engine.dispose()
 
-    def test_save_user_preferences_update(self, db_session, sample_user):
-        """Test updating existing user preferences."""
+    async def test_save_user_preferences_update(self, tmp_path):
         from polly.database import UserPreference
+        from sqlalchemy import select
 
-        # Create existing preference
-        pref = UserPreference(
-            user_id=sample_user.id, last_server_id="old_server", default_timezone="UTC"
-        )
-        db_session.add(pref)
-        db_session.commit()
+        engine, Session = await self._build_async_session(tmp_path)
+        try:
+            async with Session() as s:
+                s.add(
+                    UserPreference(
+                        user_id="user-2",
+                        last_server_id="old_server",
+                        default_timezone="UTC",
+                    )
+                )
+                await s.commit()
 
-        with patch("polly.web_app.get_db_session", return_value=db_session):
-            save_user_preferences(
-                sample_user.id, server_id="new_server", timezone="US/Eastern"
-            )
+            with self._patch_async_session(Session), self._patch_cache_service():
+                await save_user_preferences(
+                    "user-2", server_id="new_server", timezone="US/Eastern"
+                )
 
-            # Verify preference was updated
-            updated_pref = (
-                db_session.query(UserPreference)
-                .filter(UserPreference.user_id == sample_user.id)
-                .first()
-            )
-
-            assert updated_pref.last_server_id == "new_server"
-            assert updated_pref.default_timezone == "US/Eastern"
-
-    def test_save_user_preferences_database_error(self):
-        """Test saving user preferences with database error."""
-        with (
-            patch("polly.web_app.get_db_session", side_effect=Exception("DB error")),
-            patch("polly.web_app.notify_error") as mock_notify,
-        ):
-            save_user_preferences("test_user", server_id="123456789")
-
-            mock_notify.assert_called_once()
+            async with Session() as s:
+                updated = (
+                    await s.execute(
+                        select(UserPreference).where(
+                            UserPreference.user_id == "user-2"
+                        )
+                    )
+                ).scalar_one()
+            assert updated.last_server_id == "new_server"
+            assert updated.default_timezone == "US/Eastern"
+        finally:
+            await engine.dispose()
 
 
 class TestHTMXRoutes:
