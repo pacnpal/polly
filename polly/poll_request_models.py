@@ -169,7 +169,7 @@ class PollFormRequest(BaseModel):
         if value is None:
             return None
         if not value.isdigit():
-            raise ValueError("Role Id: must be a numeric Discord ID")
+            raise ValueError("Role Selection: must be a numeric Discord ID")
         return value
 
     @model_validator(mode="after")
