@@ -54,15 +54,23 @@ def _truthy(value: Any) -> bool:
 
 
 def _normalize_timezone(value: Optional[str]) -> str:
-    """Normalize a user-supplied timezone identifier."""
+    """Normalize a user-supplied timezone identifier.
+
+    Returns the default timezone for missing/blank input but raises
+    ``ValueError`` for an explicitly malformed one, so tampered or typo'd
+    values fail validation instead of silently being shifted to Eastern.
+    """
+    if not value:
+        return "US/Eastern"
+    value = value.strip()
     if not value:
         return "US/Eastern"
     value = _TIMEZONE_ALIASES.get(value, value)
     try:
         pytz.timezone(value)
-        return value
-    except Exception:
-        return "US/Eastern"
+    except pytz.UnknownTimeZoneError as exc:
+        raise ValueError(f"Timezone: invalid timezone ({value})") from exc
+    return value
 
 
 class PollFormRequest(BaseModel):
@@ -124,12 +132,13 @@ class PollFormRequest(BaseModel):
         if isinstance(value, list):
             cleaned = []
             for item in value:
-                text = str(item).strip()
-                if not text:
-                    continue
                 # Match legacy PollValidator.validate_poll_options: drop
-                # bare quotes while keeping Discord <:emoji:id> markers intact.
-                cleaned.append(re.sub(r'["\']', "", text))
+                # bare quotes while keeping Discord <:emoji:id> markers
+                # intact, then re-strip so quote-only entries are dropped
+                # rather than collapsing to "".
+                text = re.sub(r'["\']', "", str(item).strip()).strip()
+                if text:
+                    cleaned.append(text)
             return cleaned
         return value
 

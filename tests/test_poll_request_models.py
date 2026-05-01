@@ -183,6 +183,18 @@ class TestPollFormRequestFailures:
         with pytest.raises(ValidationError):
             _validate(_base_form(name="no"))
 
+    def test_quote_only_option_dropped(self):
+        # "''" collapses to "" after quote stripping; leaves only one
+        # real option so the 2-minimum constraint should fire.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="''"))
+        assert "at least 2" in str(exc.value)
+
+    def test_invalid_timezone_rejected(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(timezone="Mars/Phobos"))
+        assert "invalid timezone" in str(exc.value).lower()
+
 
 class TestValidationErrorToMessages:
     def test_translates_value_error_with_field_prefix(self):
