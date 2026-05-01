@@ -90,6 +90,24 @@ class TestPollFormRequestHappyPath:
         m = _validate(_base_form(option1='foo"bar', option2="baz'qux"))
         assert m.options == ["foobar", "bazqux"]
 
+    def test_html_stripped_from_name_and_question(self):
+        m = _validate(
+            _base_form(
+                name='<script>"Sample"</script>',
+                question="Which option<br/> do 'you' prefer?",
+            )
+        )
+        assert m.name == "scriptSample/script"
+        assert m.question == "Which optionbr/ do you prefer?"
+
+    def test_image_message_text_preserves_discord_markup(self):
+        # <@user>, <#channel>, <:emoji:id> must survive — they're Discord
+        # markdown, not HTML.
+        m = _validate(
+            _base_form(image_message_text="ping <@123> in <#456> :: <:smile:789>")
+        )
+        assert m.image_message_text == "ping <@123> in <#456> :: <:smile:789>"
+
     def test_internal_utc_fields_excluded_from_dump(self):
         m = _validate(_base_form())
         dumped = m.model_dump()

@@ -94,6 +94,12 @@ class PollFormRequest(BaseModel):
     channel_id: str = Field(..., min_length=1, pattern=r"^\d+$")
     options: List[str] = Field(..., min_length=2, max_length=10)
 
+    # ``image_message_text`` is intentionally NOT stripped of ``<>``: Discord
+    # interprets ``<@id>`` (mentions), ``<#id>`` (channels), and
+    # ``<:name:id>`` (custom emojis) — stripping them would break those
+    # legitimate user inputs. Templates that render this string must rely on
+    # Jinja's autoescaping, not validator-side sanitization.
+
     timezone: str = Field(default="US/Eastern")
     open_time: Optional[str] = None
     close_time: Optional[str] = None
@@ -118,6 +124,16 @@ class PollFormRequest(BaseModel):
     # the request payload.
     open_time_utc: Optional[datetime] = Field(default=None, exclude=True)
     close_time_utc: Optional[datetime] = Field(default=None, exclude=True)
+
+    @field_validator("name", "question", mode="before")
+    @classmethod
+    def _sanitize_user_text(cls, value: Any) -> Any:
+        # Match legacy PollValidator.validate_poll_name: strip raw HTML/quote
+        # characters from user-controlled prose so payloads can't smuggle
+        # markup into templates, logs, or Discord embeds.
+        if isinstance(value, str):
+            return re.sub(r'[<>"\']', "", value)
+        return value
 
     @field_validator("timezone", mode="before")
     @classmethod
