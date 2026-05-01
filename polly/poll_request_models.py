@@ -324,6 +324,35 @@ class PollFormRequest(BaseModel):
                 "Poll Duration: poll cannot run for more than 30 days"
             )
 
+    def to_validated_data_dict(self, creator_id: str) -> dict:
+        """Return the legacy ``(field -> value)`` dict shape used by the
+        HTMX endpoints. Centralizing it here keeps the model the single
+        source of truth: any new field added to the model only needs to
+        be added once for downstream callers to pick it up.
+        ``open_time`` / ``close_time`` use the computed UTC datetimes so
+        callers can drop straight into APScheduler.
+        """
+        return {
+            "name": self.name,
+            "question": self.question,
+            "server_id": self.server_id,
+            "channel_id": self.channel_id,
+            "options": self.options,
+            "open_time": self.open_time_utc,
+            "close_time": self.close_time_utc,
+            "timezone": self.timezone,
+            "anonymous": self.anonymous,
+            "multiple_choice": self.multiple_choice,
+            "max_choices": self.max_choices,
+            "open_immediately": self.open_immediately,
+            "ping_role_enabled": self.ping_role_enabled,
+            "ping_role_id": self.ping_role_id,
+            "ping_role_on_close": self.ping_role_on_close,
+            "ping_role_on_update": self.ping_role_on_update,
+            "image_message_text": self.image_message_text,
+            "creator_id": creator_id,
+        }
+
 
 PollCreateRequest = PollFormRequest
 PollUpdateRequest = PollFormRequest

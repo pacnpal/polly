@@ -314,6 +314,42 @@ class TestPollFormRequestFailures:
         assert "30 days" in str(exc.value)
 
 
+class TestToValidatedDataDict:
+    """``PollFormRequest.to_validated_data_dict`` is the legacy contract
+    consumed by the HTMX endpoints; if a new model field shows up, this
+    method (and these tests) keeps the conversion in one place."""
+
+    def test_keys_match_legacy_contract(self):
+        m = _validate(_base_form())
+        data = m.to_validated_data_dict("user-123")
+        assert set(data) == {
+            "name",
+            "question",
+            "server_id",
+            "channel_id",
+            "options",
+            "open_time",
+            "close_time",
+            "timezone",
+            "anonymous",
+            "multiple_choice",
+            "max_choices",
+            "open_immediately",
+            "ping_role_enabled",
+            "ping_role_id",
+            "ping_role_on_close",
+            "ping_role_on_update",
+            "image_message_text",
+            "creator_id",
+        }
+        assert data["creator_id"] == "user-123"
+        # open_time / close_time use the computed UTC datetimes, not the
+        # raw input strings, so callers can hand them straight to the
+        # scheduler.
+        assert data["open_time"] == m.open_time_utc
+        assert data["close_time"] == m.close_time_utc
+
+
 class TestPollFormDictPassthrough:
     """Behavioral tests for ``poll_form_to_dict``."""
 

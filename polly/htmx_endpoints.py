@@ -3351,27 +3351,7 @@ def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list
     except PydanticValidationError as exc:
         return False, validation_error_to_messages(exc), {}
 
-    validated_data = {
-        "name": model.name,
-        "question": model.question,
-        "server_id": model.server_id,
-        "channel_id": model.channel_id,
-        "options": model.options,
-        "open_time": model.open_time_utc,
-        "close_time": model.close_time_utc,
-        "timezone": model.timezone,
-        "anonymous": model.anonymous,
-        "multiple_choice": model.multiple_choice,
-        "max_choices": model.max_choices,
-        "open_immediately": model.open_immediately,
-        "ping_role_enabled": model.ping_role_enabled,
-        "ping_role_id": model.ping_role_id,
-        "ping_role_on_close": model.ping_role_on_close,
-        "ping_role_on_update": model.ping_role_on_update,
-        "image_message_text": model.image_message_text,
-        "creator_id": current_user_id,
-    }
-    return True, [], validated_data
+    return True, [], model.to_validated_data_dict(current_user_id)
 
 
 async def create_poll_htmx(
@@ -5077,6 +5057,20 @@ async def update_poll_htmx(
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
                 {"request": request, "message": "At least 2 options required"},
+            )
+
+        # The "Open Immediately" toggle isn't a valid edit operation:
+        # PollFormRequest sets open_time_utc to now(UTC), which fails the
+        # next-minute scheduling check below, and the editor lacks the
+        # immediate-open dispatch the create flow uses. Direct users to
+        # the dedicated "Open Now" button instead.
+        if validated_data.get("open_immediately"):
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {
+                    "request": request,
+                    "message": "Use the 'Open Now' button to open this poll immediately; the edit form only supports scheduling.",
+                },
             )
 
         # Use the validated times from the validation function
