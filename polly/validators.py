@@ -10,8 +10,12 @@ from typing import List, Dict, Any, Tuple, Optional
 import logging
 try:
     from .database import Poll, Vote, get_db_session
+    from .poll_request_models import VoteRequest
 except ImportError:
     from database import Poll, Vote, get_db_session  # type: ignore
+    from poll_request_models import VoteRequest  # type: ignore
+
+from pydantic import ValidationError as PydanticValidationError
 logger = logging.getLogger(__name__)
 
 
@@ -644,11 +648,16 @@ class VoteValidator:
         if str(poll.status) != "active":
             raise ValidationError("Poll is not active for voting")
 
-        if not user_id or not isinstance(user_id, str):
-            raise ValidationError("Invalid user ID")
+        try:
+            request = VoteRequest.model_validate(
+                {"user_id": user_id, "option_index": option_index}
+            )
+        except PydanticValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else {"msg": "Invalid vote"}
+            field = first.get("loc", ("vote",))[-1]
+            raise ValidationError(first.get("msg", "Invalid vote"), str(field))
 
-        if not isinstance(option_index, int) or option_index < 0:
-            raise ValidationError("Invalid option selection")
+        user_id, option_index = request.user_id, request.option_index
 
         if option_index >= len(poll.options):
             raise ValidationError("Selected option does not exist")

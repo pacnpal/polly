@@ -14,6 +14,7 @@ import os
 UPLOADS_DIR = os.path.abspath("static/uploads")
 
 from fastapi import Request, Depends
+from pydantic import ValidationError as PydanticValidationError
 
 # Ensure UPLOADS_DIR is ALWAYS absolute and normalized
 UPLOADS_DIR = os.path.abspath(os.path.normpath("static/uploads"))
@@ -39,6 +40,11 @@ try:
     from .json_import import PollJSONImporter, PollJSONExporter
     from .debug_config import get_debug_logger
     from .data_utils import sanitize_data_for_json
+    from .poll_request_models import (
+        PollFormRequest,
+        poll_form_to_dict,
+        validation_error_to_messages,
+    )
 except ImportError:
     from auth import require_auth, DiscordUser  # type: ignore
     from database import (  # type: ignore
@@ -58,6 +64,11 @@ except ImportError:
     from json_import import PollJSONImporter, PollJSONExporter  # type: ignore
     from debug_config import get_debug_logger  # type: ignore
     from data_utils import sanitize_data_for_json  # type: ignore
+    from poll_request_models import (  # type: ignore
+        PollFormRequest,
+        poll_form_to_dict,
+        validation_error_to_messages,
+    )
 
 logger = get_debug_logger(__name__)
 
@@ -3338,306 +3349,39 @@ async def get_guild_emojis_htmx(
 
 
 def validate_poll_form_data(form_data, current_user_id: str) -> tuple[bool, list, dict]:
-    """Validate poll form data and return validation results"""
-    validation_errors = []
-    validated_data = {}
+    """Validate poll form data via the :class:`PollFormRequest` Pydantic model.
 
-    # Extract open_immediately flag FIRST - this affects time validation logic
-    open_immediately = form_data.get("open_immediately") == "true"
+    Kept as a thin wrapper so existing callers continue to receive the
+    ``(is_valid, errors, validated_data_dict)`` tuple. New code should use
+    :class:`PollFormRequest.model_validate` directly.
+    """
+    raw = poll_form_to_dict(form_data)
+    try:
+        model = PollFormRequest.model_validate(raw)
+    except PydanticValidationError as exc:
+        return False, validation_error_to_messages(exc), {}
 
-    # Extract form data
-    name = safe_get_form_data(form_data, "name")
-    question = safe_get_form_data(form_data, "question")
-    server_id = safe_get_form_data(form_data, "server_id")
-    channel_id = safe_get_form_data(form_data, "channel_id")
-    open_time = safe_get_form_data(form_data, "open_time")
-    close_time = safe_get_form_data(form_data, "close_time")
-    timezone_str = safe_get_form_data(form_data, "timezone", "US/Eastern")
-
-    # Validate poll name
-    if not name or len(name.strip()) < 3:
-        validation_errors.append(
-            {
-                "field_name": "Poll Name",
-                "message": "Must be at least 3 characters long",
-                "suggestion": "Try something descriptive like 'Weekend Movie Night' or 'Team Lunch Choice'",
-            }
-        )
-    elif len(name.strip()) > 255:
-        validation_errors.append(
-            {
-                "field_name": "Poll Name",
-                "message": "Must be less than 255 characters",
-                "suggestion": "Try shortening your poll name to be more concise",
-            }
-        )
-    else:
-        validated_data["name"] = name.strip()
-
-    # Validate question
-    if not question or len(question.strip()) < 5:
-        validation_errors.append(
-            {
-                "field_name": "Question",
-                "message": "Must be at least 5 characters long",
-                "suggestion": "Be specific! Instead of 'Pick one', try 'Which movie should we watch this Friday?'",
-            }
-        )
-    elif len(question.strip()) > 2000:
-        validation_errors.append(
-            {
-                "field_name": "Question",
-                "message": "Must be less than 2000 characters",
-                "suggestion": "Try to keep your question concise and to the point",
-            }
-        )
-    else:
-        validated_data["question"] = question.strip()
-
-    # Validate server selection
-    if not server_id:
-        validation_errors.append(
-            {
-                "field_name": "Server",
-                "message": "Please select a Discord server",
-                "suggestion": "Choose the server where you want to post this poll",
-            }
-        )
-    else:
-        validated_data["server_id"] = server_id
-
-    # Validate channel selection
-    if not channel_id:
-        validation_errors.append(
-            {
-                "field_name": "Channel",
-                "message": "Please select a Discord channel",
-                "suggestion": "Choose the channel where you want to post this poll",
-            }
-        )
-    else:
-        validated_data["channel_id"] = channel_id
-
-    # Validate options
-    options = []
-    for i in range(1, 11):
-        option = form_data.get(f"option{i}")
-        if option:
-            option_text = str(option).strip()
-            if option_text:
-                options.append(option_text)
-
-    if len(options) < 2:
-        validation_errors.append(
-            {
-                "field_name": "Poll Options",
-                "message": "At least 2 options are required",
-                "suggestion": "Add more choices for people to vote on. Great polls usually have 3-5 options!",
-            }
-        )
-    elif len(options) > 10:
-        validation_errors.append(
-            {
-                "field_name": "Poll Options",
-                "message": "Maximum 10 options allowed",
-                "suggestion": "Try to keep your options focused. Too many choices can be overwhelming!",
-            }
-        )
-    else:
-        validated_data["options"] = options
-
-    # Validate times - skip open_time validation if opening immediately
-    if not open_immediately and not open_time:
-        validation_errors.append(
-            {
-                "field_name": "Open Time",
-                "message": "Please select when the poll should start",
-                "suggestion": "Choose a time when your audience will be active",
-            }
-        )
-    elif not close_time:
-        validation_errors.append(
-            {
-                "field_name": "Close Time",
-                "message": "Please select when the poll should end",
-                "suggestion": "Give people enough time to vote, but not too long that they forget",
-            }
-        )
-    else:
-        try:
-            # Parse times with timezone - handle immediate vs scheduled polls
-            if open_immediately:
-                # For immediate polls, set open_time to current time and only validate close_time
-                now = datetime.now(pytz.UTC)
-                open_dt = now
-                close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-
-                # Validate close time is in the future
-                if close_dt <= now:
-                    user_tz = pytz.timezone(
-                        validate_and_normalize_timezone(timezone_str)
-                    )
-                    next_minute_local = (now + timedelta(minutes=1)).astimezone(user_tz)
-                    suggested_time = next_minute_local.strftime("%I:%M %p")
-                    validation_errors.append(
-                        {
-                            "field_name": "Close Time",
-                            "message": "Must be in the future for immediate polls",
-                            "suggestion": f"Try {suggested_time} or later",
-                        }
-                    )
-                else:
-                    # Check minimum duration (1 minute)
-                    duration = close_dt - open_dt
-                    if duration < timedelta(minutes=1):
-                        validation_errors.append(
-                            {
-                                "field_name": "Poll Duration",
-                                "message": "Poll must run for at least 1 minute",
-                                "suggestion": "Give people time to see and respond to your poll",
-                            }
-                        )
-                    elif duration > timedelta(days=30):
-                        validation_errors.append(
-                            {
-                                "field_name": "Poll Duration",
-                                "message": "Poll cannot run for more than 30 days",
-                                "suggestion": "Try a shorter duration to keep engagement high",
-                            }
-                        )
-                    else:
-                        validated_data["open_time"] = open_dt
-                        validated_data["close_time"] = close_dt
-            else:
-                # For scheduled polls, validate both times normally
-                open_dt = safe_parse_datetime_with_timezone(open_time, timezone_str)
-                close_dt = safe_parse_datetime_with_timezone(close_time, timezone_str)
-
-                # Validate times using the poll's timezone
-                now = datetime.now(pytz.UTC)
-                
-                # Get the user's timezone for proper validation
-                user_tz = pytz.timezone(validate_and_normalize_timezone(timezone_str))
-                now_in_user_tz = now.astimezone(user_tz)
-                
-                # Calculate next full minute in user's timezone, then convert to UTC for comparison
-                next_minute_user_tz = now_in_user_tz.replace(second=0, microsecond=0) + timedelta(minutes=1)
-                next_minute_utc = next_minute_user_tz.astimezone(pytz.UTC)
-
-                if open_dt < next_minute_utc:
-                    suggested_time = next_minute_user_tz.strftime("%I:%M %p")
-                    validation_errors.append(
-                        {
-                            "field_name": "Open Time",
-                            "message": "Must be scheduled for at least the next full minute",
-                            "suggestion": f"Try {suggested_time} or later in your timezone ({timezone_str})",
-                        }
-                    )
-                elif close_dt <= open_dt:
-                    validation_errors.append(
-                        {
-                            "field_name": "Close Time",
-                            "message": "Must be after the open time",
-                            "suggestion": "Make sure your poll runs for at least a few minutes so people can vote",
-                        }
-                    )
-                else:
-                    # Check minimum duration (1 minute)
-                    duration = close_dt - open_dt
-                    if duration < timedelta(minutes=1):
-                        validation_errors.append(
-                            {
-                                "field_name": "Poll Duration",
-                                "message": "Poll must run for at least 1 minute",
-                                "suggestion": "Give people time to see and respond to your poll",
-                            }
-                        )
-                    elif duration > timedelta(days=30):
-                        validation_errors.append(
-                            {
-                                "field_name": "Poll Duration",
-                                "message": "Poll cannot run for more than 30 days",
-                                "suggestion": "Try a shorter duration to keep engagement high",
-                            }
-                        )
-                    else:
-                        validated_data["open_time"] = open_dt
-                        validated_data["close_time"] = close_dt
-        except Exception:
-            validation_errors.append(
-                {
-                    "field_name": "Poll Times",
-                    "message": "Invalid date/time format",
-                    "suggestion": "Please check your date and time selections",
-                }
-            )
-
-    # Handle role ping fields
-    ping_role_enabled = form_data.get("ping_role_enabled") == "true"
-    ping_role_id = safe_get_form_data(form_data, "ping_role_id", "")
-    ping_role_on_close = form_data.get("ping_role_on_close") == "true"
-    ping_role_on_update = form_data.get("ping_role_on_update") == "true"
-
-    # Validate role ping settings
-    if ping_role_enabled and not ping_role_id:
-        validation_errors.append(
-            {
-                "field_name": "Role Selection",
-                "message": "Please select a role to ping when role ping is enabled",
-                "suggestion": "Choose a role from the dropdown or disable role ping",
-            }
-        )
-
-    validated_data["ping_role_enabled"] = ping_role_enabled
-    validated_data["ping_role_id"] = ping_role_id if ping_role_enabled else None
-    validated_data["ping_role_on_close"] = (
-        ping_role_on_close if ping_role_enabled else False
-    )
-    validated_data["ping_role_on_update"] = (
-        ping_role_on_update if ping_role_enabled else False
-    )
-
-    # Add other validated data
-    validated_data["timezone"] = validate_and_normalize_timezone(timezone_str)
-    validated_data["anonymous"] = form_data.get("anonymous") == "true"
-    validated_data["multiple_choice"] = form_data.get("multiple_choice") == "true"
-    
-    # Handle max_choices for multiple choice polls
-    max_choices_str = safe_get_form_data(form_data, "max_choices", "")
-    max_choices = None
-    if validated_data["multiple_choice"] and max_choices_str:
-        try:
-            max_choices = int(max_choices_str)
-            # Validate max_choices is reasonable (between 2 and 10)
-            if max_choices < 2 or max_choices > 10:
-                validation_errors.append(
-                    {
-                        "field_name": "Maximum Choices",
-                        "message": "Must be between 2 and 10 choices",
-                        "suggestion": "Choose a reasonable number of choices users can select",
-                    }
-                )
-            else:
-                validated_data["max_choices"] = max_choices
-        except ValueError:
-            validation_errors.append(
-                {
-                    "field_name": "Maximum Choices",
-                    "message": "Invalid number format",
-                    "suggestion": "Please select a valid number of choices",
-                }
-            )
-    else:
-        validated_data["max_choices"] = max_choices
-    
-    validated_data["creator_id"] = current_user_id
-    validated_data["image_message_text"] = safe_get_form_data(
-        form_data, "image_message_text", ""
-    )
-    validated_data["open_immediately"] = open_immediately
-
-    is_valid = len(validation_errors) == 0
-    return is_valid, validation_errors, validated_data
+    validated_data = {
+        "name": model.name,
+        "question": model.question,
+        "server_id": model.server_id,
+        "channel_id": model.channel_id,
+        "options": model.options,
+        "open_time": model.open_time_utc,
+        "close_time": model.close_time_utc,
+        "timezone": model.timezone,
+        "anonymous": model.anonymous,
+        "multiple_choice": model.multiple_choice,
+        "max_choices": model.max_choices,
+        "open_immediately": model.open_immediately,
+        "ping_role_enabled": model.ping_role_enabled,
+        "ping_role_id": model.ping_role_id,
+        "ping_role_on_close": model.ping_role_on_close,
+        "ping_role_on_update": model.ping_role_on_update,
+        "image_message_text": model.image_message_text,
+        "creator_id": current_user_id,
+    }
+    return True, [], validated_data
 
 
 async def create_poll_htmx(
