@@ -86,6 +86,14 @@ class TestPollFormRequestHappyPath:
         assert m.ping_role_id is None
         assert m.ping_role_on_close is False
 
+    def test_non_numeric_ping_role_id_ignored_when_disabled(self):
+        # A stale or tampered non-numeric ping_role_id must not fail
+        # validation when role ping is off — legacy behavior was to drop it.
+        m = _validate(
+            _base_form(ping_role_enabled="false", ping_role_id="not-a-number")
+        )
+        assert m.ping_role_id is None
+
     def test_quotes_stripped_from_options(self):
         m = _validate(_base_form(option1='foo"bar', option2="baz'qux"))
         assert m.options == ["foobar", "bazqux"]

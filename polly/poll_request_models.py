@@ -179,20 +179,13 @@ class PollFormRequest(BaseModel):
             return None
         return value
 
-    @field_validator("ping_role_id")
-    @classmethod
-    def _ping_role_id_must_be_numeric(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        if not value.isdigit():
-            raise ValueError("Role Selection: must be a numeric Discord ID")
-        return value
-
     @model_validator(mode="after")
     def _resolve_dependent_fields(self) -> "PollFormRequest":
         self.max_choices = self._resolve_max_choices()
 
         if not self.ping_role_enabled:
+            # Role ping disabled: ignore any stale/tampered ping_role_id
+            # rather than rejecting the form, matching legacy behavior.
             self.ping_role_id = None
             self.ping_role_on_close = False
             self.ping_role_on_update = False
@@ -200,6 +193,8 @@ class PollFormRequest(BaseModel):
             raise ValueError(
                 "Role Selection: please select a role to ping when role ping is enabled"
             )
+        elif not self.ping_role_id.isdigit():
+            raise ValueError("Role Selection: must be a numeric Discord ID")
 
         open_dt, close_dt = self._parse_times()
         self._validate_time_window(open_dt, close_dt)
@@ -268,6 +263,13 @@ class PollFormRequest(BaseModel):
                     f"Poll Times: {value} does not exist in {tz} (DST gap); "
                     "pick a time outside the transition"
                 ) from exc
+        else:
+            # Mirror legacy ``safe_parse_datetime_with_timezone``: if an
+            # aware datetime ever reaches us (e.g. via a non-form caller),
+            # re-anchor it into the user-selected zone first. Mathematically
+            # equivalent to going straight to UTC, but keeps the chosen tz
+            # as the visible source of truth.
+            dt = dt.astimezone(tz)
         return dt.astimezone(pytz.UTC)
 
     def _validate_time_window(
