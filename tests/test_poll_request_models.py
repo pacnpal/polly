@@ -64,12 +64,13 @@ class TestPollFormRequestHappyPath:
         assert m.close_time_utc > m.open_time_utc
 
     def test_open_immediately_skips_open_time(self):
-        # When opening immediately, close_time must be relative to *now*,
-        # not the fixed-future _future() helper, since the duration is
-        # measured from the current moment.
-        close_dt = datetime.now(pytz.timezone("US/Pacific")) + timedelta(hours=2)
+        # When opening immediately, close_time must be relative to *now*.
+        # Use UTC (DST-free) so the derived wall-clock can never land in a
+        # DST gap/overlap that would trip ``tz.localize(..., is_dst=None)``.
+        close_dt = datetime.now(pytz.UTC) + timedelta(hours=2)
         m = _validate(
             _base_form(
+                timezone="UTC",
                 open_immediately="true",
                 open_time="",
                 close_time=close_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M"),

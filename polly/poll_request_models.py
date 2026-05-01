@@ -59,16 +59,16 @@ def _truthy(value: Any) -> bool:
 def _normalize_timezone(value: Optional[str]) -> str:
     """Normalize a user-supplied timezone identifier.
 
-    Returns the default timezone for missing/blank input but raises
+    Returns :data:`DEFAULT_TIMEZONE` for missing/blank input but raises
     ``ValueError`` for an explicitly malformed one, so tampered or typo'd
-    values fail validation instead of silently being shifted to Eastern.
+    values fail validation instead of silently being shifted to the default.
     """
     if not value:
-        return "US/Eastern"
+        return DEFAULT_TIMEZONE
     value = value.strip()
     if not value:
-        return "US/Eastern"
-    value = _TIMEZONE_ALIASES.get(value, value)
+        return DEFAULT_TIMEZONE
+    value = TIMEZONE_ALIASES.get(value, value)
     try:
         pytz.timezone(value)
     except pytz.UnknownTimeZoneError as exc:
@@ -103,7 +103,7 @@ class PollFormRequest(BaseModel):
     # legitimate user inputs. Templates that render this string must rely on
     # Jinja's autoescaping, not validator-side sanitization.
 
-    timezone: str = Field(default="US/Eastern")
+    timezone: str = Field(default=DEFAULT_TIMEZONE)
     open_time: Optional[str] = None
     close_time: Optional[str] = None
 
@@ -355,7 +355,7 @@ def poll_form_to_dict(form_data: Any) -> dict:
         "server_id": form_data.get("server_id"),
         "channel_id": form_data.get("channel_id"),
         "options": _extract_options(form_data),
-        "timezone": form_data.get("timezone") or "US/Eastern",
+        "timezone": form_data.get("timezone") or DEFAULT_TIMEZONE,
         "open_time": form_data.get("open_time"),
         "close_time": form_data.get("close_time"),
         "open_immediately": _truthy(form_data.get("open_immediately")),
