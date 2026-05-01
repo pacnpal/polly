@@ -341,7 +341,9 @@ async def get_user_preferences(user_id: str) -> dict:
             result = await db.execute(
                 select(UserPreference).where(UserPreference.user_id == user_id)
             )
-            prefs = result.scalar_one_or_none()
+            # user_id has no unique constraint; .first() preserves the lenient
+            # behavior of the original sync code (which used .first()).
+            prefs = result.scalars().first()
             if prefs:
                 user_prefs = {
                     "last_server_id": prefs.last_server_id,
@@ -386,7 +388,9 @@ async def save_user_preferences(
             result = await db.execute(
                 select(UserPreference).where(UserPreference.user_id == user_id)
             )
-            prefs = result.scalar_one_or_none()
+            # user_id has no unique constraint; .first() preserves the lenient
+            # behavior of the original sync code (which used .first()).
+            prefs = result.scalars().first()
 
             if prefs:
                 if server_id:

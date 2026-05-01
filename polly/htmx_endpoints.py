@@ -528,14 +528,27 @@ async def close_poll_htmx(
         )
 
 
-async def _revert_poll_status_to_scheduled(poll_id: int) -> None:
-    """Revert a poll's status back to 'scheduled' (used when an open attempt fails)."""
+async def _revert_poll_status_to_scheduled(
+    poll_id: int,
+    open_time: datetime | None = None,
+    updated_at: datetime | None = None,
+) -> None:
+    """Revert a poll's status back to 'scheduled' (used when an open attempt fails).
+
+    When provided, ``open_time`` and ``updated_at`` restore the values that were
+    overwritten by the optimistic ``open_poll_now`` flow so we don't leave the
+    poll scheduled with a stale "now" open time.
+    """
     async with get_async_db_session() as db:
         poll = (
             await db.execute(select(Poll).where(Poll.id == poll_id))
         ).scalar_one_or_none()
         if poll:
             poll.status = "scheduled"
+            if open_time is not None:
+                poll.open_time = open_time
+            if updated_at is not None:
+                poll.updated_at = updated_at
             await db.commit()
 
 
@@ -572,6 +585,10 @@ async def open_poll_now_htmx(
                     },
                 )
 
+            # Capture previous values so we can restore them if the open fails.
+            prev_open_time = TypeSafeColumn.get_datetime(poll, "open_time")
+            prev_updated_at = TypeSafeColumn.get_datetime(poll, "updated_at")
+
             # Update poll status to active and set open time to now
             poll.status = "active"
             poll.open_time = datetime.now(pytz.UTC)
@@ -598,7 +615,9 @@ async def open_poll_now_htmx(
 
             if not result["success"]:
                 logger.error(f"Unified poll opening failed for poll {poll_id}: {result.get('error')}")
-                await _revert_poll_status_to_scheduled(poll_id)
+                await _revert_poll_status_to_scheduled(
+                    poll_id, open_time=prev_open_time, updated_at=prev_updated_at
+                )
                 return templates.TemplateResponse(
                     "htmx/components/inline_error.html",
                     {"request": request, "message": result.get("error", "Error opening poll")},
@@ -4040,97 +4059,97 @@ async def get_poll_details_htmx(
     """Get poll details view as HTML for HTMX - serves pre-generated static files for closed polls"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
     try:
-      async with get_async_db_session() as db:
-        poll = (
-            await db.execute(
-                select(Poll)
-                .where(Poll.id == poll_id, Poll.creator_id == current_user.id)
-                .options(selectinload(Poll.votes))
-            )
-        ).scalar_one_or_none()
-        if not poll:
-            logger.warning(
-                f"Poll {poll_id} not found or not owned by user {current_user.id}"
-            )
+        async with get_async_db_session() as db:
+            poll = (
+                await db.execute(
+                    select(Poll)
+                    .where(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                    .options(selectinload(Poll.votes))
+                )
+            ).scalar_one_or_none()
+            if not poll:
+                logger.warning(
+                    f"Poll {poll_id} not found or not owned by user {current_user.id}"
+                )
+                return templates.TemplateResponse(
+                    "htmx/components/inline_error.html",
+                    {"request": request, "message": "Poll not found or access denied"},
+                )
+
+            # Check if poll is closed and serve pre-generated static content
+            poll_status = TypeSafeColumn.get_string(poll, "status")
+            if poll_status == "closed":
+                logger.info(f"📄 STATIC SERVE - Checking for pre-generated static content for closed poll {poll_id}")
+            
+                # Import the static page generator to check for existing files
+                from .static_page_generator import get_static_page_generator
+            
+                # Get the static page generator instance
+                static_generator = get_static_page_generator()
+            
+                # Check if static file exists
+                static_path = static_generator._get_static_page_path(poll_id, "details")
+            
+                if static_path.exists():
+                    logger.info(f"✅ STATIC SERVE - Found pre-generated static file for poll {poll_id}: {static_path}")
+                
+                    # Read and serve the pre-generated static content
+                    try:
+                        with open(static_path, 'r', encoding='utf-8') as f:
+                            static_content = f.read()
+                    
+                        logger.info(f"📄 STATIC SERVE - Successfully served pre-generated static content for poll {poll_id}")
+                    
+                        # Return the static content directly as HTML response
+                        from fastapi.responses import HTMLResponse
+                        return HTMLResponse(content=static_content)
+                    
+                    except Exception as read_error:
+                        logger.error(f"❌ STATIC SERVE - Error reading static file for poll {poll_id}: {read_error}")
+                        # Fall through to dynamic content as fallback
+                else:
+                    logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
+                    logger.warning("⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
+                
+                    # Try to regenerate the static file once if it's missing
+                    logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")
+                    try:
+                        regeneration_success = await static_generator.generate_static_poll_details(poll_id, bot)
+                        if regeneration_success and static_path.exists():
+                            logger.info(f"✅ STATIC SERVE - Successfully regenerated static content for poll {poll_id}")
+                        
+                            # Try to serve the newly generated content
+                            try:
+                                with open(static_path, 'r', encoding='utf-8') as f:
+                                    static_content = f.read()
+                            
+                                logger.info(f"📄 STATIC SERVE - Successfully served regenerated static content for poll {poll_id}")
+                            
+                                # Return the static content directly as HTML response
+                                from fastapi.responses import HTMLResponse
+                                return HTMLResponse(content=static_content)
+                            
+                            except Exception as read_error:
+                                logger.error(f"❌ STATIC SERVE - Error reading regenerated static file for poll {poll_id}: {read_error}")
+                        else:
+                            logger.error(f"❌ STATIC SERVE - Failed to regenerate static content for poll {poll_id}")
+                        
+                    except Exception as regen_error:
+                        logger.error(f"❌ STATIC SERVE - Error during static content regeneration for poll {poll_id}: {regen_error}")
+            
+                # For closed polls, we should NOT regenerate on-demand repeatedly - that defeats the purpose
+                # Instead, fall back to dynamic content and log this as an issue
+                logger.warning(f"⚠️ STATIC SERVE - Falling back to dynamic content for closed poll {poll_id} - static file missing or unreadable")
+
+            # Serve dynamic content for active/scheduled polls or as fallback for closed polls
             return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": "Poll not found or access denied"},
+                "htmx/poll_details.html",
+                {
+                    "request": request,
+                    "poll": poll,
+                    "format_datetime_for_user": format_datetime_for_user,
+                },
             )
-
-        # Check if poll is closed and serve pre-generated static content
-        poll_status = TypeSafeColumn.get_string(poll, "status")
-        if poll_status == "closed":
-            logger.info(f"📄 STATIC SERVE - Checking for pre-generated static content for closed poll {poll_id}")
-            
-            # Import the static page generator to check for existing files
-            from .static_page_generator import get_static_page_generator
-            
-            # Get the static page generator instance
-            static_generator = get_static_page_generator()
-            
-            # Check if static file exists
-            static_path = static_generator._get_static_page_path(poll_id, "details")
-            
-            if static_path.exists():
-                logger.info(f"✅ STATIC SERVE - Found pre-generated static file for poll {poll_id}: {static_path}")
-                
-                # Read and serve the pre-generated static content
-                try:
-                    with open(static_path, 'r', encoding='utf-8') as f:
-                        static_content = f.read()
-                    
-                    logger.info(f"📄 STATIC SERVE - Successfully served pre-generated static content for poll {poll_id}")
-                    
-                    # Return the static content directly as HTML response
-                    from fastapi.responses import HTMLResponse
-                    return HTMLResponse(content=static_content)
-                    
-                except Exception as read_error:
-                    logger.error(f"❌ STATIC SERVE - Error reading static file for poll {poll_id}: {read_error}")
-                    # Fall through to dynamic content as fallback
-            else:
-                logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
-                logger.warning("⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
-                
-                # Try to regenerate the static file once if it's missing
-                logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")
-                try:
-                    regeneration_success = await static_generator.generate_static_poll_details(poll_id, bot)
-                    if regeneration_success and static_path.exists():
-                        logger.info(f"✅ STATIC SERVE - Successfully regenerated static content for poll {poll_id}")
-                        
-                        # Try to serve the newly generated content
-                        try:
-                            with open(static_path, 'r', encoding='utf-8') as f:
-                                static_content = f.read()
-                            
-                            logger.info(f"📄 STATIC SERVE - Successfully served regenerated static content for poll {poll_id}")
-                            
-                            # Return the static content directly as HTML response
-                            from fastapi.responses import HTMLResponse
-                            return HTMLResponse(content=static_content)
-                            
-                        except Exception as read_error:
-                            logger.error(f"❌ STATIC SERVE - Error reading regenerated static file for poll {poll_id}: {read_error}")
-                    else:
-                        logger.error(f"❌ STATIC SERVE - Failed to regenerate static content for poll {poll_id}")
-                        
-                except Exception as regen_error:
-                    logger.error(f"❌ STATIC SERVE - Error during static content regeneration for poll {poll_id}: {regen_error}")
-            
-            # For closed polls, we should NOT regenerate on-demand repeatedly - that defeats the purpose
-            # Instead, fall back to dynamic content and log this as an issue
-            logger.warning(f"⚠️ STATIC SERVE - Falling back to dynamic content for closed poll {poll_id} - static file missing or unreadable")
-
-        # Serve dynamic content for active/scheduled polls or as fallback for closed polls
-        return templates.TemplateResponse(
-            "htmx/poll_details.html",
-            {
-                "request": request,
-                "poll": poll,
-                "format_datetime_for_user": format_datetime_for_user,
-            },
-        )
     except Exception as e:
         logger.error(f"Error getting poll details for poll {poll_id}: {e}")
         return templates.TemplateResponse(
@@ -4179,99 +4198,99 @@ async def get_poll_results_realtime_htmx(
     logger.debug(f"🔍 RESULTS CACHE MISS - Generating results for poll {poll_id}")
 
     try:
-      async with get_async_db_session() as db:
-        poll = (
-            await db.execute(
-                select(Poll)
-                .where(Poll.id == poll_id, Poll.creator_id == current_user.id)
-                .options(selectinload(Poll.votes))
+        async with get_async_db_session() as db:
+            poll = (
+                await db.execute(
+                    select(Poll)
+                    .where(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                    .options(selectinload(Poll.votes))
+                )
+            ).scalar_one_or_none()
+            if not poll:
+                return (
+                    '<div class="alert alert-danger">Poll not found or access denied</div>'
+                )
+
+            # Get poll status - CRITICAL: Check if poll is closed to disable streaming
+            poll_status = TypeSafeColumn.get_string(poll, "status", "active")
+            logger.debug(f"📊 POLL STATUS - Poll {poll_id} status is '{poll_status}'")
+
+            # Get poll results
+            total_votes = poll.get_total_votes()
+            results = poll.get_results()
+
+            # Get poll data safely
+            options = poll.options  # Use the property method from Poll model
+            emojis = poll.emojis  # Use the property method from Poll model
+            is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
+
+            # Generate HTML for results
+            html_parts = []
+
+            for i in range(len(options)):
+                option_votes = results.get(i, 0)
+                percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0
+                emoji = (
+                    emojis[i]
+                    if i < len(emojis)
+                    else POLL_EMOJIS[min(i, len(POLL_EMOJIS) - 1)]
+                )
+                option_text = options[i]
+
+                html_parts.append(
+                    f"""
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span>{emoji} {escape(option_text)}</span>
+                        <span class="text-muted">{option_votes} votes ({percentage:.1f}%)</span>
+                    </div>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar" role="progressbar" style="width: {percentage}%;"
+                             aria-valuenow="{percentage}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                </div>
+                """
+                )
+
+            # Add total votes and anonymous badge
+            anonymous_badge = (
+                '<span class="badge bg-info ms-2">Anonymous</span>' if is_anonymous else ""
             )
-        ).scalar_one_or_none()
-        if not poll:
-            return (
-                '<div class="alert alert-danger">Poll not found or access denied</div>'
-            )
 
-        # Get poll status - CRITICAL: Check if poll is closed to disable streaming
-        poll_status = TypeSafeColumn.get_string(poll, "status", "active")
-        logger.debug(f"📊 POLL STATUS - Poll {poll_id} status is '{poll_status}'")
-
-        # Get poll results
-        total_votes = poll.get_total_votes()
-        results = poll.get_results()
-
-        # Get poll data safely
-        options = poll.options  # Use the property method from Poll model
-        emojis = poll.emojis  # Use the property method from Poll model
-        is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
-
-        # Generate HTML for results
-        html_parts = []
-
-        for i in range(len(options)):
-            option_votes = results.get(i, 0)
-            percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0
-            emoji = (
-                emojis[i]
-                if i < len(emojis)
-                else POLL_EMOJIS[min(i, len(POLL_EMOJIS) - 1)]
-            )
-            option_text = options[i]
+            # Add status indicator for closed polls
+            status_indicator = ""
+            if poll_status == "closed":
+                status_indicator = '<div class="alert alert-info mt-2"><i class="fas fa-info-circle me-1"></i>This poll is closed. Results are final.</div>'
 
             html_parts.append(
                 f"""
-            <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span>{emoji} {escape(option_text)}</span>
-                    <span class="text-muted">{option_votes} votes ({percentage:.1f}%)</span>
-                </div>
-                <div class="progress" style="height: 20px;">
-                    <div class="progress-bar" role="progressbar" style="width: {percentage}%;"
-                         aria-valuenow="{percentage}" aria-valuemin="0" aria-valuemax="100">
-                    </div>
-                </div>
+            <div class="mt-3">
+                <strong>Total Votes: {total_votes}</strong>
+                {anonymous_badge}
             </div>
+            {status_indicator}
             """
             )
 
-        # Add total votes and anonymous badge
-        anonymous_badge = (
-            '<span class="badge bg-info ms-2">Anonymous</span>' if is_anonymous else ""
-        )
+            html_content = "".join(html_parts)
 
-        # Add status indicator for closed polls
-        status_indicator = ""
-        if poll_status == "closed":
-            status_indicator = '<div class="alert alert-info mt-2"><i class="fas fa-info-circle me-1"></i>This poll is closed. Results are final.</div>'
+            # Cache the results with status-aware TTL (10s for active, 7 days for closed)
+            cacheable_data = {
+                "html_content": html_content,
+                "poll_status": poll_status,
+                "total_votes": total_votes,
+                "results": results,
+                "cached_at": datetime.now().isoformat(),
+            }
 
-        html_parts.append(
-            f"""
-        <div class="mt-3">
-            <strong>Total Votes: {total_votes}</strong>
-            {anonymous_badge}
-        </div>
-        {status_indicator}
-        """
-        )
+            await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data, poll_status)
+            ttl_description = "7 days" if poll_status == "closed" else "10s"
+            logger.debug(
+                f"💾 RESULTS CACHED - Stored results for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"
+            )
 
-        html_content = "".join(html_parts)
-
-        # Cache the results with status-aware TTL (10s for active, 7 days for closed)
-        cacheable_data = {
-            "html_content": html_content,
-            "poll_status": poll_status,
-            "total_votes": total_votes,
-            "results": results,
-            "cached_at": datetime.now().isoformat(),
-        }
-
-        await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data, poll_status)
-        ttl_description = "7 days" if poll_status == "closed" else "10s"
-        logger.debug(
-            f"💾 RESULTS CACHED - Stored results for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"
-        )
-
-        return html_content
+            return html_content
 
     except Exception as e:
         logger.error(f"Error getting real-time results for poll {poll_id}: {e}")
