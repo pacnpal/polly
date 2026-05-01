@@ -211,7 +211,27 @@ class TestValidationErrorToMessages:
             _validate(_base_form(server_id="abc"))
         msgs = validation_error_to_messages(exc.value)
         assert msgs and msgs[0]["field_name"] == "Server"
+        assert msgs[0]["message"] == "Please select a Discord server"
         assert "post this poll" in msgs[0]["suggestion"]
+
+    def test_channel_pattern_failure_uses_friendly_copy(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(channel_id="bad"))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Channel"
+        assert msgs[0]["message"] == "Please select a Discord channel"
+
+    def test_model_level_value_error_keeps_suggestion(self):
+        # Role-Selection error originates from a model_validator and has
+        # an empty ``loc``; the wrapper should still attach the role-ping
+        # suggestion based on the parsed label.
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(ping_role_enabled="true", ping_role_id="")
+            )
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Role Selection"
+        assert "disable role ping" in msgs[0]["suggestion"]
 
     def test_min_length_failure_uses_friendly_label(self):
         with pytest.raises(ValidationError) as exc:

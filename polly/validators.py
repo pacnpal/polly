@@ -653,9 +653,17 @@ class VoteValidator:
                 {"user_id": user_id, "option_index": option_index}
             )
         except PydanticValidationError as exc:
-            first = exc.errors()[0] if exc.errors() else {"msg": "Invalid vote"}
-            field = first.get("loc", ("vote",))[-1]
-            raise ValidationError(first.get("msg", "Invalid vote"), str(field))
+            first = exc.errors()[0] if exc.errors() else {}
+            loc = first.get("loc") or ("vote",)
+            field = str(loc[-1])
+            # Map Pydantic constraint failures back to the legacy
+            # user-friendly messages instead of leaking raw text like
+            # "Input should be greater than or equal to 0".
+            friendly = {
+                "user_id": "Invalid user ID",
+                "option_index": "Invalid option selection",
+            }
+            raise ValidationError(friendly.get(field, "Invalid vote"), field)
 
         user_id, option_index = request.user_id, request.option_index
 

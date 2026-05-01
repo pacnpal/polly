@@ -240,7 +240,18 @@ class PollFormRequest(BaseModel):
                 f"Poll Times: invalid date/time format ({value})"
             ) from exc
         if dt.tzinfo is None:
-            dt = tz.localize(dt)
+            try:
+                dt = tz.localize(dt, is_dst=None)
+            except pytz.AmbiguousTimeError as exc:
+                raise ValueError(
+                    f"Poll Times: {value} is ambiguous in {tz} (DST overlap); "
+                    "pick a time outside the transition"
+                ) from exc
+            except pytz.NonExistentTimeError as exc:
+                raise ValueError(
+                    f"Poll Times: {value} does not exist in {tz} (DST gap); "
+                    "pick a time outside the transition"
+                ) from exc
         return dt.astimezone(pytz.UTC)
 
     def _validate_time_window(
@@ -374,6 +385,19 @@ _FIELD_SUGGESTIONS = {
     "ping_role_id": "Choose a role from the dropdown or disable role ping",
 }
 
+# Reverse map of friendly labels → field key, used to rehydrate suggestion
+# lookup for model-level ValueErrors where Pydantic's ``loc`` is empty/root
+# but the message itself starts with the friendly label (e.g. "Role Selection: ...").
+_LABEL_TO_FIELD = {label: field for field, label in _FIELD_LABELS.items()}
+
+# Discord ID fields whose Pydantic pattern error should be translated to
+# the legacy user-friendly copy instead of "String should match pattern …".
+_DISCORD_ID_PATTERN_MESSAGES = {
+    "server_id": "Please select a Discord server",
+    "channel_id": "Please select a Discord channel",
+    "ping_role_id": "Must be a numeric Discord ID",
+}
+
 
 def validation_error_to_messages(exc: ValidationError) -> List[dict]:
     """Convert a Pydantic ``ValidationError`` into the legacy error shape.
@@ -384,6 +408,7 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
     messages: List[dict] = []
     for err in exc.errors():
         msg = err.get("msg", "Invalid value")
+        err_type = err.get("type", "")
         if msg.startswith("Value error, "):
             msg = msg[len("Value error, "):]
 
@@ -394,12 +419,21 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
             field_name, _, detail = msg.partition(":")
             field_name = field_name.strip()
             detail = detail.strip() or msg
+            # Rehydrate raw_field from the parsed label so suggestions still
+            # apply when the error came from a model_validator with empty loc.
+            if not raw_field:
+                raw_field = _LABEL_TO_FIELD.get(field_name, raw_field)
         else:
             field_name = _FIELD_LABELS.get(
                 raw_field,
                 raw_field.replace("_", " ").title() if raw_field else "Field",
             )
             detail = msg
+            if (
+                err_type == "string_pattern_mismatch"
+                and raw_field in _DISCORD_ID_PATTERN_MESSAGES
+            ):
+                detail = _DISCORD_ID_PATTERN_MESSAGES[raw_field]
 
         messages.append(
             {
