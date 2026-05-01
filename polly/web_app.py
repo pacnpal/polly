@@ -856,12 +856,9 @@ def add_screenshot_routes(app: FastAPI):
                 # Get summary statistics
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
-                # Compute results from the already-loaded votes (avoid async lazy load)
-                results = {i: 0 for i in range(len(options))}
-                for v in votes:
-                    idx = TypeSafeColumn.get_int(v, "option_index")
-                    if idx in results:
-                        results[idx] += 1
+                # poll.votes was eager-loaded above, so the model helper
+                # doesn't trigger async lazy-loading.
+                results = poll.get_results()
 
                 # Format datetime function for template
                 from .htmx_endpoints import format_datetime_for_user
@@ -1014,12 +1011,9 @@ def add_static_poll_routes(app: FastAPI):
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
-                # Compute results from already-loaded votes (avoid async lazy load)
-                results = {i: 0 for i in range(len(options))}
-                for v in votes:
-                    idx = TypeSafeColumn.get_int(v, "option_index")
-                    if idx in results:
-                        results[idx] += 1
+                # poll.votes was eager-loaded above, so the model helper
+                # doesn't trigger async lazy-loading.
+                results = poll.get_results()
 
                 # Use proper template instead of embedded HTML
                 response = templates.TemplateResponse(
