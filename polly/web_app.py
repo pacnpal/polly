@@ -1118,10 +1118,11 @@ def add_htmx_routes(app: FastAPI):
         filter: str = None,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        # HX-Request content negotiation: redirect only top-level browser
-        # navigations to the full dashboard. HTMX, TestClient, and other
-        # programmatic callers (which don't send Sec-Fetch-Mode: navigate)
-        # keep getting the fragment.
+        # Browser-navigation gating: redirect only top-level browser
+        # navigations (Sec-Fetch-Mode: navigate + Sec-Fetch-Dest: document)
+        # to the full dashboard. HTMX, TestClient, curl and other
+        # programmatic callers don't send those headers and keep getting
+        # the fragment, regardless of HX-Request.
         if _is_browser_navigation(request):
             return RedirectResponse(url="/dashboard", status_code=302)
         return await get_polls_htmx(request, filter, current_user)
@@ -1252,8 +1253,11 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        # Direct browser visits land on the dashboard; HTMX/TestClient/curl
-        # keep getting the fragment.
+        # Browser-navigation gating: only top-level browser visits
+        # (Sec-Fetch-Mode: navigate + Sec-Fetch-Dest: document) get
+        # redirected to the dashboard. HTMX, TestClient, curl, and other
+        # programmatic callers keep getting the fragment regardless of
+        # HX-Request. See polly/htmx_utils.py:is_browser_navigation.
         if _is_browser_navigation(request):
             return RedirectResponse(url="/dashboard", status_code=302)
         bot = get_bot_instance()
