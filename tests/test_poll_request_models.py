@@ -90,6 +90,14 @@ class TestPollFormRequestHappyPath:
         m = _validate(_base_form(option1='foo"bar', option2="baz'qux"))
         assert m.options == ["foobar", "bazqux"]
 
+    def test_internal_utc_fields_excluded_from_dump(self):
+        m = _validate(_base_form())
+        dumped = m.model_dump()
+        assert "open_time_utc" not in dumped
+        assert "close_time_utc" not in dumped
+        # but the parsed datetimes are still accessible on the instance.
+        assert m.open_time_utc is not None
+
     def test_timezone_alias_normalized(self):
         m = _validate(
             _base_form(
@@ -190,7 +198,15 @@ class TestValidationErrorToMessages:
         with pytest.raises(ValidationError) as exc:
             _validate(_base_form(server_id="abc"))
         msgs = validation_error_to_messages(exc.value)
-        assert msgs and msgs[0]["field_name"] == "Server Id"
+        assert msgs and msgs[0]["field_name"] == "Server"
+        assert "post this poll" in msgs[0]["suggestion"]
+
+    def test_min_length_failure_uses_friendly_label(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(name="no"))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Name"
+        assert "descriptive" in msgs[0]["suggestion"]
 
 
 class TestVoteRequest:

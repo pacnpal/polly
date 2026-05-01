@@ -105,8 +105,11 @@ class PollFormRequest(BaseModel):
 
     image_message_text: str = ""
 
-    open_time_utc: Optional[datetime] = None
-    close_time_utc: Optional[datetime] = None
+    # Internal scratch fields populated by ``_resolve_dependent_fields``;
+    # excluded from schemas and ``model_dump()`` since they aren't part of
+    # the request payload.
+    open_time_utc: Optional[datetime] = Field(default=None, exclude=True)
+    close_time_utc: Optional[datetime] = Field(default=None, exclude=True)
 
     @field_validator("timezone", mode="before")
     @classmethod
@@ -326,24 +329,76 @@ def poll_form_to_dict(form_data: Any) -> dict:
     }
 
 
+_FIELD_LABELS = {
+    "name": "Poll Name",
+    "question": "Question",
+    "server_id": "Server",
+    "channel_id": "Channel",
+    "options": "Poll Options",
+    "open_time": "Open Time",
+    "close_time": "Close Time",
+    "max_choices": "Maximum Choices",
+    "ping_role_id": "Role Selection",
+    "timezone": "Timezone",
+}
+
+_FIELD_SUGGESTIONS = {
+    "name": (
+        "Try something descriptive like 'Weekend Movie Night' or "
+        "'Team Lunch Choice'"
+    ),
+    "question": (
+        "Be specific! Instead of 'Pick one', try "
+        "'Which movie should we watch this Friday?'"
+    ),
+    "server_id": "Choose the server where you want to post this poll",
+    "channel_id": "Choose the channel where you want to post this poll",
+    "options": (
+        "Add more choices for people to vote on. Great polls usually have "
+        "3-5 options!"
+    ),
+    "open_time": "Choose a time when your audience will be active",
+    "close_time": (
+        "Give people enough time to vote, but not too long that they forget"
+    ),
+    "max_choices": "Choose a reasonable number of choices users can select",
+    "ping_role_id": "Choose a role from the dropdown or disable role ping",
+}
+
+
 def validation_error_to_messages(exc: ValidationError) -> List[dict]:
-    """Convert a Pydantic ``ValidationError`` into the legacy error shape."""
+    """Convert a Pydantic ``ValidationError`` into the legacy error shape.
+
+    Restores per-field labels and suggestion text so end-users see the same
+    hints as the original hand-rolled validator.
+    """
     messages: List[dict] = []
     for err in exc.errors():
         msg = err.get("msg", "Invalid value")
         if msg.startswith("Value error, "):
             msg = msg[len("Value error, "):]
+
+        loc = err.get("loc") or ()
+        raw_field = str(loc[-1]) if loc else ""
+
         if ":" in msg:
             field_name, _, detail = msg.partition(":")
             field_name = field_name.strip()
             detail = detail.strip() or msg
         else:
-            loc = err.get("loc") or ()
-            field_name = (
-                str(loc[-1]).replace("_", " ").title() if loc else "Field"
+            field_name = _FIELD_LABELS.get(
+                raw_field,
+                raw_field.replace("_", " ").title() if raw_field else "Field",
             )
             detail = msg
-        messages.append({"field_name": field_name, "message": detail, "suggestion": ""})
+
+        messages.append(
+            {
+                "field_name": field_name,
+                "message": detail,
+                "suggestion": _FIELD_SUGGESTIONS.get(raw_field, ""),
+            }
+        )
     return messages
 
 
