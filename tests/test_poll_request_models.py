@@ -236,6 +236,13 @@ class TestPollFormRequestFailures:
             _validate(_base_form(timezone="Mars/Phobos"))
         assert "invalid timezone" in str(exc.value).lower()
 
+    def test_non_string_timezone_rejected(self):
+        # A list/int reaching the timezone field is treated as tampered
+        # input rather than silently defaulting to DEFAULT_TIMEZONE.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(timezone=["US/Eastern"]))
+        assert "invalid timezone" in str(exc.value).lower()
+
     def test_duration_too_short(self):
         # Fixed summer noon -> safely outside any DST transition.
         base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
@@ -324,12 +331,15 @@ class TestValidationErrorToMessages:
     def test_loc_label_wins_over_message_prefix(self):
         # _validate_option_items raises "Options: ..." but Pydantic
         # supplies loc=("options",). The canonical "Poll Options" label
-        # must win over the "Options" prefix in the raw message.
+        # must win over the "Options" prefix in the raw message AND the
+        # redundant prefix must be stripped from the message body so the
+        # rendered output isn't "Poll Options: Options: ...".
         with pytest.raises(ValidationError) as exc:
             _validate(_base_form(option2="alpha"))  # duplicate
         msgs = validation_error_to_messages(exc.value)
         assert msgs[0]["field_name"] == "Poll Options"
         assert "duplicate" in msgs[0]["message"].lower()
+        assert not msgs[0]["message"].lower().startswith("options:")
         assert "Add more choices" in msgs[0]["suggestion"]
 
     def test_poll_duration_prefix_attaches_suggestion(self):

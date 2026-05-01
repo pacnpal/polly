@@ -143,7 +143,15 @@ class PollFormRequest(BaseModel):
     @field_validator("timezone", mode="before")
     @classmethod
     def _coerce_timezone(cls, value: Any) -> str:
-        return _normalize_timezone(value if isinstance(value, str) else None)
+        # ``None``/empty defaults to DEFAULT_TIMEZONE; anything provided but
+        # not a string (list, int, …) is treated as tampered input and
+        # rejected, matching ``_normalize_timezone``'s posture for invalid
+        # explicit values.
+        if value is None:
+            return _normalize_timezone(None)
+        if not isinstance(value, str):
+            raise ValueError(f"Timezone: invalid timezone ({value!r})")
+        return _normalize_timezone(value)
 
     @field_validator("options", mode="before")
     @classmethod
@@ -467,14 +475,11 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
             detail_after_prefix = tail.strip() or msg
 
         if raw_field in _FIELD_LABELS:
-            # Concrete loc: trust the canonical label and drop the redundant
-            # prefix from the message body when it matches.
+            # Concrete loc: trust the canonical label and drop any redundant
+            # "Label: ..." prefix from the message body so we don't render
+            # output like "Poll Options: Options: duplicates not allowed".
             field_name = _FIELD_LABELS[raw_field]
-            detail = (
-                detail_after_prefix
-                if prefix_label and prefix_label == field_name
-                else msg
-            )
+            detail = detail_after_prefix if prefix_label else msg
         elif prefix_label:
             # No useful loc; fall back to the message-level prefix and
             # rehydrate raw_field via _LABEL_TO_FIELD for suggestion lookup.
