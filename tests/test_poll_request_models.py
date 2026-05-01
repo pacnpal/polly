@@ -22,11 +22,15 @@ class _FormShim(dict):
 
 
 def _future(hours: int, tz: str = "US/Pacific") -> str:
-    return (
-        (datetime.now(pytz.timezone(tz)) + timedelta(hours=hours))
-        .replace(microsecond=0)
-        .strftime("%Y-%m-%dT%H:%M")
-    )
+    """Return a fixed summer-noon datetime offset by ``hours`` in ``tz``.
+
+    Using a fixed far-future summer date (rather than ``datetime.now() +
+    timedelta``) keeps tests deterministic and avoids landing on DST
+    gap/overlap wall-clock times that ``tz.localize(..., is_dst=None)``
+    would reject as ambiguous or non-existent.
+    """
+    base = pytz.timezone(tz).localize(datetime(2099, 6, 15, 12, 0))
+    return (base + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M")
 
 
 def _base_form(**overrides) -> _FormShim:
@@ -60,7 +64,17 @@ class TestPollFormRequestHappyPath:
         assert m.close_time_utc > m.open_time_utc
 
     def test_open_immediately_skips_open_time(self):
-        m = _validate(_base_form(open_immediately="true", open_time=""))
+        # When opening immediately, close_time must be relative to *now*,
+        # not the fixed-future _future() helper, since the duration is
+        # measured from the current moment.
+        close_dt = datetime.now(pytz.timezone("US/Pacific")) + timedelta(hours=2)
+        m = _validate(
+            _base_form(
+                open_immediately="true",
+                open_time="",
+                close_time=close_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M"),
+            )
+        )
         assert m.open_immediately is True
         assert m.open_time_utc is not None
         assert m.close_time_utc > m.open_time_utc
@@ -222,12 +236,9 @@ class TestPollFormRequestFailures:
         assert "invalid timezone" in str(exc.value).lower()
 
     def test_duration_too_short(self):
-        tz = pytz.timezone("US/Pacific")
-        open_dt = (
-            (datetime.now(tz) + timedelta(hours=2))
-            .replace(second=0, microsecond=0)
-        )
-        # 30 seconds after open -> duration below the 1-minute floor.
+        # Fixed summer noon -> safely outside any DST transition.
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base + timedelta(hours=2)
         close_dt = open_dt + timedelta(seconds=30)
         with pytest.raises(ValidationError) as exc:
             _validate(
@@ -239,15 +250,16 @@ class TestPollFormRequestFailures:
         assert "at least 1 minute" in str(exc.value)
 
     def test_duration_too_long(self):
-        tz = pytz.timezone("US/Pacific")
-        open_t = _future(2)
-        close_t = (
-            (datetime.now(tz) + timedelta(days=31))
-            .replace(microsecond=0)
-            .strftime("%Y-%m-%dT%H:%M")
-        )
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base + timedelta(hours=2)
+        close_dt = base + timedelta(days=31)
         with pytest.raises(ValidationError) as exc:
-            _validate(_base_form(open_time=open_t, close_time=close_t))
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M"),
+                )
+            )
         assert "30 days" in str(exc.value)
 
 
@@ -275,6 +287,15 @@ class TestValidationErrorToMessages:
         msgs = validation_error_to_messages(exc.value)
         assert msgs[0]["field_name"] == "Channel"
         assert msgs[0]["message"] == "Please select a Discord channel"
+
+    def test_missing_server_id_uses_friendly_copy(self):
+        # Empty string mimics an unselected dropdown -> string_too_short
+        # under the digits-only pattern; should still surface friendly copy.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(server_id=""))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Server"
+        assert msgs[0]["message"] == "Please select a Discord server"
 
     def test_model_level_value_error_keeps_suggestion(self):
         # Role-Selection error originates from a model_validator and has

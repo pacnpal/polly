@@ -26,7 +26,7 @@ from pydantic import (
 )
 
 
-_TIMEZONE_ALIASES = {
+TIMEZONE_ALIASES = {
     "EDT": "US/Eastern",
     "EST": "US/Eastern",
     "CDT": "US/Central",
@@ -40,6 +40,9 @@ _TIMEZONE_ALIASES = {
     "Mountain": "US/Mountain",
     "Pacific": "US/Pacific",
 }
+DEFAULT_TIMEZONE = "US/Eastern"
+# Backwards-compatible private alias for code that already imports the old name.
+_TIMEZONE_ALIASES = TIMEZONE_ALIASES
 
 _TRUE_STRINGS = {"true", "1", "on", "yes"}
 
@@ -416,6 +419,16 @@ _DISCORD_ID_PATTERN_MESSAGES = {
     "ping_role_id": "Must be a numeric Discord ID",
 }
 
+# When a required Discord ID is missing or blank (most often an unselected
+# dropdown), surface the same friendly copy used for pattern mismatches
+# instead of leaking Pydantic's "Field required" / "String should have at
+# least 1 character" wording.
+_DISCORD_ID_PRESENCE_MESSAGES = {
+    "server_id": "Please select a Discord server",
+    "channel_id": "Please select a Discord channel",
+}
+_DISCORD_ID_PRESENCE_TYPES = {"missing", "string_too_short"}
+
 
 def validation_error_to_messages(exc: ValidationError) -> List[dict]:
     """Convert a Pydantic ``ValidationError`` into the legacy error shape.
@@ -452,6 +465,11 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
                 and raw_field in _DISCORD_ID_PATTERN_MESSAGES
             ):
                 detail = _DISCORD_ID_PATTERN_MESSAGES[raw_field]
+            elif (
+                err_type in _DISCORD_ID_PRESENCE_TYPES
+                and raw_field in _DISCORD_ID_PRESENCE_MESSAGES
+            ):
+                detail = _DISCORD_ID_PRESENCE_MESSAGES[raw_field]
 
         messages.append(
             {

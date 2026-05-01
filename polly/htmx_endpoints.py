@@ -41,6 +41,8 @@ try:
     from .debug_config import get_debug_logger
     from .data_utils import sanitize_data_for_json
     from .poll_request_models import (
+        DEFAULT_TIMEZONE,
+        TIMEZONE_ALIASES,
         PollFormRequest,
         poll_form_to_dict,
         validation_error_to_messages,
@@ -65,6 +67,8 @@ except ImportError:
     from debug_config import get_debug_logger  # type: ignore
     from data_utils import sanitize_data_for_json  # type: ignore
     from poll_request_models import (  # type: ignore
+        DEFAULT_TIMEZONE,
+        TIMEZONE_ALIASES,
         PollFormRequest,
         poll_form_to_dict,
         validation_error_to_messages,
@@ -260,40 +264,26 @@ def validate_emoji(emoji_text: str) -> tuple[bool, str]:
 
 
 def validate_and_normalize_timezone(timezone_str: str) -> str:
-    """Validate and normalize timezone string, handling EDT/EST issues"""
+    """Validate and normalize timezone string, handling EDT/EST issues.
+
+    Unlike :func:`poll_request_models._normalize_timezone` (which raises on
+    invalid input), this helper preserves the long-standing graceful-default
+    behavior for general-purpose callers.
+    """
     if not timezone_str:
-        return "US/Eastern"  # Default to Eastern instead of UTC
+        return DEFAULT_TIMEZONE
 
-    # Handle common timezone aliases and server timezone issues
-    timezone_mapping = {
-        "EDT": "US/Eastern",
-        "EST": "US/Eastern",
-        "CDT": "US/Central",
-        "CST": "US/Central",
-        "MDT": "US/Mountain",
-        "MST": "US/Mountain",
-        "PDT": "US/Pacific",
-        "PST": "US/Pacific",
-        "Eastern": "US/Eastern",
-        "Central": "US/Central",
-        "Mountain": "US/Mountain",
-        "Pacific": "US/Pacific",
-    }
+    timezone_str = TIMEZONE_ALIASES.get(timezone_str, timezone_str)
 
-    # Check if it's a mapped timezone
-    if timezone_str in timezone_mapping:
-        timezone_str = timezone_mapping[timezone_str]
-
-    # Validate the timezone
     try:
         pytz.timezone(timezone_str)
         return timezone_str
     except pytz.UnknownTimeZoneError:
-        logger.warning(f"Unknown timezone '{timezone_str}', defaulting to US/Eastern")
-        return "US/Eastern"  # Default to Eastern instead of UTC
+        logger.warning(f"Unknown timezone '{timezone_str}', defaulting to {DEFAULT_TIMEZONE}")
+        return DEFAULT_TIMEZONE
     except Exception as e:
         logger.error(f"Error validating timezone '{timezone_str}': {e}")
-        return "US/Eastern"  # Default to Eastern instead of UTC
+        return DEFAULT_TIMEZONE
 
 
 def safe_parse_datetime_with_timezone(datetime_str: str, timezone_str: str) -> datetime:
