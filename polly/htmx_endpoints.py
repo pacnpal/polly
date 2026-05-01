@@ -504,6 +504,23 @@ async def close_poll_htmx(
     logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
 
     try:
+        # Verify the caller owns this poll before invoking the closure service.
+        # Matches the convention used in open_poll_now_htmx / delete_poll_htmx.
+        db = get_db_session()
+        try:
+            owned = (
+                db.query(Poll.id)
+                .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                .first()
+            )
+        finally:
+            db.close()
+        if owned is None:
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Poll not found or access denied"},
+            )
+
         # Use unified poll closure service for consistent behavior
         from .services.poll.poll_closure_service import get_poll_closure_service
 
@@ -533,15 +550,27 @@ async def close_poll_htmx(
         if htmx_target(request).startswith("poll-card-"):
             db = get_db_session()
             try:
-                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                poll = (
+                    db.query(Poll)
+                    .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                    .first()
+                )
                 if poll is None:
                     return templates.TemplateResponse(
                         "htmx/components/inline_error.html",
                         {"request": request, "message": "Poll closed but could not be reloaded."},
                     )
-                user_timezone = get_user_preferences(current_user.id).get(
-                    "default_timezone", "US/Eastern"
+                # Reuse the open session to avoid a second DB connection.
+                user_pref = (
+                    db.query(UserPreference)
+                    .filter(UserPreference.user_id == current_user.id)
+                    .first()
                 )
+                user_timezone = (
+                    TypeSafeColumn.get_string(user_pref, "default_timezone")
+                    if user_pref is not None
+                    else ""
+                ) or "US/Eastern"
                 ctx = _build_poll_card_context(request, poll, user_timezone)
                 ctx["success_message"] = "Poll closed."
                 return templates.TemplateResponse(
@@ -5063,6 +5092,15 @@ async def delete_poll_htmx(
 
         # Invalidate user polls cache after successful deletion
         await invalidate_user_polls_cache(current_user.id)
+
+        # Card caller (dashboard list): empty body removes the card via outerHTML
+        # swap; OOB alert lands in #inline-messages. Other callers keep the
+        # alert+redirect path.
+        if htmx_target(request).startswith("poll-card-"):
+            return templates.TemplateResponse(
+                "htmx/components/poll_delete_oob.html",
+                {"request": request, "success_message": "Poll deleted."},
+            )
 
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",

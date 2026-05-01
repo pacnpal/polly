@@ -1,0 +1,10 @@
+{# Response for deleting a poll from a card.
+   Body is empty so the outerHTML swap removes #poll-card-{id} from the DOM.
+   The OOB block drops a success alert into #inline-messages.
+#}
+<div id="inline-messages" hx-swap-oob="innerHTML">
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fas fa-check-circle me-2"></i>{{ success_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+</div>

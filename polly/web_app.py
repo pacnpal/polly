@@ -17,7 +17,7 @@ from .debug_config import get_debug_logger, get_debug_context
 from fastapi import FastAPI, Request, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.exception_handlers import http_exception_handler
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -581,7 +581,7 @@ def add_exception_handlers(app: FastAPI):
 
     def _htmx_error_fragment(
         request: Request, status_code: int, message: str
-    ) -> HTMLResponse:
+    ) -> Response:
         """Render an inline-error fragment for HTMX clients.
 
         Sets HX-Reswap: innerHTML and HX-Retarget: #inline-messages so the
