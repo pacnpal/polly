@@ -203,6 +203,11 @@
             </div>
 
             <div class="col-md-9">
+                <!-- Inline message area (target for HTMX-aware error
+                     fragments via HX-Retarget=#inline-messages and for
+                     OOB success alerts from close/delete). Lives outside
+                     #main-content so it persists across fragment swaps. -->
+                <div id="inline-messages"></div>
                 <!-- Main content area -->
                 <div id="main-content" hx-get="/htmx/polls" hx-trigger="load">
                     <!-- Content will be loaded here -->

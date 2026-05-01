@@ -97,13 +97,16 @@ class TestHtmxExceptionHandler:
         # Structured detail (e.g. Pydantic validation lists) should be
         # JSON-encoded into the inline error template rather than coerced via
         # str(), which would produce Python repr (single quotes, braces).
+        # Jinja autoescapes the rendered message so we compare against the
+        # HTML-unescaped body to avoid asserting on &quot; encoding.
+        import html as html_module
+
         response = htmx_error_client.get(
             "/htmx/structured-boom", headers={"HX-Request": "true"}
         )
         assert response.status_code == 422
-        body = response.text
-        # JSON form has double-quoted keys and square-brackets; repr would have
-        # single quotes around the keys.
+        body = html_module.unescape(response.text)
+        # JSON form has double-quoted keys; repr would use single quotes.
         assert '"loc"' in body and '"msg"' in body
         assert "'loc'" not in body
 
