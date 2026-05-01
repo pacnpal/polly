@@ -611,9 +611,11 @@ async def close_poll_htmx(
         )
 
     except Exception as e:
-        logger.error(f"Error in manual poll closure for poll {poll_id}: {e}")
+        logger.exception(f"Error in manual poll closure for poll {poll_id}: {e}")
         return _card_error_response(
-            request, f"Error closing poll: {str(e)}", is_card=is_card
+            request,
+            "Error closing poll. Please try again.",
+            is_card=is_card,
         )
 
 
@@ -5131,10 +5133,12 @@ async def delete_poll_htmx(
         )
 
     except Exception as e:
-        logger.error(f"Error deleting poll {poll_id}: {e}")
+        logger.exception(f"Error deleting poll {poll_id}: {e}")
         db.rollback()
         return _card_error_response(
-            request, f"Error deleting poll: {str(e)}", is_card=is_card
+            request,
+            "Error deleting poll. Please try again.",
+            is_card=is_card,
         )
     finally:
         db.close()

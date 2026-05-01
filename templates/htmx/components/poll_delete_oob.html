@@ -1,6 +1,8 @@
 {# Response for deleting a poll from a card.
-   Body is empty so the outerHTML swap removes #poll-card-{id} from the DOM.
-   The OOB block drops a success alert into #inline-messages.
+   The response contains only this OOB block, which HTMX swaps into
+   #inline-messages and then strips from the main swap payload. That
+   leaves the primary outerHTML swap with no remaining content, so
+   #poll-card-{id} is removed from the DOM.
 #}
 <div id="inline-messages" hx-swap-oob="innerHTML">
     <div class="alert alert-success alert-dismissible fade show" role="alert">
