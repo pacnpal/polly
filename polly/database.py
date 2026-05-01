@@ -13,9 +13,16 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
 )
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+    AsyncAttrs,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
+from contextlib import asynccontextmanager
 from decouple import config
 import json
 import pytz
@@ -76,7 +83,41 @@ class TypeSafeColumn:
 DATABASE_URL = config("DATABASE_URL", default="sqlite:///./db/polly.db")
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+
+def _to_async_url(sync_url: str) -> str:
+    """Translate a sync SQLAlchemy URL to its async-driver equivalent.
+
+    Only handles the drivers actually used by this project.
+    """
+    if sync_url.startswith("sqlite+aiosqlite://"):
+        return sync_url
+    if sync_url.startswith("sqlite:///") or sync_url.startswith("sqlite://"):
+        return sync_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    if sync_url.startswith("postgresql+asyncpg://"):
+        return sync_url
+    if sync_url.startswith("postgresql://") or sync_url.startswith("postgresql+psycopg2://"):
+        return sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1).replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
+    return sync_url
+
+
+ASYNC_DATABASE_URL = config("ASYNC_DATABASE_URL", default=_to_async_url(DATABASE_URL))
+
+# aiosqlite needs check_same_thread disabled too; for non-sqlite this kwarg is ignored.
+_async_connect_args = {"check_same_thread": False} if ASYNC_DATABASE_URL.startswith("sqlite") else {}
+async_engine = create_async_engine(ASYNC_DATABASE_URL, connect_args=_async_connect_args)
+AsyncSessionLocal = async_sessionmaker(
+    async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+)
+
+
+class _Base(AsyncAttrs):
+    """Mixin that makes ORM attributes awaitable for async lazy loads."""
+
+
+Base = declarative_base(cls=_Base)
 
 
 class Poll(Base):
@@ -294,6 +335,39 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+async def get_async_db() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency that yields an AsyncSession.
+
+    Usage:
+        @app.get(...)
+        async def handler(db: AsyncSession = Depends(get_async_db)):
+            result = await db.execute(select(Poll).where(Poll.id == poll_id))
+            poll = result.scalar_one_or_none()
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_async_db_session() -> AsyncIterator[AsyncSession]:
+    """Async context manager for code that isn't a FastAPI dependency.
+
+    Usage:
+        async with get_async_db_session() as db:
+            ...
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def init_database():
