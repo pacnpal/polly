@@ -1,9 +1,11 @@
-{# Response for closing a poll from a card.
-   Primary: replaces #poll-card-{poll_id} with the updated (now-closed) card.
-   OOB:     drops a success alert into #inline-messages.
-#}
-{% include "htmx/components/_poll_card.html" %}
-
+{#- Response for closing a poll from a card.
+    Primary: replaces #poll-card-{poll_id} with the updated (now-closed) card.
+    OOB:     drops a success alert into #inline-messages.
+    The {%- ... -%} markers tighten whitespace between the card and the OOB
+    block so HTMX doesn't leave a stray text node next to the card after
+    stripping the OOB element from the swap payload.
+-#}
+{%- include "htmx/components/_poll_card.html" -%}
 <div id="inline-messages" hx-swap-oob="innerHTML">
     <div class="alert alert-success alert-dismissible fade show" role="alert">
         <i class="fas fa-check-circle me-2"></i>{{ success_message }}
