@@ -33,6 +33,7 @@ from .auth import (
 from .security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from .turnstile_middleware import TurnstileSecurityMiddleware
 from .auth_middleware import AuthenticationMiddleware
+from .htmx_utils import is_htmx
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .admin_endpoints import add_admin_routes
@@ -578,6 +579,29 @@ def create_app() -> FastAPI:
 def add_exception_handlers(app: FastAPI):
     """Add global exception handlers to prevent application crashes"""
 
+    def _htmx_error_fragment(
+        request: Request, status_code: int, message: str
+    ) -> HTMLResponse:
+        """Render an inline-error fragment for HTMX clients.
+
+        Sets HX-Reswap: innerHTML and HX-Retarget: #inline-messages so the
+        alert lands in the dashboard's known message area regardless of the
+        triggering element's hx-target. Falls back to JSON for plain
+        /htmx/* or /api/* requests issued without HTMX (e.g. curl, scripts).
+        """
+        if not is_htmx(request):
+            return JSONResponse(
+                status_code=status_code, content={"detail": message}
+            )
+        response = templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": message},
+            status_code=status_code,
+        )
+        response.headers["HX-Reswap"] = "innerHTML"
+        response.headers["HX-Retarget"] = "#inline-messages"
+        return response
+
     @app.exception_handler(StarletteHTTPException)
     async def custom_http_exception_handler(
         request: Request, exc: StarletteHTTPException
@@ -600,16 +624,14 @@ def add_exception_handlers(app: FastAPI):
                     f"HTTP {exc.status_code} blocked request from {client_ip}: {request.url.path}"
                 )
 
-        # Return JSON response for API endpoints, HTML for web pages
-        if request.url.path.startswith("/htmx/") or request.url.path.startswith(
-            "/api/"
-        ):
+        path = request.url.path
+        if path.startswith("/htmx/"):
+            return _htmx_error_fragment(request, exc.status_code, str(exc.detail))
+        if path.startswith("/api/"):
             return JSONResponse(
                 status_code=exc.status_code, content={"detail": exc.detail}
             )
-        else:
-            # For web pages, use the default handler
-            return await http_exception_handler(request, exc)
+        return await http_exception_handler(request, exc)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
@@ -625,18 +647,17 @@ def add_exception_handlers(app: FastAPI):
             exc_info=True,
         )
 
-        # Return appropriate error response
-        if request.url.path.startswith("/htmx/") or request.url.path.startswith(
-            "/api/"
-        ):
+        path = request.url.path
+        if path.startswith("/htmx/"):
+            return _htmx_error_fragment(request, 500, "Internal server error")
+        if path.startswith("/api/"):
             return JSONResponse(
                 status_code=500, content={"detail": "Internal server error"}
             )
-        else:
-            return HTMLResponse(
-                content="<h1>Internal Server Error</h1><p>Something went wrong. Please try again later.</p>",
-                status_code=500,
-            )
+        return HTMLResponse(
+            content="<h1>Internal Server Error</h1><p>Something went wrong. Please try again later.</p>",
+            status_code=500,
+        )
 
 
 def add_core_routes(app: FastAPI):
@@ -1094,6 +1115,10 @@ def add_htmx_routes(app: FastAPI):
         filter: str = None,
         current_user: DiscordUser = Depends(require_auth),
     ):
+        # HX-Request content negotiation: direct browser visits get the full
+        # dashboard screen; HTMX requests get the polls fragment.
+        if not is_htmx(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
         return await get_polls_htmx(request, filter, current_user)
 
     @app.get("/htmx/stats", response_class=HTMLResponse)
@@ -1222,6 +1247,9 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
+        # Direct browser visits land on the dashboard; HTMX gets the fragment.
+        if not is_htmx(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
         bot = get_bot_instance()
         return await get_poll_details_htmx(poll_id, request, bot, current_user)
 

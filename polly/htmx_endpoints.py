@@ -39,6 +39,7 @@ try:
     from .json_import import PollJSONImporter, PollJSONExporter
     from .debug_config import get_debug_logger
     from .data_utils import sanitize_data_for_json
+    from .htmx_utils import htmx_target
 except ImportError:
     from auth import require_auth, DiscordUser  # type: ignore
     from database import (  # type: ignore
@@ -58,6 +59,7 @@ except ImportError:
     from json_import import PollJSONImporter, PollJSONExporter  # type: ignore
     from debug_config import get_debug_logger  # type: ignore
     from data_utils import sanitize_data_for_json  # type: ignore
+    from htmx_utils import htmx_target  # type: ignore
 
 logger = get_debug_logger(__name__)
 
@@ -472,6 +474,26 @@ def get_user_preferences(user_id: str) -> dict:
         db.close()
 
 
+def _build_poll_card_context(request: Request, poll, user_timezone: str) -> dict:
+    """Compose the template context needed by _poll_card.html."""
+    status = TypeSafeColumn.get_string(poll, "status") or "closed"
+    ctx = {
+        "request": request,
+        "poll_id": TypeSafeColumn.get_int(poll, "id"),
+        "poll_name": TypeSafeColumn.get_string(poll, "name"),
+        "poll_question": TypeSafeColumn.get_string(poll, "question"),
+        "server_name": TypeSafeColumn.get_string(poll, "server_name"),
+        "channel_name": TypeSafeColumn.get_string(poll, "channel_name"),
+        "vote_count": poll.get_total_votes() if hasattr(poll, "get_total_votes") else 0,
+        "is_anonymous": bool(getattr(poll, "anonymous", False)),
+        "status": status,
+        "close_time_formatted": format_datetime_for_user(poll.close_time, user_timezone),
+    }
+    if status == "scheduled":
+        ctx["open_time_formatted"] = format_datetime_for_user(poll.open_time, user_timezone)
+    return ctx
+
+
 async def close_poll_htmx(
     poll_id: int,
     request: Request,
@@ -480,41 +502,63 @@ async def close_poll_htmx(
 ):
     """Close an active poll via HTMX using unified closure service for consistent behavior"""
     logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
-    
+
     try:
         # Use unified poll closure service for consistent behavior
         from .services.poll.poll_closure_service import get_poll_closure_service
-        
+
         poll_closure_service = get_poll_closure_service()
-        
+
         result = await poll_closure_service.close_poll_unified(
             poll_id=poll_id,
             reason="manual",
             admin_user_id=current_user.id,
             bot_instance=bot
         )
-        
-        if result["success"]:
-            logger.info(f"User {current_user.id} successfully manually closed poll {poll_id}")
-            
-            # Invalidate user polls cache after successful closure
-            await invalidate_user_polls_cache(current_user.id)
-            
-            return templates.TemplateResponse(
-                "htmx/components/alert_success.html",
-                {
-                    "request": request,
-                    "message": "Poll closed successfully! Redirecting to polls...",
-                    "redirect_url": "/htmx/polls",
-                },
-            )
-        else:
+
+        if not result["success"]:
             logger.error(f"User {current_user.id} manual close failed for poll {poll_id}: {result.get('error')}")
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
                 {"request": request, "message": result.get("error", "Error closing poll")},
             )
-            
+
+        logger.info(f"User {current_user.id} successfully manually closed poll {poll_id}")
+        await invalidate_user_polls_cache(current_user.id)
+
+        # When invoked from a poll card on the dashboard list, swap the card in
+        # place (outerHTML) and OOB-update the inline-messages alert. When
+        # invoked from poll_details.html (target #main-content), keep the
+        # legacy alert-and-redirect behavior so that screen reloads cleanly.
+        if htmx_target(request).startswith("poll-card-"):
+            db = get_db_session()
+            try:
+                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+                if poll is None:
+                    return templates.TemplateResponse(
+                        "htmx/components/inline_error.html",
+                        {"request": request, "message": "Poll closed but could not be reloaded."},
+                    )
+                user_timezone = get_user_preferences(current_user.id).get(
+                    "default_timezone", "US/Eastern"
+                )
+                ctx = _build_poll_card_context(request, poll, user_timezone)
+                ctx["success_message"] = "Poll closed."
+                return templates.TemplateResponse(
+                    "htmx/components/poll_close_oob.html", ctx
+                )
+            finally:
+                db.close()
+
+        return templates.TemplateResponse(
+            "htmx/components/alert_success.html",
+            {
+                "request": request,
+                "message": "Poll closed successfully! Redirecting to polls...",
+                "redirect_url": "/htmx/polls",
+            },
+        )
+
     except Exception as e:
         logger.error(f"Error in manual poll closure for poll {poll_id}: {e}")
         return templates.TemplateResponse(
