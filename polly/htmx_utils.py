@@ -19,3 +19,17 @@ def htmx_target(request: Request) -> str:
     treating that as 'no specific target'.
     """
     return request.headers.get("HX-Target") or ""
+
+
+def is_browser_navigation(request: Request) -> bool:
+    """Return True if the request looks like a top-level browser navigation.
+
+    Real browsers send Sec-Fetch-Mode: navigate (and Sec-Fetch-Dest: document)
+    when the user types a URL or clicks a link directly. HTMX (fetch),
+    TestClient, curl and most scripts do not send these headers, so this
+    is a reliable way to distinguish "paste URL into address bar" from
+    every other caller.
+    """
+    sec_mode = request.headers.get("sec-fetch-mode", "").lower()
+    sec_dest = request.headers.get("sec-fetch-dest", "").lower()
+    return sec_mode == "navigate" or sec_dest == "document"

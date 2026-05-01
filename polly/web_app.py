@@ -33,7 +33,7 @@ from .auth import (
 from .security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from .turnstile_middleware import TurnstileSecurityMiddleware
 from .auth_middleware import AuthenticationMiddleware
-from .htmx_utils import is_htmx
+from .htmx_utils import is_htmx, is_browser_navigation as _is_browser_navigation
 from .database import get_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .admin_endpoints import add_admin_routes
@@ -1118,9 +1118,11 @@ def add_htmx_routes(app: FastAPI):
         filter: str = None,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        # HX-Request content negotiation: direct browser visits get the full
-        # dashboard screen; HTMX requests get the polls fragment.
-        if not is_htmx(request):
+        # HX-Request content negotiation: redirect only top-level browser
+        # navigations to the full dashboard. HTMX, TestClient, and other
+        # programmatic callers (which don't send Sec-Fetch-Mode: navigate)
+        # keep getting the fragment.
+        if _is_browser_navigation(request):
             return RedirectResponse(url="/dashboard", status_code=302)
         return await get_polls_htmx(request, filter, current_user)
 
@@ -1250,8 +1252,9 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
-        # Direct browser visits land on the dashboard; HTMX gets the fragment.
-        if not is_htmx(request):
+        # Direct browser visits land on the dashboard; HTMX/TestClient/curl
+        # keep getting the fragment.
+        if _is_browser_navigation(request):
             return RedirectResponse(url="/dashboard", status_code=302)
         bot = get_bot_instance()
         return await get_poll_details_htmx(poll_id, request, bot, current_user)
