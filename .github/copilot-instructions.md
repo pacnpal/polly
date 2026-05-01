@@ -11,7 +11,7 @@ Polly is a Discord poll bot with a FastAPI + HTMX web interface. These instructi
 - **Frontend**: Jinja2 templates, Bootstrap 5, HTMX (no JavaScript framework)
 - **Auth**: Discord OAuth2 + JWT (python-jose)
 - **Package management**: `uv` (not pip/poetry)
-- **Testing**: pytest with `pytest-asyncio` (asyncio_mode = auto), `pytest-cov` (≥80% coverage required)
+- **Testing**: pytest with `pytest-asyncio` (asyncio_mode = auto), `pytest-cov` (≥80% coverage required); Playwright Chromium is available for browser-based / E2E tests
 - **Linting/formatting**: ruff
 - **Container**: Docker + docker-compose
 
@@ -49,9 +49,9 @@ uv run ruff format .
 
 - **HTMX-first frontend**: do not introduce React, Vue, or client-side JS frameworks. Server-rendered partials returned from FastAPI endpoints, swapped via `hx-*` attributes.
 - **Async by default** for FastAPI route handlers and discord.py callbacks. Use `aiosqlite`/SQLAlchemy async sessions for DB access where the surrounding code already does.
-- **Timezone awareness**: poll scheduling is timezone-aware (default `US/Eastern`). Always use timezone-aware `datetime` objects; store UTC, render in user's tz with `pytz`.
+- **Timezone awareness**: poll scheduling is timezone-aware (default `US/Eastern`). Always use timezone-aware `datetime` objects — prefer `datetime.now(datetime.UTC)` over the deprecated `datetime.utcnow()`. Store UTC; render in the user's tz with `pytz`.
 - **Admin-only operations**: poll creation/management requires Discord server admin permissions; preserve the existing auth checks.
-- **Secrets** come from environment variables (`.env` / `python-decouple`). Never hardcode tokens, client secrets, or `SECRET_KEY`. See `.env.example` for the full list.
+- **Secrets / config**: `.env` is loaded once at startup via `python-dotenv` (`load_dotenv()` in `polly/main.py`); all other modules read individual values via `python-decouple`'s `from decouple import config` (existing pattern in `database.py`, `discord_bot.py`, `redis_client.py`, etc.). Follow this split — don't replace `decouple` calls with `os.getenv` or vice versa. Never hardcode tokens, client secrets, or `SECRET_KEY`. See `.env.example` for the full list.
 - **Image uploads**: full-size images, validated with `python-magic` and `Pillow`; cleanup is automatic on poll deletion — preserve this behavior.
 - **Logging over print**: use the standard `logging` module; pytest is configured to surface INFO logs.
 
