@@ -1,0 +1,523 @@
+"""Unit tests for ``polly.poll_request_models``."""
+
+import asyncio
+from datetime import datetime, timedelta
+
+import pytest
+import pytz
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+from polly.poll_request_models import (
+    PollFormRequest,
+    VoteRequest,
+    parse_poll_form_request,
+    poll_form_to_dict,
+    validation_error_to_messages,
+)
+
+
+class _FormShim(dict):
+    """Mimic Starlette's ``FormData.get`` interface backed by a plain dict."""
+
+    def get(self, key, default=None):  # type: ignore[override]
+        return super().get(key, default)
+
+
+def _future(hours: int, tz: str = "US/Pacific") -> str:
+    """Return a fixed summer-noon datetime offset by ``hours`` in ``tz``.
+
+    Using a fixed far-future summer date (rather than ``datetime.now() +
+    timedelta``) keeps tests deterministic and avoids landing on DST
+    gap/overlap wall-clock times that ``tz.localize(..., is_dst=None)``
+    would reject as ambiguous or non-existent.
+    """
+    base = pytz.timezone(tz).localize(datetime(2099, 6, 15, 12, 0))
+    return (base + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M")
+
+
+def _base_form(**overrides) -> _FormShim:
+    data = {
+        "name": "Sample Poll",
+        "question": "Which option do you prefer?",
+        "server_id": "12345",
+        "channel_id": "67890",
+        "option1": "alpha",
+        "option2": "beta",
+        "timezone": "US/Pacific",
+        "open_time": _future(2),
+        "close_time": _future(4),
+    }
+    data.update(overrides)
+    return _FormShim(data)
+
+
+def _validate(form: _FormShim) -> PollFormRequest:
+    return PollFormRequest.model_validate(poll_form_to_dict(form))
+
+
+class TestPollFormRequestHappyPath:
+    def test_minimal_valid_payload(self):
+        m = _validate(_base_form())
+        assert m.name == "Sample Poll"
+        assert m.options == ["alpha", "beta"]
+        assert m.timezone == "US/Pacific"
+        assert m.open_time_utc is not None
+        assert m.close_time_utc is not None
+        assert m.close_time_utc > m.open_time_utc
+
+    def test_open_immediately_skips_open_time(self):
+        # When opening immediately, close_time must be relative to *now*.
+        # Use UTC (DST-free) so the derived wall-clock can never land in a
+        # DST gap/overlap that would trip ``tz.localize(..., is_dst=None)``.
+        close_dt = datetime.now(pytz.UTC) + timedelta(hours=2)
+        m = _validate(
+            _base_form(
+                timezone="UTC",
+                open_immediately="true",
+                open_time="",
+                close_time=close_dt.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M"),
+            )
+        )
+        assert m.open_immediately is True
+        assert m.open_time_utc is not None
+        assert m.close_time_utc > m.open_time_utc
+
+    def test_max_choices_resolved_for_multiple_choice(self):
+        m = _validate(_base_form(multiple_choice="true", max_choices="2"))
+        assert m.max_choices == 2
+
+    def test_max_choices_dropped_for_single_choice(self):
+        m = _validate(
+            _base_form(multiple_choice="false", max_choices="1")
+        )
+        assert m.max_choices is None
+
+    def test_role_ping_fields_zeroed_when_disabled(self):
+        m = _validate(
+            _base_form(
+                ping_role_enabled="false",
+                ping_role_id="555",
+                ping_role_on_close="true",
+            )
+        )
+        assert m.ping_role_id is None
+        assert m.ping_role_on_close is False
+
+    def test_non_numeric_ping_role_id_ignored_when_disabled(self):
+        # A stale or tampered non-numeric ping_role_id must not fail
+        # validation when role ping is off — legacy behavior was to drop it.
+        m = _validate(
+            _base_form(ping_role_enabled="false", ping_role_id="not-a-number")
+        )
+        assert m.ping_role_id is None
+
+    def test_quotes_stripped_from_options(self):
+        m = _validate(_base_form(option1='foo"bar', option2="baz'qux"))
+        assert m.options == ["foobar", "bazqux"]
+
+    def test_html_stripped_from_name_and_question(self):
+        # Angle brackets get scrubbed, but legitimate punctuation such as
+        # apostrophes and quotes (e.g. "don't", "Friday's vote") survive.
+        m = _validate(
+            _base_form(
+                name="<script>Sample</script>",
+                question="Which option<br/> do 'you' prefer?",
+            )
+        )
+        assert m.name == "scriptSample/script"
+        assert m.question == "Which optionbr/ do 'you' prefer?"
+
+    def test_apostrophes_and_quotes_preserved(self):
+        m = _validate(
+            _base_form(
+                name="Friday's pick",
+                question='Which "movie" should we watch?',
+            )
+        )
+        assert m.name == "Friday's pick"
+        assert m.question == 'Which "movie" should we watch?'
+
+    def test_image_message_text_preserves_discord_markup(self):
+        # <@user>, <#channel>, <:emoji:id> must survive — they're Discord
+        # markdown, not HTML.
+        m = _validate(
+            _base_form(image_message_text="ping <@123> in <#456> :: <:smile:789>")
+        )
+        assert m.image_message_text == "ping <@123> in <#456> :: <:smile:789>"
+
+    def test_internal_utc_fields_excluded_from_dump(self):
+        m = _validate(_base_form())
+        dumped = m.model_dump()
+        assert "open_time_utc" not in dumped
+        assert "close_time_utc" not in dumped
+        # but the parsed datetimes are still accessible on the instance.
+        assert m.open_time_utc is not None
+
+    def test_timezone_alias_normalized(self):
+        m = _validate(
+            _base_form(
+                timezone="EDT",
+                open_time=_future(6, "US/Eastern"),
+                close_time=_future(8, "US/Eastern"),
+            )
+        )
+        assert m.timezone == "US/Eastern"
+
+
+class TestPollFormRequestFailures:
+    def test_close_before_open(self):
+        future_open = _future(4)
+        future_close = _future(2)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(open_time=future_open, close_time=future_close)
+            )
+        assert "after the open time" in str(exc.value)
+
+    def test_open_time_in_past(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(open_time="2020-01-01T00:00"))
+        assert "next full minute" in str(exc.value)
+
+    def test_role_ping_enabled_without_role(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(ping_role_enabled="true", ping_role_id="")
+            )
+        assert "select a role" in str(exc.value)
+
+    def test_invalid_close_time_format(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(close_time="not-a-date"))
+        # Error must be anchored to "Close Time" specifically so the UI
+        # can highlight the right field and show the right suggestion.
+        msg = str(exc.value)
+        assert "close time" in msg.lower()
+        assert "invalid date/time format" in msg.lower()
+
+    def test_invalid_open_time_format_anchored_to_open_time(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(open_time="not-a-date"))
+        msg = str(exc.value)
+        assert "open time" in msg.lower()
+        assert "invalid date/time format" in msg.lower()
+
+    def test_non_numeric_server_id(self):
+        with pytest.raises(ValidationError):
+            _validate(_base_form(server_id="abc"))
+
+    def test_non_numeric_channel_id(self):
+        with pytest.raises(ValidationError):
+            _validate(_base_form(channel_id="xyz"))
+
+    def test_non_numeric_ping_role_id(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(ping_role_enabled="true", ping_role_id="foo")
+            )
+        assert "numeric Discord ID" in str(exc.value)
+
+    def test_duplicate_options_rejected(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="alpha"))
+        assert "duplicate" in str(exc.value).lower()
+
+    def test_overlong_option_rejected(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="b" * 101))
+        assert "100 characters" in str(exc.value)
+
+    def test_too_few_options(self):
+        with pytest.raises(ValidationError):
+            _validate(_base_form(option2=""))
+
+    def test_max_choices_exceeds_options(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(multiple_choice="true", max_choices="5")
+            )
+        assert "cannot exceed" in str(exc.value)
+
+    def test_max_choices_non_numeric(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(multiple_choice="true", max_choices="abc")
+            )
+        assert "valid number" in str(exc.value)
+
+    def test_short_name_rejected(self):
+        with pytest.raises(ValidationError):
+            _validate(_base_form(name="no"))
+
+    def test_quote_only_option_dropped(self):
+        # "''" collapses to "" after quote stripping; leaves only one
+        # real option so the 2-minimum constraint should fire.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="''"))
+        assert "at least 2" in str(exc.value)
+
+    def test_invalid_timezone_rejected(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(timezone="Mars/Phobos"))
+        assert "invalid timezone" in str(exc.value).lower()
+
+    def test_non_string_timezone_rejected(self):
+        # A list/int reaching the timezone field is treated as tampered
+        # input rather than silently defaulting to DEFAULT_TIMEZONE.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(timezone=["US/Eastern"]))
+        assert "invalid timezone" in str(exc.value).lower()
+
+    def test_falsy_non_string_timezone_reaches_validator(self):
+        # Tampered falsy non-string (e.g. False) used to be silently
+        # collapsed by poll_form_to_dict before the validator could see
+        # it. Now the raw value should reach _coerce_timezone and be
+        # rejected.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(timezone=False))
+        assert "invalid timezone" in str(exc.value).lower()
+
+    def test_duration_too_short(self):
+        # Fixed summer noon -> safely outside any DST transition.
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base + timedelta(hours=2)
+        close_dt = open_dt + timedelta(seconds=30)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+            )
+        assert "at least 1 minute" in str(exc.value)
+
+    def test_image_message_text_over_2000_chars_rejected(self):
+        # Discord caps message content at 2000 chars; reject up front so
+        # users see a friendly form error instead of an HTTPException at
+        # post time.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(image_message_text="x" * 2001))
+        assert "image_message_text" in str(exc.value).lower() or "2000" in str(exc.value)
+
+    def test_duration_too_long(self):
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base + timedelta(hours=2)
+        close_dt = base + timedelta(days=31)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M"),
+                )
+            )
+        assert "30 days" in str(exc.value)
+
+
+class TestToValidatedDataDict:
+    """``PollFormRequest.to_validated_data_dict`` is the legacy contract
+    consumed by the HTMX endpoints; if a new model field shows up, this
+    method (and these tests) keeps the conversion in one place."""
+
+    def test_keys_match_legacy_contract(self):
+        m = _validate(_base_form())
+        data = m.to_validated_data_dict("user-123")
+        assert set(data) == {
+            "name",
+            "question",
+            "server_id",
+            "channel_id",
+            "options",
+            "open_time",
+            "close_time",
+            "timezone",
+            "anonymous",
+            "multiple_choice",
+            "max_choices",
+            "open_immediately",
+            "ping_role_enabled",
+            "ping_role_id",
+            "ping_role_on_close",
+            "ping_role_on_update",
+            "image_message_text",
+            "creator_id",
+        }
+        assert data["creator_id"] == "user-123"
+        # open_time / close_time use the computed UTC datetimes, not the
+        # raw input strings, so callers can hand them straight to the
+        # scheduler.
+        assert data["open_time"] == m.open_time_utc
+        assert data["close_time"] == m.close_time_utc
+
+
+class TestPollFormDictPassthrough:
+    """Behavioral tests for ``poll_form_to_dict``."""
+
+    def test_max_choices_zero_preserved(self):
+        # Empty string maps to None; other falsy values must reach the
+        # model so _resolve_max_choices can range-check them.
+        d = poll_form_to_dict(
+            _FormShim(
+                {
+                    **dict(_base_form()),
+                    "multiple_choice": "true",
+                    "max_choices": "0",
+                }
+            )
+        )
+        assert d["max_choices"] == "0"
+
+    def test_max_choices_empty_string_collapses_to_none(self):
+        d = poll_form_to_dict(
+            _FormShim({**dict(_base_form()), "max_choices": ""})
+        )
+        assert d["max_choices"] is None
+
+
+class TestParsePollFormRequest:
+    def test_validation_error_becomes_http_422(self):
+        class _FakeRequest:
+            async def form(self):
+                form = _base_form(server_id="abc")  # invalid pattern
+                return _FormShim(dict(form))
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(parse_poll_form_request(_FakeRequest()))
+        assert exc.value.status_code == 422
+        assert exc.value.detail and exc.value.detail[0]["field_name"] == "Server"
+
+
+class TestValidationErrorToMessages:
+    def test_translates_value_error_with_field_prefix(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(ping_role_enabled="true", ping_role_id="")
+            )
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs and msgs[0]["field_name"] == "Role Selection"
+        assert "select a role" in msgs[0]["message"]
+
+    def test_translates_pattern_failure_with_field_loc(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(server_id="abc"))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs and msgs[0]["field_name"] == "Server"
+        assert msgs[0]["message"] == "Please select a Discord server"
+        assert "post this poll" in msgs[0]["suggestion"]
+
+    def test_channel_pattern_failure_uses_friendly_copy(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(channel_id="bad"))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Channel"
+        assert msgs[0]["message"] == "Please select a Discord channel"
+
+    def test_missing_server_id_uses_friendly_copy(self):
+        # Empty string mimics an unselected dropdown -> string_too_short
+        # under the digits-only pattern; should still surface friendly copy.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(server_id=""))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Server"
+        assert msgs[0]["message"] == "Please select a Discord server"
+
+    def test_absent_channel_id_uses_friendly_copy(self):
+        # An entirely missing form key reaches Pydantic as None ->
+        # ``string_type`` error; must still resolve to the friendly copy.
+        form = _base_form()
+        form["channel_id"] = None
+        with pytest.raises(ValidationError) as exc:
+            _validate(form)
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Channel"
+        assert msgs[0]["message"] == "Please select a Discord channel"
+
+    def test_model_level_value_error_keeps_suggestion(self):
+        # Role-Selection error originates from a model_validator and has
+        # an empty ``loc``; the wrapper should still attach the role-ping
+        # suggestion based on the parsed label.
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(ping_role_enabled="true", ping_role_id="")
+            )
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Role Selection"
+        assert "disable role ping" in msgs[0]["suggestion"]
+
+    def test_loc_label_wins_over_message_prefix(self):
+        # _validate_option_items raises "Options: ..." but Pydantic
+        # supplies loc=("options",). The canonical "Poll Options" label
+        # must win over the "Options" prefix in the raw message AND the
+        # redundant prefix must be stripped from the message body so the
+        # rendered output isn't "Poll Options: Options: ...".
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="alpha"))  # duplicate
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Options"
+        assert "duplicate" in msgs[0]["message"].lower()
+        assert not msgs[0]["message"].lower().startswith("options:")
+        assert "Add more choices" in msgs[0]["suggestion"]
+
+    def test_informative_option_index_prefix_preserved(self):
+        # "Option 2: must be 100 characters or fewer" carries the index
+        # of the failing option; the wrapper must NOT strip it just
+        # because loc resolves to "options".
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="b" * 101))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Options"
+        assert msgs[0]["message"].startswith("Option 2:")
+
+    def test_poll_duration_prefix_attaches_suggestion(self):
+        # Duration error from _validate_time_window has no loc; the
+        # synthetic "Poll Duration" prefix should still resolve to the
+        # close_time suggestion via _LABEL_TO_FIELD.
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base
+        close_dt = open_dt + timedelta(seconds=30)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+            )
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Duration"
+        assert msgs[0]["suggestion"]  # non-empty, sourced from close_time
+
+    def test_min_length_failure_uses_friendly_label(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(name="no"))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Name"
+        assert "descriptive" in msgs[0]["suggestion"]
+
+
+class TestVoteRequest:
+    def test_valid_vote(self):
+        v = VoteRequest.model_validate({"user_id": " 123 ", "option_index": 1})
+        assert v.user_id == "123"
+        assert v.option_index == 1
+
+    def test_negative_option_index_rejected(self):
+        with pytest.raises(ValidationError):
+            VoteRequest.model_validate({"user_id": "1", "option_index": -1})
+
+    def test_empty_user_id_rejected(self):
+        with pytest.raises(ValidationError):
+            VoteRequest.model_validate({"user_id": "", "option_index": 0})
+
+    def test_non_numeric_user_id_rejected(self):
+        with pytest.raises(ValidationError):
+            VoteRequest.model_validate({"user_id": "abc", "option_index": 0})
+
+    def test_int_user_id_coerced_to_string(self):
+        # Discord snowflakes are ints; accept them and stringify.
+        v = VoteRequest.model_validate({"user_id": 12345, "option_index": 0})
+        assert v.user_id == "12345"
+
+    def test_dict_user_id_rejected(self):
+        # Non-(str|int) types must not be silently turned into "{}" via str(...).
+        with pytest.raises(ValidationError):
+            VoteRequest.model_validate({"user_id": {"id": "1"}, "option_index": 0})

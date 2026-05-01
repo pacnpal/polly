@@ -616,9 +616,13 @@ class BulletproofPollOperations:
                             "error": f"Poll is not active (status: {str(getattr(poll, 'status', ''))})",
                         }
 
-                    # Step 1b: Validate vote data using existing validator
+                    # Step 1b: Validate vote data using existing validator,
+                    # adopting the normalized (user_id, option_index) so any
+                    # whitespace stripping persists into the recorded Vote row.
                     try:
-                        VoteValidator.validate_vote_data(poll, user_id, option_index)
+                        user_id, option_index = VoteValidator.validate_vote_data(
+                            poll, user_id, option_index
+                        )
                     except Exception as e:
                         db.rollback()
                         logger.error(f"Vote data validation failed: {e}")
