@@ -10,6 +10,7 @@ calls. Use :func:`parse_poll_form_request` as a FastAPI dependency
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import Any, List, Optional, Tuple
 
@@ -23,13 +24,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-
-try:
-    from .debug_config import get_debug_logger
-except ImportError:  # pragma: no cover - script-mode imports
-    from debug_config import get_debug_logger  # type: ignore
-
-logger = get_debug_logger(__name__)
 
 
 _TIMEZONE_ALIASES = {
@@ -88,8 +82,8 @@ class PollFormRequest(BaseModel):
 
     name: str = Field(..., min_length=3, max_length=255)
     question: str = Field(..., min_length=5, max_length=2000)
-    server_id: str = Field(..., min_length=1)
-    channel_id: str = Field(..., min_length=1)
+    server_id: str = Field(..., min_length=1, pattern=r"^\d+$")
+    channel_id: str = Field(..., min_length=1, pattern=r"^\d+$")
     options: List[str] = Field(..., min_length=2, max_length=10)
 
     timezone: str = Field(default="US/Eastern")
@@ -99,7 +93,10 @@ class PollFormRequest(BaseModel):
     open_immediately: bool = False
     anonymous: bool = False
     multiple_choice: bool = False
-    max_choices: Optional[int] = Field(default=None, ge=2, le=10)
+    # Carried as Optional[Any] so we can defer numeric coercion / range checks
+    # to ``_resolve_dependent_fields``: a value of ``"1"`` on a single-choice
+    # poll must be discarded, not rejected.
+    max_choices: Optional[Any] = None
 
     ping_role_enabled: bool = False
     ping_role_id: Optional[str] = None
@@ -122,7 +119,27 @@ class PollFormRequest(BaseModel):
         if value is None:
             return []
         if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
+            cleaned = []
+            for item in value:
+                text = str(item).strip()
+                if not text:
+                    continue
+                # Match legacy PollValidator.validate_poll_options: drop
+                # bare quotes while keeping Discord <:emoji:id> markers intact.
+                cleaned.append(re.sub(r'["\']', "", text))
+            return cleaned
+        return value
+
+    @field_validator("options")
+    @classmethod
+    def _validate_option_items(cls, value: List[str]) -> List[str]:
+        for index, option in enumerate(value, start=1):
+            if len(option) > 100:
+                raise ValueError(
+                    f"Option {index}: must be 100 characters or fewer"
+                )
+        if len(set(value)) != len(value):
+            raise ValueError("Options: duplicate options are not allowed")
         return value
 
     @field_validator("ping_role_id", mode="before")
@@ -134,10 +151,18 @@ class PollFormRequest(BaseModel):
             return None
         return value
 
+    @field_validator("ping_role_id")
+    @classmethod
+    def _ping_role_id_must_be_numeric(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        if not value.isdigit():
+            raise ValueError("Role Id: must be a numeric Discord ID")
+        return value
+
     @model_validator(mode="after")
     def _resolve_dependent_fields(self) -> "PollFormRequest":
-        if not self.multiple_choice:
-            self.max_choices = None
+        self.max_choices = self._resolve_max_choices()
 
         if not self.ping_role_enabled:
             self.ping_role_id = None
@@ -153,6 +178,27 @@ class PollFormRequest(BaseModel):
         self.open_time_utc = open_dt
         self.close_time_utc = close_dt
         return self
+
+    def _resolve_max_choices(self) -> Optional[int]:
+        if not self.multiple_choice:
+            return None
+        if self.max_choices is None or self.max_choices == "":
+            return None
+        try:
+            parsed = int(self.max_choices)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Maximum Choices: must be a valid number"
+            ) from exc
+        if parsed < 2:
+            raise ValueError("Maximum Choices: must be at least 2")
+        if parsed > 10:
+            raise ValueError("Maximum Choices: cannot exceed 10")
+        if parsed > len(self.options):
+            raise ValueError(
+                f"Maximum Choices: cannot exceed the number of options ({len(self.options)})"
+            )
+        return parsed
 
     def _parse_times(self) -> Tuple[datetime, datetime]:
         if not self.close_time:
