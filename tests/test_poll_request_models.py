@@ -342,6 +342,16 @@ class TestValidationErrorToMessages:
         assert not msgs[0]["message"].lower().startswith("options:")
         assert "Add more choices" in msgs[0]["suggestion"]
 
+    def test_informative_option_index_prefix_preserved(self):
+        # "Option 2: must be 100 characters or fewer" carries the index
+        # of the failing option; the wrapper must NOT strip it just
+        # because loc resolves to "options".
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="b" * 101))
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Options"
+        assert msgs[0]["message"].startswith("Option 2:")
+
     def test_poll_duration_prefix_attaches_suggestion(self):
         # Duration error from _validate_time_window has no loc; the
         # synthetic "Poll Duration" prefix should still resolve to the

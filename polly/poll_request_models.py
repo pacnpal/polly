@@ -475,11 +475,20 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
             detail_after_prefix = tail.strip() or msg
 
         if raw_field in _FIELD_LABELS:
-            # Concrete loc: trust the canonical label and drop any redundant
-            # "Label: ..." prefix from the message body so we don't render
-            # output like "Poll Options: Options: duplicates not allowed".
+            # Concrete loc: trust the canonical label and drop only the
+            # redundant "Field: ..." prefix from the body so output reads
+            # cleanly (e.g. avoid "Poll Options: Options: duplicates ...").
+            # We MUST keep informative prefixes like "Option 2: ..." that
+            # carry data the field label can't express.
             field_name = _FIELD_LABELS[raw_field]
-            detail = detail_after_prefix if prefix_label else msg
+            redundant_prefixes = {
+                field_name,
+                raw_field.replace("_", " ").title(),
+            }
+            if prefix_label and prefix_label in redundant_prefixes:
+                detail = detail_after_prefix
+            else:
+                detail = msg
         elif prefix_label:
             # No useful loc; fall back to the message-level prefix and
             # rehydrate raw_field via _LABEL_TO_FIELD for suggestion lookup.
