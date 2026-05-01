@@ -103,12 +103,63 @@ def _to_async_url(sync_url: str) -> str:
 
 ASYNC_DATABASE_URL = config("ASYNC_DATABASE_URL", default=_to_async_url(DATABASE_URL))
 
-# aiosqlite needs check_same_thread disabled too; for non-sqlite this kwarg is ignored.
-_async_connect_args = {"check_same_thread": False} if ASYNC_DATABASE_URL.startswith("sqlite") else {}
-async_engine = create_async_engine(ASYNC_DATABASE_URL, connect_args=_async_connect_args)
-AsyncSessionLocal = async_sessionmaker(
-    async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
-)
+
+def _is_async_driver_url(url: str) -> bool:
+    """Whether the URL specifies a SQLAlchemy async-capable dialect."""
+    return (
+        "+aiosqlite" in url
+        or "+asyncpg" in url
+        or "+asyncmy" in url
+        or "+aiomysql" in url
+        or "+psycopg_async" in url
+    )
+
+
+# Lazy-init: ``create_async_engine`` raises InvalidRequestError if given a sync
+# driver URL (e.g. plain ``postgresql://...``), so we defer construction until
+# first use AND only build the engine when the URL is async-capable. Existing
+# sync deployments that haven't set ASYNC_DATABASE_URL keep working.
+_async_engine: "AsyncEngine | None" = None
+_AsyncSessionLocal: "async_sessionmaker[AsyncSession] | None" = None
+
+
+def _build_async_engine():
+    """Construct (or return cached) async engine + sessionmaker.
+
+    Raises ``RuntimeError`` if ``ASYNC_DATABASE_URL`` is not an async-driver URL,
+    so callers get a clear message instead of an opaque SQLAlchemy error.
+    """
+    global _async_engine, _AsyncSessionLocal
+    if _async_engine is not None:
+        return _async_engine, _AsyncSessionLocal
+
+    if not _is_async_driver_url(ASYNC_DATABASE_URL):
+        raise RuntimeError(
+            "Async DB access requested but ASYNC_DATABASE_URL is not an "
+            "async-driver URL. Set ASYNC_DATABASE_URL explicitly, e.g. "
+            "'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...'. "
+            f"Current value: {ASYNC_DATABASE_URL!r}"
+        )
+
+    connect_args = (
+        {"check_same_thread": False}
+        if ASYNC_DATABASE_URL.startswith("sqlite")
+        else {}
+    )
+    _async_engine = create_async_engine(ASYNC_DATABASE_URL, connect_args=connect_args)
+    _AsyncSessionLocal = async_sessionmaker(
+        _async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+    )
+    return _async_engine, _AsyncSessionLocal
+
+
+def __getattr__(name: str):
+    """Module-level lazy access to async_engine / AsyncSessionLocal (PEP 562)."""
+    if name == "async_engine":
+        return _build_async_engine()[0]
+    if name == "AsyncSessionLocal":
+        return _build_async_engine()[1]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class _Base(AsyncAttrs):

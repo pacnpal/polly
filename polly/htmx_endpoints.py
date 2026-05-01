@@ -592,14 +592,10 @@ async def open_poll_now_htmx(
             poll.open_time = datetime.now(pytz.UTC)
             await db.commit()
 
-        # Remove the scheduled opening job
-        try:
-            scheduler.remove_job(f"open_poll_{poll_id}")
-            logger.info(f"Removed scheduled opening job for poll {poll_id}")
-        except Exception as e:
-            logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
-
-        # Post the poll to Discord immediately using unified opening service
+        # Post the poll to Discord immediately using unified opening service.
+        # We deliberately leave the APScheduler job in place until the unified
+        # open succeeds, so that a failure path can fall back to the scheduled
+        # opening rather than leaving the poll permanently un-openable.
         try:
             from .services.poll.poll_open_service import poll_opening_service
 
@@ -621,6 +617,13 @@ async def open_poll_now_htmx(
                 )
 
             logger.info(f"Poll {poll_id} opened immediately by user {current_user.id} via unified service")
+
+            # Now that the open succeeded, remove the scheduled opening job.
+            try:
+                scheduler.remove_job(f"open_poll_{poll_id}")
+                logger.info(f"Removed scheduled opening job for poll {poll_id}")
+            except Exception as e:
+                logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
             await _revert_poll_status_to_scheduled(
@@ -2353,14 +2356,23 @@ async def get_stats_htmx(
                     logger.error(
                         f"Error getting votes for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {e}"
                     )
-                    # Fallback: count votes directly
+                    # Fallback: count votes directly. Match poll.get_total_votes()
+                    # semantics — multi-select polls count distinct voters,
+                    # single-select polls count rows.
                     try:
                         from sqlalchemy import func as sa_func
+                        poll_id_value = TypeSafeColumn.get_int(poll, "id")
+                        is_multi = TypeSafeColumn.get_bool(poll, "multiple_choice", False)
+                        count_expr = (
+                            sa_func.count(sa_func.distinct(Vote.user_id))
+                            if is_multi
+                            else sa_func.count()
+                        )
                         vote_count = (
                             await db.execute(
-                                select(sa_func.count())
+                                select(count_expr)
                                 .select_from(Vote)
-                                .where(Vote.poll_id == TypeSafeColumn.get_int(poll, "id"))
+                                .where(Vote.poll_id == poll_id_value)
                             )
                         ).scalar_one()
                         if isinstance(vote_count, int):
