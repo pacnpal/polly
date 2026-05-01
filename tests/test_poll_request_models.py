@@ -1,14 +1,17 @@
 """Unit tests for ``polly.poll_request_models``."""
 
+import asyncio
 from datetime import datetime, timedelta
 
 import pytest
 import pytz
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from polly.poll_request_models import (
     PollFormRequest,
     VoteRequest,
+    parse_poll_form_request,
     poll_form_to_dict,
     validation_error_to_messages,
 )
@@ -242,6 +245,52 @@ class TestPollFormRequestFailures:
         with pytest.raises(ValidationError) as exc:
             _validate(_base_form(timezone=["US/Eastern"]))
         assert "invalid timezone" in str(exc.value).lower()
+
+    def test_falsy_non_string_timezone_reaches_validator(self):
+        # Tampered falsy non-string (e.g. False) used to be silently
+        # collapsed by poll_form_to_dict before the validator could see
+        # it. Now the raw value should reach _coerce_timezone and be
+        # rejected.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(timezone=False))
+        assert "invalid timezone" in str(exc.value).lower()
+
+
+class TestPollFormDictPassthrough:
+    """Behavioral tests for ``poll_form_to_dict``."""
+
+    def test_max_choices_zero_preserved(self):
+        # Empty string maps to None; other falsy values must reach the
+        # model so _resolve_max_choices can range-check them.
+        d = poll_form_to_dict(
+            _FormShim(
+                {
+                    **dict(_base_form()),
+                    "multiple_choice": "true",
+                    "max_choices": "0",
+                }
+            )
+        )
+        assert d["max_choices"] == "0"
+
+    def test_max_choices_empty_string_collapses_to_none(self):
+        d = poll_form_to_dict(
+            _FormShim({**dict(_base_form()), "max_choices": ""})
+        )
+        assert d["max_choices"] is None
+
+
+class TestParsePollFormRequest:
+    def test_validation_error_becomes_http_422(self):
+        class _FakeRequest:
+            async def form(self):
+                form = _base_form(server_id="abc")  # invalid pattern
+                return _FormShim(dict(form))
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(parse_poll_form_request(_FakeRequest()))
+        assert exc.value.status_code == 422
+        assert exc.value.detail and exc.value.detail[0]["field_name"] == "Server"
 
     def test_duration_too_short(self):
         # Fixed summer noon -> safely outside any DST transition.

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Any, List, Optional, Tuple
 
 import pytz
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -358,20 +358,31 @@ def _extract_options(form_data: Any) -> List[str]:
 
 
 def poll_form_to_dict(form_data: Any) -> dict:
-    """Translate raw FastAPI ``FormData`` into a model_validate-ready dict."""
+    """Translate raw FastAPI ``FormData`` into a model_validate-ready dict.
+
+    Raw form values are passed through as-is wherever the model has its own
+    ``mode="before"`` validator that distinguishes "absent" from "explicit
+    falsy". That keeps tampered inputs (e.g. ``timezone=0``, ``max_choices=0``)
+    visible to the validator instead of silently collapsing to defaults.
+    """
+    raw_max_choices = form_data.get("max_choices")
     return {
         "name": form_data.get("name"),
         "question": form_data.get("question"),
         "server_id": form_data.get("server_id"),
         "channel_id": form_data.get("channel_id"),
         "options": _extract_options(form_data),
-        "timezone": form_data.get("timezone") or DEFAULT_TIMEZONE,
+        # Pass timezone through verbatim; _coerce_timezone defaults None and
+        # rejects non-strings instead of silently collapsing falsy garbage.
+        "timezone": form_data.get("timezone"),
         "open_time": form_data.get("open_time"),
         "close_time": form_data.get("close_time"),
         "open_immediately": _truthy(form_data.get("open_immediately")),
         "anonymous": _truthy(form_data.get("anonymous")),
         "multiple_choice": _truthy(form_data.get("multiple_choice")),
-        "max_choices": form_data.get("max_choices") or None,
+        # Only collapse the empty-string case; preserve other falsy values
+        # (e.g. ``"0"``) so _resolve_max_choices can range-check them.
+        "max_choices": None if raw_max_choices == "" else raw_max_choices,
         "ping_role_enabled": _truthy(form_data.get("ping_role_enabled")),
         "ping_role_id": form_data.get("ping_role_id"),
         "ping_role_on_close": _truthy(form_data.get("ping_role_on_close")),
@@ -526,8 +537,22 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
 async def parse_poll_form_request(request: Request) -> PollFormRequest:
     """FastAPI dependency: read the request form and return a validated model.
 
-    Raises ``pydantic.ValidationError`` when the payload is invalid; callers
-    should catch it and translate to whatever response the endpoint needs.
+    Raises ``HTTPException`` with status 422 (carrying the legacy-shaped
+    error messages in ``detail``) on invalid payloads, so failures surface
+    as proper client errors instead of bubbling to FastAPI's generic 500
+    handler.
     """
     form_data = await request.form()
-    return PollFormRequest.model_validate(poll_form_to_dict(form_data))
+    try:
+        return PollFormRequest.model_validate(poll_form_to_dict(form_data))
+    except ValidationError as exc:
+        # Some Starlette versions renamed the constant; fall back gracefully.
+        unprocessable = getattr(
+            status,
+            "HTTP_422_UNPROCESSABLE_CONTENT",
+            getattr(status, "HTTP_422_UNPROCESSABLE_ENTITY", 422),
+        )
+        raise HTTPException(
+            status_code=unprocessable,
+            detail=validation_error_to_messages(exc),
+        ) from exc
