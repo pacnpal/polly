@@ -273,9 +273,10 @@ class TestCloseAndDeleteCardDispatch:
         captured, side_effect = _capture_template_response()
 
         fake_poll = MagicMock()
-        # Make TypeSafeColumn.get_string return "scheduled" for status,
-        # "" for image_path. Easiest: stub TypeSafeColumn.
-        db = _FakeDB([[fake_poll]])
+        # Two query() calls: ownership check, then Vote-deletion query.
+        # The vote query uses .filter().delete() and ignores the queued
+        # results, so [] is fine for the second slot.
+        db = _FakeDB([[fake_poll], []])
 
         with (
             patch.object(htmx_endpoints, "get_db_session", lambda: db),
@@ -311,7 +312,8 @@ class TestCloseAndDeleteCardDispatch:
         captured, side_effect = _capture_template_response()
 
         fake_poll = MagicMock()
-        db = _FakeDB([[fake_poll]])
+        # Same two-query setup as the card-target case.
+        db = _FakeDB([[fake_poll], []])
 
         with (
             patch.object(htmx_endpoints, "get_db_session", lambda: db),
