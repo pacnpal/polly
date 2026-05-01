@@ -321,6 +321,35 @@ class TestValidationErrorToMessages:
         assert msgs[0]["field_name"] == "Role Selection"
         assert "disable role ping" in msgs[0]["suggestion"]
 
+    def test_loc_label_wins_over_message_prefix(self):
+        # _validate_option_items raises "Options: ..." but Pydantic
+        # supplies loc=("options",). The canonical "Poll Options" label
+        # must win over the "Options" prefix in the raw message.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(option2="alpha"))  # duplicate
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Options"
+        assert "duplicate" in msgs[0]["message"].lower()
+        assert "Add more choices" in msgs[0]["suggestion"]
+
+    def test_poll_duration_prefix_attaches_suggestion(self):
+        # Duration error from _validate_time_window has no loc; the
+        # synthetic "Poll Duration" prefix should still resolve to the
+        # close_time suggestion via _LABEL_TO_FIELD.
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base
+        close_dt = open_dt + timedelta(seconds=30)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+            )
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Poll Duration"
+        assert msgs[0]["suggestion"]  # non-empty, sourced from close_time
+
     def test_min_length_failure_uses_friendly_label(self):
         with pytest.raises(ValidationError) as exc:
             _validate(_base_form(name="no"))

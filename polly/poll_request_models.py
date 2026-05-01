@@ -413,6 +413,12 @@ _FIELD_SUGGESTIONS = {
 # but the message itself starts with the friendly label (e.g. "Role Selection: ...").
 _LABEL_TO_FIELD = {label: field for field, label in _FIELD_LABELS.items()}
 
+# Synthetic prefixes used by model-level validators that don't correspond to
+# a single field. ``_LABEL_TO_FIELD`` maps them to a real key in
+# ``_FIELD_SUGGESTIONS`` so the wrapper still attaches a useful hint.
+_LABEL_TO_FIELD["Poll Duration"] = "close_time"
+_LABEL_TO_FIELD["Poll Times"] = "open_time"
+
 # Discord ID fields whose Pydantic pattern error should be translated to
 # the legacy user-friendly copy instead of "String should match pattern …".
 _DISCORD_ID_PATTERN_MESSAGES = {
@@ -436,7 +442,10 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
     """Convert a Pydantic ``ValidationError`` into the legacy error shape.
 
     Restores per-field labels and suggestion text so end-users see the same
-    hints as the original hand-rolled validator.
+    hints as the original hand-rolled validator. When Pydantic provides a
+    concrete ``loc``, that field's canonical label always wins over any
+    ``"Label: ..."`` prefix in the raw message; a colon prefix is only used
+    as the source of truth when ``loc`` is empty (model-level validators).
     """
     messages: List[dict] = []
     for err in exc.errors():
@@ -448,30 +457,47 @@ def validation_error_to_messages(exc: ValidationError) -> List[dict]:
         loc = err.get("loc") or ()
         raw_field = str(loc[-1]) if loc else ""
 
+        # Split off any "Label: detail" prefix up front so we can use the
+        # detail body regardless of which source wins for ``field_name``.
+        prefix_label = ""
+        detail_after_prefix = msg
         if ":" in msg:
-            field_name, _, detail = msg.partition(":")
-            field_name = field_name.strip()
-            detail = detail.strip() or msg
-            # Rehydrate raw_field from the parsed label so suggestions still
-            # apply when the error came from a model_validator with empty loc.
+            head, _, tail = msg.partition(":")
+            prefix_label = head.strip()
+            detail_after_prefix = tail.strip() or msg
+
+        if raw_field in _FIELD_LABELS:
+            # Concrete loc: trust the canonical label and drop the redundant
+            # prefix from the message body when it matches.
+            field_name = _FIELD_LABELS[raw_field]
+            detail = (
+                detail_after_prefix
+                if prefix_label and prefix_label == field_name
+                else msg
+            )
+        elif prefix_label:
+            # No useful loc; fall back to the message-level prefix and
+            # rehydrate raw_field via _LABEL_TO_FIELD for suggestion lookup.
+            field_name = prefix_label
+            detail = detail_after_prefix
             if not raw_field:
-                raw_field = _LABEL_TO_FIELD.get(field_name, raw_field)
+                raw_field = _LABEL_TO_FIELD.get(prefix_label, raw_field)
         else:
-            field_name = _FIELD_LABELS.get(
-                raw_field,
-                raw_field.replace("_", " ").title() if raw_field else "Field",
+            field_name = (
+                raw_field.replace("_", " ").title() if raw_field else "Field"
             )
             detail = msg
-            if (
-                err_type == "string_pattern_mismatch"
-                and raw_field in _DISCORD_ID_PATTERN_MESSAGES
-            ):
-                detail = _DISCORD_ID_PATTERN_MESSAGES[raw_field]
-            elif (
-                err_type in _DISCORD_ID_PRESENCE_TYPES
-                and raw_field in _DISCORD_ID_PRESENCE_MESSAGES
-            ):
-                detail = _DISCORD_ID_PRESENCE_MESSAGES[raw_field]
+
+        if (
+            err_type == "string_pattern_mismatch"
+            and raw_field in _DISCORD_ID_PATTERN_MESSAGES
+        ):
+            detail = _DISCORD_ID_PATTERN_MESSAGES[raw_field]
+        elif (
+            err_type in _DISCORD_ID_PRESENCE_TYPES
+            and raw_field in _DISCORD_ID_PRESENCE_MESSAGES
+        ):
+            detail = _DISCORD_ID_PRESENCE_MESSAGES[raw_field]
 
         messages.append(
             {
