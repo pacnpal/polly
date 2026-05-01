@@ -5114,9 +5114,11 @@ async def delete_poll_htmx(
         # Invalidate user polls cache after successful deletion
         await invalidate_user_polls_cache(current_user.id)
 
-        # Card caller (dashboard list): empty body removes the card via outerHTML
-        # swap; OOB alert lands in #inline-messages. Other callers keep the
-        # alert+redirect path.
+        # Card caller (dashboard list): the triggering card uses
+        # hx-swap="delete", so HTMX removes that element regardless of the
+        # response body, while still processing the OOB block in this response
+        # to drop a success alert into #inline-messages. Other callers keep
+        # the alert+redirect path.
         if is_card:
             return templates.TemplateResponse(
                 "htmx/components/poll_delete_oob.html",
