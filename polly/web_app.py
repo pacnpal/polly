@@ -5,6 +5,7 @@ FastAPI application setup and core web functionality.
 
 import os
 import asyncio
+import json
 import secrets
 import hashlib
 from contextlib import asynccontextmanager
@@ -595,7 +596,17 @@ def add_exception_handlers(app: FastAPI):
             return JSONResponse(
                 status_code=status_code, content={"detail": detail}
             )
-        message = detail if isinstance(detail, str) else str(detail)
+        if isinstance(detail, str):
+            message = detail
+        else:
+            # Structured detail (dict/list, e.g. Pydantic validation errors)
+            # would render as ugly Python repr ("{'loc': [...]}") if we used
+            # str(); JSON-encode for legibility. Fall back to str() if the
+            # value isn't JSON-serializable.
+            try:
+                message = json.dumps(detail, ensure_ascii=False)
+            except (TypeError, ValueError):
+                message = str(detail)
         response = templates.TemplateResponse(
             "htmx/components/inline_error.html",
             {"request": request, "message": message},

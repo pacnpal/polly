@@ -1,8 +1,11 @@
 """Tests for HTMX-specific behavior in the web app.
 
-Two areas:
+Three areas:
 - The exception handler's HTMX content negotiation, exercised against a
   minimal FastAPI app so the auth middleware doesn't get in the way.
+- The browser-navigation gating (Sec-Fetch-Mode/Sec-Fetch-Dest) used by
+  /htmx/polls and /htmx/poll/{id}/details to redirect real top-level
+  browser visits while still serving fragments to HTMX/TestClient/curl.
 - The card-target dispatch logic in close_poll_htmx / delete_poll_htmx,
   exercised by patching templates.TemplateResponse and capturing the
   template chosen for each branch.
@@ -11,9 +14,11 @@ Two areas:
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.testclient import TestClient
 
+from polly.htmx_utils import is_browser_navigation
 from polly.web_app import add_exception_handlers
 
 
@@ -85,6 +90,114 @@ class TestHtmxExceptionHandler:
         response = htmx_error_client.get("/htmx/crash")
         assert response.status_code == 500
         assert response.json() == {"detail": "Internal server error"}
+
+    def test_htmx_structured_detail_renders_as_json_not_repr(
+        self, htmx_error_client
+    ):
+        # Structured detail (e.g. Pydantic validation lists) should be
+        # JSON-encoded into the inline error template rather than coerced via
+        # str(), which would produce Python repr (single quotes, braces).
+        response = htmx_error_client.get(
+            "/htmx/structured-boom", headers={"HX-Request": "true"}
+        )
+        assert response.status_code == 422
+        body = response.text
+        # JSON form has double-quoted keys and square-brackets; repr would have
+        # single quotes around the keys.
+        assert '"loc"' in body and '"msg"' in body
+        assert "'loc'" not in body
+
+
+# ---------------------------------------------------------------------------
+# Browser-navigation gating (Sec-Fetch-Mode + Sec-Fetch-Dest)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def browser_nav_client():
+    """Minimal app whose route mirrors the gating used by /htmx/polls and
+    /htmx/poll/{id}/details: redirect on top-level browser navigation,
+    fragment otherwise. Bypasses the auth middleware so we test the
+    gating contract in isolation."""
+    app = FastAPI()
+
+    @app.get("/htmx/polls")
+    async def fake_polls(request: Request):
+        if is_browser_navigation(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
+        return PlainTextResponse("polls fragment")
+
+    @app.get("/htmx/poll/{poll_id}/details")
+    async def fake_poll_details(poll_id: int, request: Request):
+        if is_browser_navigation(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
+        return PlainTextResponse(f"details {poll_id}")
+
+    return TestClient(app)
+
+
+class TestBrowserNavigationGating:
+    BROWSER_NAV_HEADERS = {
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+    }
+
+    def test_polls_redirects_on_browser_navigation(self, browser_nav_client):
+        response = browser_nav_client.get(
+            "/htmx/polls",
+            headers=self.BROWSER_NAV_HEADERS,
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "/dashboard"
+
+    def test_polls_serves_fragment_without_browser_nav_headers(
+        self, browser_nav_client
+    ):
+        # No Sec-Fetch-* headers (TestClient/curl/scripts default) → fragment.
+        response = browser_nav_client.get("/htmx/polls")
+        assert response.status_code == 200
+        assert response.text == "polls fragment"
+
+    def test_polls_serves_fragment_for_htmx_request(self, browser_nav_client):
+        # HTMX sends HX-Request but not Sec-Fetch-Mode: navigate.
+        response = browser_nav_client.get(
+            "/htmx/polls", headers={"HX-Request": "true"}
+        )
+        assert response.status_code == 200
+        assert response.text == "polls fragment"
+
+    def test_polls_serves_fragment_when_only_one_sec_fetch_header_set(
+        self, browser_nav_client
+    ):
+        # AND-of-both is required: navigate without dest=document is not a
+        # top-level navigation (e.g. iframe or worker).
+        response = browser_nav_client.get(
+            "/htmx/polls", headers={"Sec-Fetch-Mode": "navigate"}
+        )
+        assert response.status_code == 200
+        response = browser_nav_client.get(
+            "/htmx/polls", headers={"Sec-Fetch-Dest": "document"}
+        )
+        assert response.status_code == 200
+
+    def test_poll_details_redirects_on_browser_navigation(
+        self, browser_nav_client
+    ):
+        response = browser_nav_client.get(
+            "/htmx/poll/42/details",
+            headers=self.BROWSER_NAV_HEADERS,
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "/dashboard"
+
+    def test_poll_details_serves_fragment_for_htmx(self, browser_nav_client):
+        response = browser_nav_client.get(
+            "/htmx/poll/42/details", headers={"HX-Request": "true"}
+        )
+        assert response.status_code == 200
+        assert response.text == "details 42"
 
 
 # ---------------------------------------------------------------------------
