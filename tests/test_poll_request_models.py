@@ -292,6 +292,14 @@ class TestPollFormRequestFailures:
             )
         assert "at least 1 minute" in str(exc.value)
 
+    def test_image_message_text_over_2000_chars_rejected(self):
+        # Discord caps message content at 2000 chars; reject up front so
+        # users see a friendly form error instead of an HTTPException at
+        # post time.
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(image_message_text="x" * 2001))
+        assert "image_message_text" in str(exc.value).lower() or "2000" in str(exc.value)
+
     def test_duration_too_long(self):
         base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
         open_dt = base + timedelta(hours=2)
@@ -463,3 +471,17 @@ class TestVoteRequest:
     def test_empty_user_id_rejected(self):
         with pytest.raises(ValidationError):
             VoteRequest.model_validate({"user_id": "", "option_index": 0})
+
+    def test_non_numeric_user_id_rejected(self):
+        with pytest.raises(ValidationError):
+            VoteRequest.model_validate({"user_id": "abc", "option_index": 0})
+
+    def test_int_user_id_coerced_to_string(self):
+        # Discord snowflakes are ints; accept them and stringify.
+        v = VoteRequest.model_validate({"user_id": 12345, "option_index": 0})
+        assert v.user_id == "12345"
+
+    def test_dict_user_id_rejected(self):
+        # Non-(str|int) types must not be silently turned into "{}" via str(...).
+        with pytest.raises(ValidationError):
+            VoteRequest.model_validate({"user_id": {"id": "1"}, "option_index": 0})

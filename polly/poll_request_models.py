@@ -120,7 +120,10 @@ class PollFormRequest(BaseModel):
     ping_role_on_close: bool = False
     ping_role_on_update: bool = False
 
-    image_message_text: str = ""
+    # Discord caps message content at 2000 characters; validate up front
+    # so users see a friendly form error instead of an HTTPException at
+    # post time.
+    image_message_text: str = Field(default="", max_length=2000)
 
     # Internal scratch fields populated by ``_resolve_dependent_fields``;
     # excluded from schemas and ``model_dump()`` since they aren't part of
@@ -335,15 +338,21 @@ class VoteRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    user_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1, pattern=r"^\d+$")
     option_index: int = Field(..., ge=0)
 
     @field_validator("user_id", mode="before")
     @classmethod
     def _coerce_user_id(cls, value: Any) -> Any:
-        if value is None:
-            return value
-        return str(value).strip()
+        # Restrict the coercion path to types Discord actually emits for
+        # user IDs (snowflake int or stringified int). Other shapes (dict,
+        # list, None) fall straight to Pydantic's type/missing checks
+        # rather than being silently turned into nonsense via str(...).
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 def _extract_options(form_data: Any) -> List[str]:
