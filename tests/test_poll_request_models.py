@@ -195,6 +195,35 @@ class TestPollFormRequestFailures:
             _validate(_base_form(timezone="Mars/Phobos"))
         assert "invalid timezone" in str(exc.value).lower()
 
+    def test_duration_too_short(self):
+        tz = pytz.timezone("US/Pacific")
+        open_dt = (
+            (datetime.now(tz) + timedelta(hours=2))
+            .replace(second=0, microsecond=0)
+        )
+        # 30 seconds after open -> duration below the 1-minute floor.
+        close_dt = open_dt + timedelta(seconds=30)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+            )
+        assert "at least 1 minute" in str(exc.value)
+
+    def test_duration_too_long(self):
+        tz = pytz.timezone("US/Pacific")
+        open_t = _future(2)
+        close_t = (
+            (datetime.now(tz) + timedelta(days=31))
+            .replace(microsecond=0)
+            .strftime("%Y-%m-%dT%H:%M")
+        )
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(open_time=open_t, close_time=close_t))
+        assert "30 days" in str(exc.value)
+
 
 class TestValidationErrorToMessages:
     def test_translates_value_error_with_field_prefix(self):
