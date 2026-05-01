@@ -190,7 +190,18 @@ class TestPollFormRequestFailures:
     def test_invalid_close_time_format(self):
         with pytest.raises(ValidationError) as exc:
             _validate(_base_form(close_time="not-a-date"))
-        assert "invalid date/time format" in str(exc.value).lower()
+        # Error must be anchored to "Close Time" specifically so the UI
+        # can highlight the right field and show the right suggestion.
+        msg = str(exc.value)
+        assert "close time" in msg.lower()
+        assert "invalid date/time format" in msg.lower()
+
+    def test_invalid_open_time_format_anchored_to_open_time(self):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_base_form(open_time="not-a-date"))
+        msg = str(exc.value)
+        assert "open time" in msg.lower()
+        assert "invalid date/time format" in msg.lower()
 
     def test_non_numeric_server_id(self):
         with pytest.raises(ValidationError):

@@ -251,30 +251,30 @@ class PollFormRequest(BaseModel):
                 raise ValueError(
                     "Open Time: please select when the poll should start"
                 )
-            open_dt = self._localize(self.open_time, tz)
+            open_dt = self._localize(self.open_time, tz, "Open Time")
 
-        close_dt = self._localize(self.close_time, tz)
+        close_dt = self._localize(self.close_time, tz, "Close Time")
         return open_dt, close_dt
 
     @staticmethod
-    def _localize(value: str, tz: Any) -> datetime:
+    def _localize(value: str, tz: Any, field_label: str = "Poll Times") -> datetime:
         try:
             dt = datetime.fromisoformat(value)
         except ValueError as exc:
             raise ValueError(
-                f"Poll Times: invalid date/time format ({value})"
+                f"{field_label}: invalid date/time format ({value})"
             ) from exc
         if dt.tzinfo is None:
             try:
                 dt = tz.localize(dt, is_dst=None)
             except pytz.AmbiguousTimeError as exc:
                 raise ValueError(
-                    f"Poll Times: {value} is ambiguous in {tz} (DST overlap); "
+                    f"{field_label}: {value} is ambiguous in {tz} (DST overlap); "
                     "pick a time outside the transition"
                 ) from exc
             except pytz.NonExistentTimeError as exc:
                 raise ValueError(
-                    f"Poll Times: {value} does not exist in {tz} (DST gap); "
+                    f"{field_label}: {value} does not exist in {tz} (DST gap); "
                     "pick a time outside the transition"
                 ) from exc
         else:

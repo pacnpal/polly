@@ -5044,13 +5044,10 @@ async def update_poll_htmx(
         # Use unified emoji processor for consistent handling
         unified_processor = get_unified_emoji_processor(bot)
 
-        # Get options from form data
-        options = []
-        for i in range(1, 11):
-            option = form_data.get(f"option{i}")
-            if option:
-                option_text = str(option).strip()
-                options.append(option_text)
+        # Use the canonical option list from PollFormRequest so quote/empty
+        # stripping done by the model is preserved here. Re-deriving from
+        # form_data would diverge and risk option/emoji index mismatches.
+        options = list(validated_data["options"])
 
         # Extract emoji inputs from form data
         emoji_inputs = unified_processor.extract_emoji_inputs_from_form(

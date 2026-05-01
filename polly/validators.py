@@ -66,8 +66,11 @@ class PollValidator:
                 "name",
             )
 
-        # Remove potentially harmful characters
-        name = re.sub(r'[<>"\']', "", name)
+        # Strip raw angle brackets to prevent HTML/JS smuggling, but
+        # preserve apostrophes/quotes as legitimate punctuation. This
+        # mirrors PollFormRequest._sanitize_user_text so model-validated
+        # data survives the legacy validator unchanged.
+        name = re.sub(r'[<>]', "", name)
 
         return name
 
