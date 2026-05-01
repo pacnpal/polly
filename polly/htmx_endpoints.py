@@ -581,7 +581,8 @@ async def close_poll_htmx(
                         "Poll closed but could not be reloaded.",
                         is_card=True,
                     )
-                # Reuse the open session to avoid a second DB connection.
+                # Reuse this branch's session for both poll and user-pref
+                # lookups instead of opening a new one for each.
                 user_pref = (
                     db.query(UserPreference)
                     .filter(UserPreference.user_id == current_user.id)
