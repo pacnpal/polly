@@ -782,7 +782,7 @@ def add_screenshot_routes(app: FastAPI):
             logger.info(f"🔐 SCREENSHOT ACCESS - Token validated, serving dashboard for poll {poll_id}")
             
             # Get poll data from database
-            from .database import Poll, Vote, TypeSafeColumn
+            from .database import Poll, TypeSafeColumn
 
             async with get_async_db_session() as db:
                 poll = (
@@ -910,7 +910,7 @@ def add_static_poll_routes(app: FastAPI):
     async def serve_static_poll_details(poll_id: int, request: Request):
         """Serve static poll details page - checks for pre-generated static file first, falls back to dynamic generation"""
         try:
-            from .database import Poll, Vote, TypeSafeColumn
+            from .database import Poll, TypeSafeColumn
             from datetime import datetime
             
             # First, check if a pre-generated static file exists

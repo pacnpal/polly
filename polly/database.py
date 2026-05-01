@@ -88,18 +88,16 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def _to_async_url(sync_url: str) -> str:
     """Translate a sync SQLAlchemy URL to its async-driver equivalent.
 
-    Only handles the drivers actually used by this project.
+    SQLite is auto-translated to aiosqlite (declared dependency). For Postgres
+    we deliberately do *not* auto-translate to asyncpg, because asyncpg is not
+    a declared dependency and silently rewriting the URL would crash a
+    Postgres deployment at import time. Postgres users should set
+    ``ASYNC_DATABASE_URL`` explicitly (e.g. ``postgresql+asyncpg://...``).
     """
     if sync_url.startswith("sqlite+aiosqlite://"):
         return sync_url
     if sync_url.startswith("sqlite:///") or sync_url.startswith("sqlite://"):
         return sync_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
-    if sync_url.startswith("postgresql+asyncpg://"):
-        return sync_url
-    if sync_url.startswith("postgresql://") or sync_url.startswith("postgresql+psycopg2://"):
-        return sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1).replace(
-            "postgresql://", "postgresql+asyncpg://", 1
-        )
     return sync_url
 
 

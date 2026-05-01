@@ -531,13 +531,13 @@ async def close_poll_htmx(
 async def _revert_poll_status_to_scheduled(
     poll_id: int,
     open_time: datetime | None = None,
-    updated_at: datetime | None = None,
 ) -> None:
     """Revert a poll's status back to 'scheduled' (used when an open attempt fails).
 
-    When provided, ``open_time`` and ``updated_at`` restore the values that were
-    overwritten by the optimistic ``open_poll_now`` flow so we don't leave the
-    poll scheduled with a stale "now" open time.
+    When provided, ``open_time`` restores the value that was overwritten by the
+    optimistic ``open_poll_now`` flow so we don't leave the poll scheduled with
+    a stale "now" open time. (Note: the Poll model intentionally has no
+    ``updated_at`` column, so timestamps beyond ``open_time`` are not restored.)
     """
     async with get_async_db_session() as db:
         poll = (
@@ -547,8 +547,6 @@ async def _revert_poll_status_to_scheduled(
             poll.status = "scheduled"
             if open_time is not None:
                 poll.open_time = open_time
-            if updated_at is not None:
-                poll.updated_at = updated_at
             await db.commit()
 
 
@@ -585,14 +583,13 @@ async def open_poll_now_htmx(
                     },
                 )
 
-            # Capture previous values so we can restore them if the open fails.
+            # Capture previous open_time so we can restore it if the open fails.
+            # (Poll has no updated_at column, so we don't track that here.)
             prev_open_time = TypeSafeColumn.get_datetime(poll, "open_time")
-            prev_updated_at = TypeSafeColumn.get_datetime(poll, "updated_at")
 
             # Update poll status to active and set open time to now
             poll.status = "active"
             poll.open_time = datetime.now(pytz.UTC)
-            poll.updated_at = datetime.now(pytz.UTC)
             await db.commit()
 
         # Remove the scheduled opening job
@@ -616,7 +613,7 @@ async def open_poll_now_htmx(
             if not result["success"]:
                 logger.error(f"Unified poll opening failed for poll {poll_id}: {result.get('error')}")
                 await _revert_poll_status_to_scheduled(
-                    poll_id, open_time=prev_open_time, updated_at=prev_updated_at
+                    poll_id, open_time=prev_open_time
                 )
                 return templates.TemplateResponse(
                     "htmx/components/inline_error.html",
@@ -627,7 +624,7 @@ async def open_poll_now_htmx(
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
             await _revert_poll_status_to_scheduled(
-                poll_id, open_time=prev_open_time, updated_at=prev_updated_at
+                poll_id, open_time=prev_open_time
             )
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",

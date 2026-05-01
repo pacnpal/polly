@@ -623,13 +623,9 @@ class TestAsyncDatabase:
 
         assert _to_async_url("sqlite:///./db/polly.db") == "sqlite+aiosqlite:///./db/polly.db"
         assert _to_async_url("sqlite+aiosqlite:///x.db") == "sqlite+aiosqlite:///x.db"
-        assert (
-            _to_async_url("postgresql://u:p@h/db") == "postgresql+asyncpg://u:p@h/db"
-        )
-        assert (
-            _to_async_url("postgresql+asyncpg://u:p@h/db")
-            == "postgresql+asyncpg://u:p@h/db"
-        )
+        # Postgres URLs are intentionally NOT auto-translated since asyncpg is
+        # not a declared dependency. Users must set ASYNC_DATABASE_URL explicitly.
+        assert _to_async_url("postgresql://u:p@h/db") == "postgresql://u:p@h/db"
 
     async def test_async_engine_insert_and_select(self, tmp_path):
         """End-to-end sanity check for async engine + session lifecycle.
