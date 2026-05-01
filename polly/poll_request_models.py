@@ -296,12 +296,12 @@ class PollFormRequest(BaseModel):
                     "Close Time: must be in the future for immediate polls"
                 )
         else:
-            user_tz = pytz.timezone(self.timezone)
-            now_local = now.astimezone(user_tz)
-            next_minute_local = now_local.replace(
+            # Compute the floor of the next minute directly in UTC to avoid
+            # naive timedelta arithmetic on a pytz-aware local datetime,
+            # which can produce wrong offsets across DST boundaries.
+            next_minute_utc = now.replace(
                 second=0, microsecond=0
             ) + timedelta(minutes=1)
-            next_minute_utc = next_minute_local.astimezone(pytz.UTC)
             if open_dt < next_minute_utc:
                 raise ValueError(
                     "Open Time: must be scheduled for at least the next full minute"

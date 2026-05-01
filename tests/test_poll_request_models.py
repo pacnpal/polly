@@ -278,6 +278,33 @@ class TestPollFormRequestFailures:
             _validate(_base_form(timezone=False))
         assert "invalid timezone" in str(exc.value).lower()
 
+    def test_duration_too_short(self):
+        # Fixed summer noon -> safely outside any DST transition.
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base + timedelta(hours=2)
+        close_dt = open_dt + timedelta(seconds=30)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+            )
+        assert "at least 1 minute" in str(exc.value)
+
+    def test_duration_too_long(self):
+        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
+        open_dt = base + timedelta(hours=2)
+        close_dt = base + timedelta(days=31)
+        with pytest.raises(ValidationError) as exc:
+            _validate(
+                _base_form(
+                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M"),
+                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M"),
+                )
+            )
+        assert "30 days" in str(exc.value)
+
 
 class TestPollFormDictPassthrough:
     """Behavioral tests for ``poll_form_to_dict``."""
@@ -314,33 +341,6 @@ class TestParsePollFormRequest:
             asyncio.run(parse_poll_form_request(_FakeRequest()))
         assert exc.value.status_code == 422
         assert exc.value.detail and exc.value.detail[0]["field_name"] == "Server"
-
-    def test_duration_too_short(self):
-        # Fixed summer noon -> safely outside any DST transition.
-        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
-        open_dt = base + timedelta(hours=2)
-        close_dt = open_dt + timedelta(seconds=30)
-        with pytest.raises(ValidationError) as exc:
-            _validate(
-                _base_form(
-                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-                )
-            )
-        assert "at least 1 minute" in str(exc.value)
-
-    def test_duration_too_long(self):
-        base = pytz.timezone("US/Pacific").localize(datetime(2099, 6, 15, 12, 0))
-        open_dt = base + timedelta(hours=2)
-        close_dt = base + timedelta(days=31)
-        with pytest.raises(ValidationError) as exc:
-            _validate(
-                _base_form(
-                    open_time=open_dt.strftime("%Y-%m-%dT%H:%M"),
-                    close_time=close_dt.strftime("%Y-%m-%dT%H:%M"),
-                )
-            )
-        assert "30 days" in str(exc.value)
 
 
 class TestValidationErrorToMessages:
