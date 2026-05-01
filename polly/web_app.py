@@ -580,19 +580,22 @@ def add_exception_handlers(app: FastAPI):
     """Add global exception handlers to prevent application crashes"""
 
     def _htmx_error_fragment(
-        request: Request, status_code: int, message: str
+        request: Request, status_code: int, detail
     ) -> Response:
         """Render an inline-error fragment for HTMX clients.
 
         Sets HX-Reswap: innerHTML and HX-Retarget: #inline-messages so the
         alert lands in the dashboard's known message area regardless of the
         triggering element's hx-target. Falls back to JSON for plain
-        /htmx/* or /api/* requests issued without HTMX (e.g. curl, scripts).
+        /htmx/* requests issued without HTMX (e.g. curl, scripts), preserving
+        the original structured detail so API consumers still get
+        HTTPException.detail dicts/lists intact.
         """
         if not is_htmx(request):
             return JSONResponse(
-                status_code=status_code, content={"detail": message}
+                status_code=status_code, content={"detail": detail}
             )
+        message = detail if isinstance(detail, str) else str(detail)
         response = templates.TemplateResponse(
             "htmx/components/inline_error.html",
             {"request": request, "message": message},
@@ -626,7 +629,7 @@ def add_exception_handlers(app: FastAPI):
 
         path = request.url.path
         if path.startswith("/htmx/"):
-            return _htmx_error_fragment(request, exc.status_code, str(exc.detail))
+            return _htmx_error_fragment(request, exc.status_code, exc.detail)
         if path.startswith("/api/"):
             return JSONResponse(
                 status_code=exc.status_code, content={"detail": exc.detail}
