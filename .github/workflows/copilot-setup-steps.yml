@@ -48,7 +48,7 @@ jobs:
             zlib1g-dev
 
       - name: Install project dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --dev
 
       - name: Install Playwright browsers
         run: uv run playwright install --with-deps chromium

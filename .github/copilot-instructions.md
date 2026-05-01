@@ -2,11 +2,15 @@
 
 Polly is a Discord poll bot with a FastAPI + HTMX web interface. These instructions guide GitHub Copilot when generating code, reviewing PRs, and acting as a coding agent in this repository.
 
+## Available MCP servers
+
+- **context7** — fetch up-to-date docs for libraries/frameworks/SDKs (FastAPI, discord.py, SQLAlchemy, APScheduler, HTMX, etc.) before relying on training-data knowledge for API syntax, configuration, or version-specific behavior.
+
 ## Tech Stack
 
 - **Language**: Python 3.11+
 - **Backend**: FastAPI, discord.py, APScheduler
-- **Database**: SQLAlchemy 2.x with SQLite (aiosqlite)
+- **Database**: SQLAlchemy 2.x with SQLite, **synchronous** sessions (`create_engine` + `SessionLocal` in `polly/database.py`, `OptimizedSessionLocal` in `polly/enhanced_database.py`)
 - **Cache/Queue**: Redis
 - **Frontend**: Jinja2 templates, Bootstrap 5, HTMX (no JavaScript framework)
 - **Auth**: Discord OAuth2 + JWT (python-jose)
@@ -48,7 +52,7 @@ uv run ruff format .
 ## Coding Conventions
 
 - **HTMX-first frontend**: do not introduce React, Vue, or client-side JS frameworks. Server-rendered partials returned from FastAPI endpoints, swapped via `hx-*` attributes.
-- **Async by default** for FastAPI route handlers and discord.py callbacks. Use `aiosqlite`/SQLAlchemy async sessions for DB access where the surrounding code already does.
+- **Async route handlers, sync DB**: FastAPI handlers and discord.py callbacks are `async`. The DB layer is **synchronous** SQLAlchemy — use `SessionLocal()` / `OptimizedSessionLocal()` (or `get_db_session()` / `get_optimized_db_session()`) inside async handlers. Don't introduce `create_async_engine` / `AsyncSession` unless you're intentionally migrating the entire DB layer.
 - **Timezone awareness**: poll scheduling is timezone-aware (default `US/Eastern`). Always use timezone-aware `datetime` objects — prefer `datetime.now(datetime.UTC)` over the deprecated `datetime.utcnow()`. Store UTC; render in the user's tz with `pytz`.
 - **Admin-only operations**: poll creation/management requires Discord server admin permissions; preserve the existing auth checks.
 - **Secrets / config**: `.env` is loaded once at startup via `python-dotenv` (`load_dotenv()` in `polly/main.py`); all other modules read individual values via `python-decouple`'s `from decouple import config` (existing pattern in `database.py`, `discord_bot.py`, `redis_client.py`, etc.). Follow this split — don't replace `decouple` calls with `os.getenv` or vice versa. Never hardcode tokens, client secrets, or `SECRET_KEY`. See `.env.example` for the full list.
