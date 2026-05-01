@@ -131,9 +131,11 @@ class PollFormRequest(BaseModel):
     @field_validator("name", "question", mode="before")
     @classmethod
     def _sanitize_user_text(cls, value: Any) -> Any:
-        # Match legacy PollValidator.validate_poll_name: strip raw HTML/quote
-        # characters from user-controlled prose so payloads can't smuggle
-        # markup into templates, logs, or Discord embeds.
+        # Strip raw HTML/quote characters from user-controlled prose. The
+        # legacy validator only did this for ``name`` (PollValidator.
+        # validate_poll_name); we extend the same scrub to ``question`` as
+        # defense-in-depth, since both fields are rendered into HTMX
+        # templates, written to logs, and forwarded into Discord embeds.
         if isinstance(value, str):
             return re.sub(r'[<>"\']', "", value)
         return value
@@ -427,7 +429,7 @@ _DISCORD_ID_PRESENCE_MESSAGES = {
     "server_id": "Please select a Discord server",
     "channel_id": "Please select a Discord channel",
 }
-_DISCORD_ID_PRESENCE_TYPES = {"missing", "string_too_short"}
+_DISCORD_ID_PRESENCE_TYPES = {"missing", "string_too_short", "string_type"}
 
 
 def validation_error_to_messages(exc: ValidationError) -> List[dict]:

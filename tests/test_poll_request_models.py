@@ -298,6 +298,17 @@ class TestValidationErrorToMessages:
         assert msgs[0]["field_name"] == "Server"
         assert msgs[0]["message"] == "Please select a Discord server"
 
+    def test_absent_channel_id_uses_friendly_copy(self):
+        # An entirely missing form key reaches Pydantic as None ->
+        # ``string_type`` error; must still resolve to the friendly copy.
+        form = _base_form()
+        form["channel_id"] = None
+        with pytest.raises(ValidationError) as exc:
+            _validate(form)
+        msgs = validation_error_to_messages(exc.value)
+        assert msgs[0]["field_name"] == "Channel"
+        assert msgs[0]["message"] == "Please select a Discord channel"
+
     def test_model_level_value_error_keeps_suggestion(self):
         # Role-Selection error originates from a model_validator and has
         # an empty ``loc``; the wrapper should still attach the role-ping
