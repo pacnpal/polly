@@ -626,7 +626,9 @@ async def open_poll_now_htmx(
             logger.info(f"Poll {poll_id} opened immediately by user {current_user.id} via unified service")
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
-            await _revert_poll_status_to_scheduled(poll_id)
+            await _revert_poll_status_to_scheduled(
+                poll_id, open_time=prev_open_time, updated_at=prev_updated_at
+            )
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
                 {"request": request, "message": "Error posting poll to Discord"},
