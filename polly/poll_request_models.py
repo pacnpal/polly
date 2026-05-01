@@ -131,13 +131,14 @@ class PollFormRequest(BaseModel):
     @field_validator("name", "question", mode="before")
     @classmethod
     def _sanitize_user_text(cls, value: Any) -> Any:
-        # Strip raw HTML/quote characters from user-controlled prose. The
-        # legacy validator only did this for ``name`` (PollValidator.
-        # validate_poll_name); we extend the same scrub to ``question`` as
-        # defense-in-depth, since both fields are rendered into HTMX
-        # templates, written to logs, and forwarded into Discord embeds.
+        # Strip only raw angle brackets so payloads can't smuggle HTML/JS
+        # markup into templates, logs, or Discord embeds. Apostrophes and
+        # quotes are legitimate punctuation ("don't", "Friday's vote") and
+        # are safely handled by Jinja autoescaping on the way out — we
+        # deliberately diverge from legacy validate_poll_name's broader
+        # quote scrub so user prose isn't mangled.
         if isinstance(value, str):
-            return re.sub(r'[<>"\']', "", value)
+            return re.sub(r'[<>]', "", value)
         return value
 
     @field_validator("timezone", mode="before")

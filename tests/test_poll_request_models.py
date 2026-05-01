@@ -117,14 +117,26 @@ class TestPollFormRequestHappyPath:
         assert m.options == ["foobar", "bazqux"]
 
     def test_html_stripped_from_name_and_question(self):
+        # Angle brackets get scrubbed, but legitimate punctuation such as
+        # apostrophes and quotes (e.g. "don't", "Friday's vote") survive.
         m = _validate(
             _base_form(
-                name='<script>"Sample"</script>',
+                name="<script>Sample</script>",
                 question="Which option<br/> do 'you' prefer?",
             )
         )
         assert m.name == "scriptSample/script"
-        assert m.question == "Which optionbr/ do you prefer?"
+        assert m.question == "Which optionbr/ do 'you' prefer?"
+
+    def test_apostrophes_and_quotes_preserved(self):
+        m = _validate(
+            _base_form(
+                name="Friday's pick",
+                question='Which "movie" should we watch?',
+            )
+        )
+        assert m.name == "Friday's pick"
+        assert m.question == 'Which "movie" should we watch?'
 
     def test_image_message_text_preserves_discord_markup(self):
         # <@user>, <#channel>, <:emoji:id> must survive — they're Discord
