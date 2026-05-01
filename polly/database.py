@@ -137,11 +137,21 @@ def _build_async_engine():
         return _async_engine, _AsyncSessionLocal
 
     if not _is_async_driver_url(ASYNC_DATABASE_URL):
+        # Don't echo the raw URL - it may include credentials. Show a
+        # password-redacted rendering for diagnostics.
+        try:
+            from sqlalchemy.engine import make_url
+
+            safe_url = make_url(ASYNC_DATABASE_URL).render_as_string(
+                hide_password=True
+            )
+        except Exception:
+            safe_url = "<unparseable URL>"
         raise RuntimeError(
             "Async DB access requested but ASYNC_DATABASE_URL is not an "
             "async-driver URL. Set ASYNC_DATABASE_URL explicitly, e.g. "
             "'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...'. "
-            f"Current value: {ASYNC_DATABASE_URL!r}"
+            f"Current value (password redacted): {safe_url}"
         )
 
     connect_args = (
@@ -157,7 +167,14 @@ def _build_async_engine():
 
 
 def __getattr__(name: str):
-    """Module-level lazy access to async_engine / AsyncSessionLocal (PEP 562)."""
+    """Module-level lazy access to async_engine / AsyncSessionLocal (PEP 562).
+
+    Note: PEP 562 only fires for *external* attribute access on the module
+    (``polly.database.AsyncSessionLocal`` / ``from polly.database import
+    AsyncSessionLocal``). Bare-name references *inside* this module use the
+    module globals directly, so the helpers below call ``_build_async_engine()``
+    explicitly rather than relying on this hook.
+    """
     if name == "async_engine":
         return _build_async_engine()[0]
     if name == "AsyncSessionLocal":
@@ -216,7 +233,15 @@ class Poll(Base):
     status = Column(String(20), default="scheduled")  # scheduled/active/closed
 
     # Relationship to votes
-    votes = relationship("Vote", back_populates="poll", cascade="all, delete-orphan")
+    # ``order_by`` pushes the descending-by-time ordering into SQL when the
+    # collection is loaded (e.g. via ``selectinload(Poll.votes)``), so callers
+    # don't have to sort the materialized list in Python.
+    votes = relationship(
+        "Vote",
+        back_populates="poll",
+        cascade="all, delete-orphan",
+        order_by="Vote.voted_at.desc()",
+    )
 
     @property
     def options(self) -> List[str]:
@@ -398,7 +423,8 @@ async def get_async_db() -> AsyncIterator[AsyncSession]:
             result = await db.execute(select(Poll).where(Poll.id == poll_id))
             poll = result.scalar_one_or_none()
     """
-    async with AsyncSessionLocal() as session:
+    _, Session = _build_async_engine()
+    async with Session() as session:
         try:
             yield session
         except Exception:
@@ -414,7 +440,8 @@ async def get_async_db_session() -> AsyncIterator[AsyncSession]:
         async with get_async_db_session() as db:
             ...
     """
-    async with AsyncSessionLocal() as session:
+    _, Session = _build_async_engine()
+    async with Session() as session:
         try:
             yield session
         except Exception:

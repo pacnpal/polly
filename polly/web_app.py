@@ -797,7 +797,9 @@ def add_screenshot_routes(app: FastAPI):
                     raise HTTPException(status_code=404, detail="Poll not found")
 
                 # Votes are eagerly loaded; sort in Python to preserve descending order by voted_at
-                votes = sorted(poll.votes, key=lambda v: v.voted_at, reverse=True)
+                # Poll.votes is loaded with ORDER BY voted_at DESC at the DB
+                # level (see relationship definition), so no Python sort needed.
+                votes = poll.votes
 
                 # Get poll data
                 options = poll.options
@@ -955,7 +957,9 @@ def add_static_poll_routes(app: FastAPI):
                     raise HTTPException(status_code=404, detail="Static page only available for closed polls")
 
                 # Votes are eagerly loaded; sort in Python to preserve descending order by voted_at
-                votes = sorted(poll.votes, key=lambda v: v.voted_at, reverse=True)
+                # Poll.votes is loaded with ORDER BY voted_at DESC at the DB
+                # level (see relationship definition), so no Python sort needed.
+                votes = poll.votes
                 
                 # Prepare vote data with real Discord usernames (never anonymize for static pages)
                 vote_data = []

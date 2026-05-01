@@ -65,9 +65,18 @@ class TestCoreRoutes:
         )
 
         with (
-            patch("polly.web_app.exchange_code_for_token") as mock_exchange,
-            patch("polly.web_app.get_discord_user") as mock_get_user,
-            patch("polly.web_app.save_user_to_db") as mock_save_user,
+            # exchange_code_for_token, get_discord_user and save_user_to_db
+            # are async coroutines; patch them with AsyncMock so the route's
+            # ``await`` doesn't blow up on a sync Mock return value.
+            patch(
+                "polly.web_app.exchange_code_for_token", new_callable=AsyncMock
+            ) as mock_exchange,
+            patch(
+                "polly.web_app.get_discord_user", new_callable=AsyncMock
+            ) as mock_get_user,
+            patch(
+                "polly.web_app.save_user_to_db", new_callable=AsyncMock
+            ) as mock_save_user,
             patch("polly.web_app.create_access_token") as mock_create_token,
         ):
             mock_exchange.return_value = {"access_token": "test_token"}
@@ -194,11 +203,14 @@ class TestUserPreferences:
         )
 
     async def test_get_user_preferences_existing(self, tmp_path):
-        from polly.database import UserPreference
+        from polly.database import User, UserPreference
 
         engine, Session = await self._build_async_session(tmp_path)
         try:
             async with Session() as s:
+                # UserPreference.user_id is a FK to users.id; insert the
+                # parent user before the preference row.
+                s.add(User(id="user-1", username="user-1", avatar=None))
                 s.add(
                     UserPreference(
                         user_id="user-1",
@@ -231,11 +243,16 @@ class TestUserPreferences:
             await engine.dispose()
 
     async def test_save_user_preferences_new(self, tmp_path):
-        from polly.database import UserPreference
+        from polly.database import User, UserPreference
         from sqlalchemy import select
 
         engine, Session = await self._build_async_session(tmp_path)
         try:
+            # Parent user must exist for the FK constraint.
+            async with Session() as s:
+                s.add(User(id="test_user", username="test_user", avatar=None))
+                await s.commit()
+
             with self._patch_async_session(Session), self._patch_cache_service():
                 await save_user_preferences(
                     "test_user",
@@ -259,12 +276,13 @@ class TestUserPreferences:
             await engine.dispose()
 
     async def test_save_user_preferences_update(self, tmp_path):
-        from polly.database import UserPreference
+        from polly.database import User, UserPreference
         from sqlalchemy import select
 
         engine, Session = await self._build_async_session(tmp_path)
         try:
             async with Session() as s:
+                s.add(User(id="user-2", username="user-2", avatar=None))
                 s.add(
                     UserPreference(
                         user_id="user-2",
