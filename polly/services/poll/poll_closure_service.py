@@ -259,10 +259,13 @@ class PollClosureService:
                                                     f"⚠️ UNIFIED CLOSE {poll_id} - Embed fallback forbidden, retrying as plain text: {embed_forbidden}"
                                                 )
                                             except Exception as fallback_error:
+                                                # Log the failure but still drop through
+                                                # to the plain-text fallback so a transient
+                                                # HTTP/embed glitch doesn't leave users
+                                                # with no closure notification.
                                                 logger.error(
-                                                    f"❌ UNIFIED CLOSE {poll_id} - Fallback notification also failed: {fallback_error}"
+                                                    f"❌ UNIFIED CLOSE {poll_id} - Embed fallback notification failed, retrying as plain text: {fallback_error}"
                                                 )
-                                                embed_fallback_handled = True
 
                                         if not embed_fallback_handled:
                                             # Plain-text fallback: bot likely lacks
