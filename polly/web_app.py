@@ -5,6 +5,7 @@ FastAPI application setup and core web functionality.
 
 import os
 import asyncio
+import json
 import secrets
 import hashlib
 from contextlib import asynccontextmanager
@@ -17,7 +18,7 @@ from .debug_config import get_debug_logger, get_debug_context
 from fastapi import FastAPI, Request, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.exception_handlers import http_exception_handler
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -36,6 +37,7 @@ from .auth_middleware import AuthenticationMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from .htmx_utils import is_htmx, is_browser_navigation as _is_browser_navigation
 from .database import get_async_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .admin_endpoints import add_admin_routes
@@ -580,6 +582,42 @@ def create_app() -> FastAPI:
 def add_exception_handlers(app: FastAPI):
     """Add global exception handlers to prevent application crashes"""
 
+    def _htmx_error_fragment(
+        request: Request, status_code: int, detail
+    ) -> Response:
+        """Render an inline-error fragment for HTMX clients.
+
+        Sets HX-Reswap: innerHTML and HX-Retarget: #inline-messages so the
+        alert lands in the dashboard's known message area regardless of the
+        triggering element's hx-target. Falls back to JSON for plain
+        /htmx/* requests issued without HTMX (e.g. curl, scripts), preserving
+        the original structured detail so API consumers still get
+        HTTPException.detail dicts/lists intact.
+        """
+        if not is_htmx(request):
+            return JSONResponse(
+                status_code=status_code, content={"detail": detail}
+            )
+        if isinstance(detail, str):
+            message = detail
+        else:
+            # Structured detail (dict/list, e.g. Pydantic validation errors)
+            # would render as ugly Python repr ("{'loc': [...]}") if we used
+            # str(); JSON-encode for legibility. Fall back to str() if the
+            # value isn't JSON-serializable.
+            try:
+                message = json.dumps(detail, ensure_ascii=False)
+            except (TypeError, ValueError):
+                message = str(detail)
+        response = templates.TemplateResponse(
+            "htmx/components/inline_error.html",
+            {"request": request, "message": message},
+            status_code=status_code,
+        )
+        response.headers["HX-Reswap"] = "innerHTML"
+        response.headers["HX-Retarget"] = "#inline-messages"
+        return response
+
     @app.exception_handler(StarletteHTTPException)
     async def custom_http_exception_handler(
         request: Request, exc: StarletteHTTPException
@@ -602,16 +640,14 @@ def add_exception_handlers(app: FastAPI):
                     f"HTTP {exc.status_code} blocked request from {client_ip}: {request.url.path}"
                 )
 
-        # Return JSON response for API endpoints, HTML for web pages
-        if request.url.path.startswith("/htmx/") or request.url.path.startswith(
-            "/api/"
-        ):
+        path = request.url.path
+        if path.startswith("/htmx/"):
+            return _htmx_error_fragment(request, exc.status_code, exc.detail)
+        if path.startswith("/api/"):
             return JSONResponse(
                 status_code=exc.status_code, content={"detail": exc.detail}
             )
-        else:
-            # For web pages, use the default handler
-            return await http_exception_handler(request, exc)
+        return await http_exception_handler(request, exc)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
@@ -627,18 +663,17 @@ def add_exception_handlers(app: FastAPI):
             exc_info=True,
         )
 
-        # Return appropriate error response
-        if request.url.path.startswith("/htmx/") or request.url.path.startswith(
-            "/api/"
-        ):
+        path = request.url.path
+        if path.startswith("/htmx/"):
+            return _htmx_error_fragment(request, 500, "Internal server error")
+        if path.startswith("/api/"):
             return JSONResponse(
                 status_code=500, content={"detail": "Internal server error"}
             )
-        else:
-            return HTMLResponse(
-                content="<h1>Internal Server Error</h1><p>Something went wrong. Please try again later.</p>",
-                status_code=500,
-            )
+        return HTMLResponse(
+            content="<h1>Internal Server Error</h1><p>Something went wrong. Please try again later.</p>",
+            status_code=500,
+        )
 
 
 def add_core_routes(app: FastAPI):
@@ -1106,6 +1141,13 @@ def add_htmx_routes(app: FastAPI):
         filter: str = None,
         current_user: DiscordUser = Depends(require_auth),
     ):
+        # Browser-navigation gating: redirect only top-level browser
+        # navigations (Sec-Fetch-Mode: navigate + Sec-Fetch-Dest: document)
+        # to the full dashboard. HTMX, TestClient, curl and other
+        # programmatic callers don't send those headers and keep getting
+        # the fragment, regardless of HX-Request.
+        if _is_browser_navigation(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
         return await get_polls_htmx(request, filter, current_user)
 
     @app.get("/htmx/stats", response_class=HTMLResponse)
@@ -1234,6 +1276,13 @@ def add_htmx_routes(app: FastAPI):
         request: Request,
         current_user: DiscordUser = Depends(require_auth),
     ):
+        # Browser-navigation gating: only top-level browser visits
+        # (Sec-Fetch-Mode: navigate + Sec-Fetch-Dest: document) get
+        # redirected to the dashboard. HTMX, TestClient, curl, and other
+        # programmatic callers keep getting the fragment regardless of
+        # HX-Request. See polly/htmx_utils.py:is_browser_navigation.
+        if _is_browser_navigation(request):
+            return RedirectResponse(url="/dashboard", status_code=302)
         bot = get_bot_instance()
         return await get_poll_details_htmx(poll_id, request, bot, current_user)
 

@@ -1,3 +1,12 @@
+<style>
+/* Card hx-indicator: dim and disable while a server action is in flight. */
+.poll-card.htmx-request {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 150ms ease-in;
+}
+</style>
+
 <!-- Poll Organization and Filters -->
 <div class="row mb-4">
     <div class="col-12">
@@ -18,8 +27,9 @@
                 </button>
             </div>
         </div>
-        <!-- Inline Error/Success Display Area -->
-        <div id="inline-messages"></div>
+        <!-- #inline-messages is rendered once in dashboard_htmx.html (outside
+             #main-content) so it persists across fragment swaps and is always
+             available as a retarget for HTMX errors and OOB alerts. -->
 
         <!-- Hidden file input for JSON import -->
         <input type="file" id="json-import-file" accept=".json" style="display: none;"

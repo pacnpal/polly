@@ -1,0 +1,12 @@
+{# Response for deleting a poll from a card.
+   The card's hx-swap="delete" means HTMX removes #poll-card-{id} from
+   the DOM regardless of the response body — so the body content here
+   does not matter for the primary swap. The OOB block below is still
+   processed by HTMX and lands a success alert in #inline-messages.
+#}
+<div id="inline-messages" hx-swap-oob="innerHTML">
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fas fa-check-circle me-2"></i>{{ success_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+</div>
