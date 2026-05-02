@@ -40,6 +40,7 @@ try:
     from .json_import import PollJSONImporter, PollJSONExporter
     from .debug_config import get_debug_logger
     from .data_utils import sanitize_data_for_json
+    from .htmx_utils import htmx_target
     from .poll_request_models import (
         DEFAULT_TIMEZONE,
         TIMEZONE_ALIASES,
@@ -66,6 +67,7 @@ except ImportError:
     from json_import import PollJSONImporter, PollJSONExporter  # type: ignore
     from debug_config import get_debug_logger  # type: ignore
     from data_utils import sanitize_data_for_json  # type: ignore
+    from htmx_utils import htmx_target  # type: ignore
     from poll_request_models import (  # type: ignore
         DEFAULT_TIMEZONE,
         TIMEZONE_ALIASES,
@@ -473,6 +475,45 @@ def get_user_preferences(user_id: str) -> dict:
         db.close()
 
 
+def _card_error_response(request: Request, message: str, *, is_card: bool):
+    """inline_error.html with HX-Retarget when the caller is a poll card.
+
+    Card actions use hx-target="#poll-card-{id}" + hx-swap="outerHTML", so
+    a plain error fragment would replace the whole card. Setting
+    HX-Retarget=#inline-messages + HX-Reswap=innerHTML routes the alert to
+    the dashboard's message area and leaves the card in place. Non-card
+    callers (e.g. poll_details.html) get the legacy in-target swap.
+    """
+    response = templates.TemplateResponse(
+        "htmx/components/inline_error.html",
+        {"request": request, "message": message},
+    )
+    if is_card:
+        response.headers["HX-Retarget"] = "#inline-messages"
+        response.headers["HX-Reswap"] = "innerHTML"
+    return response
+
+
+def _build_poll_card_context(request: Request, poll, user_timezone: str) -> dict:
+    """Compose the template context needed by _poll_card.html."""
+    status = TypeSafeColumn.get_string(poll, "status") or "closed"
+    ctx = {
+        "request": request,
+        "poll_id": TypeSafeColumn.get_int(poll, "id"),
+        "poll_name": TypeSafeColumn.get_string(poll, "name"),
+        "poll_question": TypeSafeColumn.get_string(poll, "question"),
+        "server_name": TypeSafeColumn.get_string(poll, "server_name"),
+        "channel_name": TypeSafeColumn.get_string(poll, "channel_name"),
+        "vote_count": poll.get_total_votes() if hasattr(poll, "get_total_votes") else 0,
+        "is_anonymous": bool(getattr(poll, "anonymous", False)),
+        "status": status,
+        "close_time_formatted": format_datetime_for_user(poll.close_time, user_timezone),
+    }
+    if status == "scheduled":
+        ctx["open_time_formatted"] = format_datetime_for_user(poll.open_time, user_timezone)
+    return ctx
+
+
 async def close_poll_htmx(
     poll_id: int,
     request: Request,
@@ -481,46 +522,101 @@ async def close_poll_htmx(
 ):
     """Close an active poll via HTMX using unified closure service for consistent behavior"""
     logger.info(f"User {current_user.id} requesting to close poll {poll_id}")
-    
+    is_card = htmx_target(request).startswith("poll-card-")
+
     try:
+        # Verify the caller owns this poll before invoking the closure service.
+        # Matches the convention used in open_poll_now_htmx / delete_poll_htmx.
+        db = get_db_session()
+        try:
+            owned = (
+                db.query(Poll.id)
+                .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                .first()
+            )
+        finally:
+            db.close()
+        if owned is None:
+            return _card_error_response(
+                request, "Poll not found or access denied", is_card=is_card
+            )
+
         # Use unified poll closure service for consistent behavior
         from .services.poll.poll_closure_service import get_poll_closure_service
-        
+
         poll_closure_service = get_poll_closure_service()
-        
+
         result = await poll_closure_service.close_poll_unified(
             poll_id=poll_id,
             reason="manual",
             admin_user_id=current_user.id,
             bot_instance=bot
         )
-        
-        if result["success"]:
-            logger.info(f"User {current_user.id} successfully manually closed poll {poll_id}")
-            
-            # Invalidate user polls cache after successful closure
-            await invalidate_user_polls_cache(current_user.id)
-            
-            return templates.TemplateResponse(
-                "htmx/components/alert_success.html",
-                {
-                    "request": request,
-                    "message": "Poll closed successfully! Redirecting to polls...",
-                    "redirect_url": "/htmx/polls",
-                },
-            )
-        else:
+
+        if not result["success"]:
             logger.error(f"User {current_user.id} manual close failed for poll {poll_id}: {result.get('error')}")
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": result.get("error", "Error closing poll")},
+            return _card_error_response(
+                request,
+                result.get("error", "Error closing poll"),
+                is_card=is_card,
             )
-            
-    except Exception as e:
-        logger.error(f"Error in manual poll closure for poll {poll_id}: {e}")
+
+        logger.info(f"User {current_user.id} successfully manually closed poll {poll_id}")
+        await invalidate_user_polls_cache(current_user.id)
+
+        # When invoked from a poll card on the dashboard list, swap the card in
+        # place (outerHTML) and OOB-update the inline-messages alert. When
+        # invoked from poll_details.html (target #main-content), keep the
+        # legacy alert-and-redirect behavior so that screen reloads cleanly.
+        if is_card:
+            db = get_db_session()
+            try:
+                poll = (
+                    db.query(Poll)
+                    .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                    .first()
+                )
+                if poll is None:
+                    return _card_error_response(
+                        request,
+                        "Poll closed but could not be reloaded.",
+                        is_card=True,
+                    )
+                # Reuse this branch's session for both poll and user-pref
+                # lookups instead of opening a new one for each.
+                user_pref = (
+                    db.query(UserPreference)
+                    .filter(UserPreference.user_id == current_user.id)
+                    .first()
+                )
+                user_timezone = (
+                    TypeSafeColumn.get_string(user_pref, "default_timezone")
+                    if user_pref is not None
+                    else ""
+                ) or "US/Eastern"
+                ctx = _build_poll_card_context(request, poll, user_timezone)
+                ctx["success_message"] = "Poll closed."
+                return templates.TemplateResponse(
+                    "htmx/components/poll_close_oob.html", ctx
+                )
+            finally:
+                db.close()
+
         return templates.TemplateResponse(
-            "htmx/components/inline_error.html",
-            {"request": request, "message": f"Error closing poll: {str(e)}"},
+            "htmx/components/alert_success.html",
+            {
+                "request": request,
+                "message": "Poll closed successfully! Redirecting to polls...",
+                "redirect_url": "/htmx/polls",
+            },
+        )
+
+    except Exception as e:
+        logger.exception(f"Error in manual poll closure for poll {poll_id}: {e}")
+        return _card_error_response(
+            request,
+            "Error closing poll. Please try again.",
+            is_card=is_card,
         )
 
 
@@ -4694,6 +4790,7 @@ async def delete_poll_htmx(
 ):
     """Delete a scheduled or closed poll via HTMX"""
     logger.info(f"User {current_user.id} requesting to delete poll {poll_id}")
+    is_card = htmx_target(request).startswith("poll-card-")
     db = get_db_session()
     try:
         poll = (
@@ -4702,19 +4799,16 @@ async def delete_poll_htmx(
             .first()
         )
         if not poll:
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": "Poll not found or access denied"},
+            return _card_error_response(
+                request, "Poll not found or access denied", is_card=is_card
             )
 
         poll_status = TypeSafeColumn.get_string(poll, "status")
         if poll_status not in ["scheduled", "closed"]:
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {
-                    "request": request,
-                    "message": "Only scheduled or closed polls can be deleted",
-                },
+            return _card_error_response(
+                request,
+                "Only scheduled or closed polls can be deleted",
+                is_card=is_card,
             )
 
         # Clean up image file if exists
@@ -4734,6 +4828,17 @@ async def delete_poll_htmx(
         # Invalidate user polls cache after successful deletion
         await invalidate_user_polls_cache(current_user.id)
 
+        # Card caller (dashboard list): the triggering card uses
+        # hx-swap="delete", so HTMX removes that element regardless of the
+        # response body, while still processing the OOB block in this response
+        # to drop a success alert into #inline-messages. Other callers keep
+        # the alert+redirect path.
+        if is_card:
+            return templates.TemplateResponse(
+                "htmx/components/poll_delete_oob.html",
+                {"request": request, "success_message": "Poll deleted."},
+            )
+
         return templates.TemplateResponse(
             "htmx/components/alert_success.html",
             {
@@ -4744,11 +4849,12 @@ async def delete_poll_htmx(
         )
 
     except Exception as e:
-        logger.error(f"Error deleting poll {poll_id}: {e}")
+        logger.exception(f"Error deleting poll {poll_id}: {e}")
         db.rollback()
-        return templates.TemplateResponse(
-            "htmx/components/inline_error.html",
-            {"request": request, "message": f"Error deleting poll: {str(e)}"},
+        return _card_error_response(
+            request,
+            "Error deleting poll. Please try again.",
+            is_card=is_card,
         )
     finally:
         db.close()
