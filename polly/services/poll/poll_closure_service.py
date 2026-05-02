@@ -227,10 +227,17 @@ class PollClosureService:
                                         logger.warning(
                                             f"⚠️ UNIFIED CLOSE {poll_id} - Role ping failed due to permissions, posting without role ping: {role_error}"
                                         )
+                                        # `fallback_content` interpolates the poll name,
+                                        # which is user-controlled, so the fallback sends
+                                        # disable all mentions to prevent an "@everyone" or
+                                        # arbitrary role/user mention smuggled into the poll
+                                        # name from being pinged.
+                                        no_mentions = discord.AllowedMentions.none()
                                         try:
                                             await channel.send(
                                                 content=fallback_content,
                                                 embed=results_embed,
+                                                allowed_mentions=no_mentions,
                                             )
                                             logger.info(
                                                 f"✅ UNIFIED CLOSE {poll_id} - Sent fallback notification without role ping"
@@ -243,7 +250,10 @@ class PollClosureService:
                                                 f"⚠️ UNIFIED CLOSE {poll_id} - Embed fallback forbidden, retrying as plain text: {embed_forbidden}"
                                             )
                                             try:
-                                                await channel.send(content=fallback_content)
+                                                await channel.send(
+                                                    content=fallback_content,
+                                                    allowed_mentions=no_mentions,
+                                                )
                                                 logger.info(
                                                     f"✅ UNIFIED CLOSE {poll_id} - Sent plain-text fallback notification"
                                                 )
