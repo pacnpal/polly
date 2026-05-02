@@ -192,11 +192,28 @@ class PollClosureService:
                                         role_id_int = int(role_id)
                                         guild = getattr(channel, "guild", None)
                                         role_obj = guild.get_role(role_id_int) if guild else None
-                                        bot_member = guild.me if guild else None
-                                        can_mention_everyone = bool(
-                                            bot_member
-                                            and channel.permissions_for(bot_member).mention_everyone
-                                        )
+
+                                        # Resolve the bot's guild Member to check
+                                        # mention_everyone. `guild.me` is normally
+                                        # populated regardless of the members intent,
+                                        # but fall back to `get_member(bot.user.id)`
+                                        # for setups where it isn't cached.
+                                        bot_member = None
+                                        if guild:
+                                            bot_member = guild.me
+                                            if bot_member is None and bot_instance.user is not None:
+                                                bot_member = guild.get_member(bot_instance.user.id)
+
+                                        if bot_member is not None:
+                                            can_mention_everyone = bool(
+                                                channel.permissions_for(bot_member).mention_everyone
+                                            )
+                                        else:
+                                            # Permissions are unknown — be optimistic
+                                            # and let the discord.Forbidden fallback
+                                            # handle the case where the bot really
+                                            # can't ping the role.
+                                            can_mention_everyone = True
 
                                         if role_obj is None:
                                             logger.warning(
