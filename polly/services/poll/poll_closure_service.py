@@ -178,27 +178,46 @@ class PollClosureService:
 
                                     # Explicitly allow the configured role mention so the
                                     # ping isn't suppressed by the client/bot default
-                                    # AllowedMentions policy. Discord still enforces role
-                                    # mentionability / Mention Everyone permission, but
-                                    # without this the mention can be dropped silently
-                                    # before it reaches Discord. Guard the int() conversion
-                                    # so a tampered DB value falls back to a no-mention post
-                                    # rather than skipping the notification entirely.
+                                    # AllowedMentions policy. Pre-resolve the role on the
+                                    # guild and only attempt the mention if the role still
+                                    # exists and Discord would actually deliver the ping
+                                    # (role mentionable, or bot has Mention Everyone).
+                                    # That way the "Will ping role …" log reflects reality
+                                    # rather than always firing for a parseable id.
+                                    no_mentions = discord.AllowedMentions.none()
+                                    role_mention_attempted = False
+                                    allowed_mentions = no_mentions
+                                    message_content = fallback_content
                                     try:
-                                        allowed_mentions = discord.AllowedMentions(
-                                            everyone=False,
-                                            users=False,
-                                            roles=[discord.Object(id=int(role_id))],
+                                        role_id_int = int(role_id)
+                                        guild = getattr(channel, "guild", None)
+                                        role_obj = guild.get_role(role_id_int) if guild else None
+                                        bot_member = guild.me if guild else None
+                                        can_mention_everyone = bool(
+                                            bot_member
+                                            and channel.permissions_for(bot_member).mention_everyone
                                         )
-                                        message_content = f"<@&{role_id}> {fallback_content}"
-                                        role_mention_attempted = True
+
+                                        if role_obj is None:
+                                            logger.warning(
+                                                f"⚠️ UNIFIED CLOSE {poll_id} - Configured role {role_id} not found in guild; posting without role ping"
+                                            )
+                                        elif not role_obj.mentionable and not can_mention_everyone:
+                                            logger.warning(
+                                                f"⚠️ UNIFIED CLOSE {poll_id} - Role {ping_role_name} ({role_id}) is not mentionable and bot lacks Mention Everyone; posting without role ping"
+                                            )
+                                        else:
+                                            allowed_mentions = discord.AllowedMentions(
+                                                everyone=False,
+                                                users=False,
+                                                roles=[role_obj],
+                                            )
+                                            message_content = f"<@&{role_id}> {fallback_content}"
+                                            role_mention_attempted = True
                                     except (ValueError, TypeError):
                                         logger.warning(
                                             f"⚠️ UNIFIED CLOSE {poll_id} - Invalid role ID format: {role_id!r}; posting without role ping"
                                         )
-                                        allowed_mentions = discord.AllowedMentions.none()
-                                        message_content = fallback_content
-                                        role_mention_attempted = False
 
                                     try:
                                         from polly.discord_utils import create_poll_results_embed
@@ -214,12 +233,11 @@ class PollClosureService:
                                             f"🔔 UNIFIED CLOSE {poll_id} - Will ping role {ping_role_name} ({role_id}) for poll closure"
                                         )
 
-                                    # `fallback_content` interpolates the
-                                    # user-controlled poll name, so the fallback send
-                                    # disables all mentions to prevent an "@everyone" or
-                                    # arbitrary role/user mention smuggled into the
-                                    # poll name from being pinged.
-                                    no_mentions = discord.AllowedMentions.none()
+                                    # `fallback_content` interpolates the user-controlled
+                                    # poll name, so every fallback send reuses the
+                                    # `no_mentions` policy declared above to prevent an
+                                    # "@everyone" or arbitrary role/user mention smuggled
+                                    # into the poll name from being pinged.
 
                                     # Send the closure notification with graceful
                                     # error handling. discord.Forbidden can mean the
