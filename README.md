@@ -312,7 +312,10 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
          - ./db:/app/db
          - ./data:/app/data
          - ./logs:/app/logs
-         - ./static/uploads:/app/static/uploads   # only persist user-uploaded poll images
+         - ./static/uploads:/app/static/uploads   # user-uploaded poll images
+         - ./static/avatars:/app/static/avatars   # cached Discord avatars
+         - ./static/images:/app/static/images     # generated poll images
+         - ./static/polls:/app/static/polls       # static closed-poll pages
        restart: unless-stopped
        depends_on:
          redis:
@@ -337,7 +340,7 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
 
 3. **Prepare host directories** (required when using `user: "1000:1000"`):
    ```bash
-   mkdir -p db data logs static/uploads
+   mkdir -p db data logs static/uploads static/avatars static/images static/polls
    sudo chown -R 1000:1000 db data logs static
    ```
 
