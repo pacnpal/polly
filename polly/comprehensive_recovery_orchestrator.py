@@ -362,7 +362,7 @@ class ComprehensiveRecoveryOrchestrator:
             
             for poll in active_polls:
                 try:
-                    await update_poll_message(self.bot, poll)
+                    await update_poll_message(self.bot, poll, db)
                     await asyncio.sleep(0.2)  # Rate limit protection
                 except Exception as e:
                     poll_id = TypeSafeColumn.get_int(poll, "id")

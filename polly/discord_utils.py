@@ -184,7 +184,7 @@ async def get_user_guilds_with_channels(
     return user_guilds
 
 
-async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Embed:
+async def create_poll_embed(poll: Poll, show_results: bool = True, db=None) -> discord.Embed:
     """Create Discord embed for a poll"""
     # Note: Poll object should already be attached to a database session with votes eagerly loaded
     # to prevent DetachedInstanceError. This is handled by the calling function.
@@ -261,8 +261,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
     # For closed polls, use a cleaner layout without duplicates
     if poll_status == "closed" and show_results:
         # Show results with enhanced progress bars and percentages
-        results = poll.get_results()
-        total_votes = poll.get_total_votes()
+        results = poll.get_results(db)
+        total_votes = poll.get_total_votes(db)
         option_text = ""
 
         for i, option in enumerate(poll.options):
@@ -299,7 +299,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
         # Winner announcement for closed polls
         if total_votes > 0:
-            winners = poll.get_winner()
+            winners = poll.get_winner(db)
             if winners:
                 if len(winners) == 1:
                     winner_emoji = (
@@ -355,8 +355,8 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
 
     elif show_results:
         # Active/scheduled polls with results
-        results = poll.get_results()
-        total_votes = poll.get_total_votes()
+        results = poll.get_results(db)
+        total_votes = poll.get_total_votes(db)
         option_text = ""
 
         for i, option in enumerate(poll.options):
@@ -409,19 +409,19 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         embed.add_field(name="", value=choice_info, inline=False)
 
         # Always show total votes for active polls
-        total_votes = poll.get_total_votes()
+        total_votes = poll.get_total_votes(db)
 
         poll_anonymous = bool(getattr(poll, "anonymous", False))
         if poll_anonymous:
             # Consolidated anonymous poll display for active polls
-            total_votes = poll.get_total_votes()
+            total_votes = poll.get_total_votes(db)
             anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n\n🗳️ **{total_votes}** votes cast so far"
             embed.add_field(name="", value=anonymous_text, inline=False)
         else:
             # For non-anonymous polls, ALWAYS show live results with percentages
             if total_votes > 0:
                 # Show live vote breakdown for non-anonymous polls
-                results = poll.get_results()
+                results = poll.get_results(db)
                 live_results_text = ""
 
                 for i, option in enumerate(poll.options):
@@ -473,7 +473,7 @@ async def create_poll_embed(poll: Poll, show_results: bool = True) -> discord.Em
         poll_multiple_choice = bool(getattr(poll, "multiple_choice", False))
 
         if poll_anonymous:
-            total_votes = poll.get_total_votes()
+            total_votes = poll.get_total_votes(db)
             anonymous_text = f"🔒 Anonymous Poll - Results will be revealed when poll ends\n\n🗳️ **{total_votes}** votes cast so far"
             if poll_multiple_choice:
                 anonymous_text += "\n☑️ Multiple Choice"
@@ -775,7 +775,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id, message_content: s
             return {"success": False, "error": "Bot lacks add_reactions permission"}
 
         # Create embed
-        embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()))
+        embed = await create_poll_embed(poll, show_results=bool(poll.should_show_results()), db=db)
 
         # Post message with optional content above embed
         message = await channel.send(content=message_content, embed=embed)
@@ -813,7 +813,7 @@ async def post_poll_to_channel(bot: commands.Bot, poll_or_id, message_content: s
         return {"success": False, "error": f"Unexpected error: {str(e)}"}
 
 
-async def update_poll_message(bot: commands.Bot, poll: Poll):
+async def update_poll_message(bot: commands.Bot, poll: Poll, db=None):
     """Update poll message with current results and send role ping notification for status changes"""
     poll_id = getattr(poll, "id", "unknown")
     try:
@@ -856,7 +856,7 @@ async def update_poll_message(bot: commands.Bot, poll: Poll):
         else:
             show_results = bool(poll.should_show_results())
         
-        embed = await create_poll_embed(poll, show_results=show_results)
+        embed = await create_poll_embed(poll, show_results=show_results, db=db)
         await message.edit(embed=embed)
 
         # CRITICAL: Restore reactions for reopened polls
@@ -995,7 +995,7 @@ async def get_guild_roles(bot: commands.Bot, guild_id: str) -> List[Dict[str, An
         return roles
 
 
-async def create_poll_results_embed(poll: Poll) -> discord.Embed:
+async def create_poll_results_embed(poll: Poll, db=None) -> discord.Embed:
     """Create comprehensive results embed for closed polls - ALWAYS shows full breakdown"""
     poll_name = str(getattr(poll, "name", ""))
     poll_question = str(getattr(poll, "question", ""))
@@ -1057,8 +1057,8 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
     )
 
     # Get results data
-    results = poll.get_results()
-    total_votes = poll.get_total_votes()
+    results = poll.get_results(db)
+    total_votes = poll.get_total_votes(db)
 
     # Build comprehensive results breakdown
     results_text = ""
@@ -1098,7 +1098,7 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
 
     # Winner announcement
     if total_votes > 0:
-        winners = poll.get_winner()
+        winners = poll.get_winner(db)
         if winners:
             if len(winners) == 1:
                 winner_emoji = (
@@ -1152,7 +1152,7 @@ async def create_poll_results_embed(poll: Poll) -> discord.Embed:
     return embed
 
 
-async def post_poll_results(bot: commands.Bot, poll: Poll):
+async def post_poll_results(bot: commands.Bot, poll: Poll, db=None):
     """Post final results when poll closes - always shows full breakdown for all polls"""
     try:
         poll_channel_id = getattr(poll, "channel_id", None)
@@ -1165,7 +1165,7 @@ async def post_poll_results(bot: commands.Bot, poll: Poll):
             return False
 
         # Create comprehensive results embed - ALWAYS show results for closed polls
-        embed = await create_poll_results_embed(poll)
+        embed = await create_poll_results_embed(poll, db=db)
         poll_name = str(getattr(poll, "name", ""))
 
         # Check if role ping is enabled and configured for poll closure

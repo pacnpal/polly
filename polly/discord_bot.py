@@ -232,7 +232,7 @@ async def on_reaction_add(reaction, user):
 
             # Always update poll embed for live updates (key requirement)
             try:
-                await update_poll_message(bot, poll)
+                await update_poll_message(bot, poll, db)
                 logger.debug(f"✅ Poll message updated for poll {poll_id}")
             except Exception as update_error:
                 logger.error(

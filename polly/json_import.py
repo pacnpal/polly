@@ -617,7 +617,7 @@ class PollJSONExporter:
     """Handles exporting polls to JSON format"""
 
     @staticmethod
-    def export_poll_to_json(poll) -> Dict[str, Any]:
+    def export_poll_to_json(poll, db=None) -> Dict[str, Any]:
         """Export a poll object to JSON format compatible with import"""
         from .database import TypeSafeColumn
 
@@ -681,7 +681,7 @@ class PollJSONExporter:
             "created_at": TypeSafeColumn.get_datetime(poll, "created_at").isoformat()
             if TypeSafeColumn.get_datetime(poll, "created_at")
             else None,
-            "total_votes": poll.get_total_votes()
+            "total_votes": poll.get_total_votes(db)
             if hasattr(poll, "get_total_votes")
             else 0,
             "server_name": TypeSafeColumn.get_string(poll, "server_name"),
@@ -691,9 +691,9 @@ class PollJSONExporter:
         return json_data
 
     @staticmethod
-    def export_poll_to_json_string(poll, indent: int = 2) -> str:
+    def export_poll_to_json_string(poll, indent: int = 2, db=None) -> str:
         """Export a poll to a formatted JSON string"""
-        json_data = PollJSONExporter.export_poll_to_json(poll)
+        json_data = PollJSONExporter.export_poll_to_json(poll, db)
         return json.dumps(json_data, indent=indent, ensure_ascii=False)
 
     @staticmethod

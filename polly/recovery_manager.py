@@ -140,7 +140,7 @@ class RecoveryManager:
             
             for poll in active_polls:
                 try:
-                    await self._recover_single_poll(poll)
+                    await self._recover_single_poll(poll, db)
                     self.recovery_stats["polls_recovered"] += 1
                 except Exception as e:
                     self.recovery_stats["errors_encountered"] += 1
@@ -153,7 +153,7 @@ class RecoveryManager:
         finally:
             db.close()
     
-    async def _recover_single_poll(self, poll: Poll):
+    async def _recover_single_poll(self, poll: Poll, db=None):
         """Recover a single active poll"""
         poll_id = TypeSafeColumn.get_int(poll, "id")
         poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
@@ -247,7 +247,7 @@ class RecoveryManager:
             
             # Update poll message to current state
             try:
-                await update_poll_message(self.bot, poll)
+                await update_poll_message(self.bot, poll, db)
                 logger.debug(f"✅ RECOVERY MANAGER - Updated message for poll {poll_id}")
             except Exception as e:
                 logger.warning(f"⚠️ RECOVERY MANAGER - Failed to update message for poll {poll_id}: {e}")

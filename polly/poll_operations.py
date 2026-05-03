@@ -726,7 +726,7 @@ class BulletproofPollOperations:
                 db.commit()
 
                 # Step 3: Generate final results
-                results = self._generate_poll_results(poll)
+                results = self._generate_poll_results(poll, db)
 
             finally:
                 db.close()
@@ -745,12 +745,12 @@ class BulletproofPollOperations:
                 "error": "Poll closure failed due to an internal error",
             }
 
-    def _generate_poll_results(self, poll: Poll) -> Dict[str, Any]:
+    def _generate_poll_results(self, poll: Poll, db=None) -> Dict[str, Any]:
         """Generate comprehensive poll results."""
         try:
-            results = poll.get_results()
-            total_votes = poll.get_total_votes()
-            winners = poll.get_winner()
+            results = poll.get_results(db)
+            total_votes = poll.get_total_votes(db)
+            winners = poll.get_winner(db)
 
             return {
                 "poll_id": TypeSafeColumn.get_int(poll, "id"),
