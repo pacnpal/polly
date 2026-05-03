@@ -269,8 +269,11 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
 1. **Create your working directory and configure environment**
    ```bash
    mkdir polly && cd polly
+   # For :main image — fetch from main branch:
    curl -o .env https://raw.githubusercontent.com/pacnpal/polly/main/.env.example
-   # Edit .env with your Discord bot credentials
+   # For a pinned tag (e.g. v1.2.3) — fetch from the same tag to avoid drift:
+   # curl -o .env https://raw.githubusercontent.com/pacnpal/polly/v1.2.3/.env.example
+   # Edit .env: set Discord credentials AND set REDIS_PASSWORD to a strong secret
    ```
 
 2. **Create a `docker-compose.yml`** that references the prebuilt image:
@@ -321,7 +324,7 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
          redis:
            condition: service_healthy
        healthcheck:
-         test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+         test: ["CMD", "python", "-c", "import urllib.request,json; r=urllib.request.urlopen('http://localhost:8000/health'); d=json.loads(r.read()); assert d.get('redis',{}).get('status')=='healthy'"]
          interval: 30s
          timeout: 10s
          retries: 3

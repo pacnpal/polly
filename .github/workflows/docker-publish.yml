@@ -22,6 +22,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
+      - name: Validate semver tag
+        if: github.ref_type == 'tag'
+        run: |
+          if ! echo "${{ github.ref_name }}" | grep -qE '^v[0-9]+[.][0-9]+[.][0-9]+'; then
+            echo "Tag '${{ github.ref_name }}' is not a valid semver tag (expected vX.Y.Z)"
+            exit 1
+          fi
+
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
