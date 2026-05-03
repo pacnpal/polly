@@ -1065,7 +1065,7 @@ def add_static_poll_routes(app: FastAPI):
                         "options": options,
                         "emojis": emojis,
                         "is_anonymous": is_anonymous,
-                        "generated_at": datetime.now(),
+                        "generated_at": datetime.now(pytz.UTC),
                         "is_static": True
                     }
                 )

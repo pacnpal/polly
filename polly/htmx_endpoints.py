@@ -21,7 +21,7 @@ UPLOADS_DIR = os.path.abspath(os.path.normpath("static/uploads"))
 from fastapi.templating import Jinja2Templates
 from apscheduler.triggers.date import DateTrigger
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 try:
@@ -623,28 +623,6 @@ async def close_poll_htmx(
             "Error closing poll. Please try again.",
             is_card=is_card,
         )
-
-
-async def _revert_poll_status_to_scheduled(
-    poll_id: int,
-    open_time: datetime | None = None,
-) -> None:
-    """Revert a poll's status back to 'scheduled' (used when an open attempt fails).
-
-    When provided, ``open_time`` restores the value that was overwritten by the
-    optimistic ``open_poll_now`` flow so we don't leave the poll scheduled with
-    a stale "now" open time. (Note: the Poll model intentionally has no
-    ``updated_at`` column, so timestamps beyond ``open_time`` are not restored.)
-    """
-    async with get_async_db_session() as db:
-        poll = (
-            await db.execute(select(Poll).where(Poll.id == poll_id))
-        ).scalar_one_or_none()
-        if poll:
-            poll.status = "scheduled"
-            if open_time is not None:
-                poll.open_time = open_time
-            await db.commit()
 
 
 async def open_poll_now_htmx(
@@ -2308,7 +2286,7 @@ async def get_polls_htmx(
                 "serialized_polls": serialized_polls,
                 "current_filter": filter,
                 "user_timezone": user_timezone,
-                "cached_at": datetime.now().isoformat(),
+                "cached_at": datetime.now(pytz.UTC).isoformat(),
             }
             
             # Cache with 30-second TTL
@@ -2386,14 +2364,13 @@ async def get_stats_htmx(
 
     try:
         async with get_async_db_session() as db:
-            # Query polls with error handling
+            # Query polls without eager-loading votes — we'll aggregate them below
             try:
                 polls = (
                     (
                         await db.execute(
                             select(Poll)
                             .where(Poll.creator_id == current_user.id)
-                            .options(selectinload(Poll.votes))
                         )
                     )
                     .scalars()
@@ -2417,57 +2394,44 @@ async def get_stats_htmx(
 
             # Count active polls safely
             try:
-                active_polls = len(
-                    [p for p in polls if TypeSafeColumn.get_string(p, "status") == "active"]
+                active_polls = sum(
+                    1 for p in polls
+                    if TypeSafeColumn.get_string(p, "status") == "active"
                 )
                 logger.debug(f"Found {active_polls} active polls")
             except Exception as e:
                 logger.error(f"Error counting active polls: {e}")
                 active_polls = 0
 
-            # Calculate total votes with bulletproof handling
+            # Count total votes via SQL aggregates — avoids materialising all
+            # vote rows in Python. Respects get_total_votes() semantics:
+            #   multi-select → count distinct voters
+            #   single-select → count rows
             total_votes = 0
-            for poll in polls:
+            poll_ids = [TypeSafeColumn.get_int(p, "id") for p in polls]
+            if poll_ids:
                 try:
-                    poll_votes = poll.get_total_votes()
-                    if isinstance(poll_votes, int):
-                        total_votes += poll_votes
-                        logger.debug(
-                            f"Poll {TypeSafeColumn.get_int(poll, 'id')} has {poll_votes} votes"
-                        )
-                    else:
-                        logger.warning(
-                            f"Poll {TypeSafeColumn.get_int(poll, 'id')} get_total_votes returned non-int: {type(poll_votes)}"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Error getting votes for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {e}"
-                    )
-                    # Fallback: count votes directly. Match poll.get_total_votes()
-                    # semantics — multi-select polls count distinct voters,
-                    # single-select polls count rows.
-                    try:
-                        from sqlalchemy import func as sa_func
-                        poll_id_value = TypeSafeColumn.get_int(poll, "id")
-                        is_multi = TypeSafeColumn.get_bool(poll, "multiple_choice", False)
-                        count_expr = (
-                            sa_func.count(sa_func.distinct(Vote.user_id))
-                            if is_multi
-                            else sa_func.count()
-                        )
-                        vote_count = (
-                            await db.execute(
-                                select(count_expr)
-                                .select_from(Vote)
-                                .where(Vote.poll_id == poll_id_value)
+                    vote_rows = (
+                        await db.execute(
+                            select(
+                                Vote.poll_id,
+                                func.count().label("total"),
+                                func.count(func.distinct(Vote.user_id)).label("unique"),
                             )
-                        ).scalar_one()
-                        if isinstance(vote_count, int):
-                            total_votes += vote_count
-                    except Exception as fallback_e:
-                        logger.error(
-                            f"Fallback vote count failed for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {fallback_e}"
+                            .where(Vote.poll_id.in_(poll_ids))
+                            .group_by(Vote.poll_id)
                         )
+                    ).all()
+                    vote_map = {row.poll_id: row for row in vote_rows}
+                    for p in polls:
+                        pid = TypeSafeColumn.get_int(p, "id")
+                        is_multi = TypeSafeColumn.get_bool(p, "multiple_choice", False)
+                        row = vote_map.get(pid)
+                        if row:
+                            total_votes += row.unique if is_multi else row.total
+                    logger.debug(f"Total votes across all polls: {total_votes}")
+                except Exception as e:
+                    logger.error(f"Error computing vote aggregates: {e}")
 
         logger.debug(
             f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}"
@@ -2876,7 +2840,7 @@ async def get_channels_htmx(
                 cacheable_data = {
                     "channels": guild["channels"],
                     "guild_name": guild["name"],
-                    "cached_at": datetime.now().isoformat(),
+                    "cached_at": datetime.now(pytz.UTC).isoformat(),
                 }
                 await redis_client.cache_set(cache_key, cacheable_data, 300)  # 5 minutes
                 logger.debug(f"💾 CHANNELS CACHED - Stored channels for server {server_id} with 5min TTL")
@@ -3021,7 +2985,7 @@ async def get_roles_htmx(
             if redis_client:
                 cacheable_data = {
                     "roles": roles,
-                    "cached_at": datetime.now().isoformat(),
+                    "cached_at": datetime.now(pytz.UTC).isoformat(),
                 }
                 await redis_client.cache_set(cache_key, cacheable_data, 300)  # 5 minutes
                 logger.debug(f"💾 ROLES CACHED - Stored roles for server {server_id} with 5min TTL")
@@ -4092,7 +4056,7 @@ async def get_poll_results_realtime_htmx(
                 "poll_status": poll_status,
                 "total_votes": total_votes,
                 "results": results,
-                "cached_at": datetime.now().isoformat(),
+                "cached_at": datetime.now(pytz.UTC).isoformat(),
             }
 
             await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data, poll_status)
@@ -4334,7 +4298,7 @@ async def get_poll_dashboard_htmx(
                                 user_data = {
                                     "username": username,
                                     "avatar_url": avatar_url,
-                                    "cached_at": datetime.now().isoformat(),
+                                    "cached_at": datetime.now(pytz.UTC).isoformat(),
                                 }
                                 await enhanced_cache.cache_discord_user(
                                     user_id, user_data

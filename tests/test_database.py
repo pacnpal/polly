@@ -621,8 +621,12 @@ class TestAsyncDatabase:
     def test_to_async_url_translation(self):
         from polly.database import _to_async_url
 
-        assert _to_async_url("sqlite:///./db/polly.db") == "sqlite+aiosqlite:///./db/polly.db"
-        assert _to_async_url("sqlite+aiosqlite:///x.db") == "sqlite+aiosqlite:///x.db"
+        assert _to_async_url("sqlite:///./db/polly.db") == (
+            "sqlite+aiosqlite:///./db/polly.db"
+        )
+        assert _to_async_url("sqlite+aiosqlite:///x.db") == (
+            "sqlite+aiosqlite:///x.db"
+        )
         # Postgres URLs are intentionally NOT auto-translated since asyncpg is
         # not a declared dependency. Users must set ASYNC_DATABASE_URL explicitly.
         assert _to_async_url("postgresql://u:p@h/db") == "postgresql://u:p@h/db"
