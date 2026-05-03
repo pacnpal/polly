@@ -686,7 +686,9 @@ async def open_poll_now_htmx(
         # (for reason="scheduled"), and consume the job.  If the manual open
         # then fails we'd revert to "scheduled" but the job is gone, leaving
         # the poll permanently un-openable.  The service sets status="active"
-        # atomically in its own DB step after the Discord post succeeds.
+        # atomically in its own DB step after the Discord post succeeds; on any
+        # failure path the service returns {"success": False} without committing,
+        # so the poll remains in "scheduled" and the APScheduler job is intact.
         try:
             from .services.poll.poll_open_service import poll_opening_service
 

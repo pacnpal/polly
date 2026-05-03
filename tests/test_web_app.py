@@ -709,6 +709,7 @@ class TestWebAppIntegration:
             client = TestClient(app)
             response = client.get("/htmx/polls", cookies={"access_token": token})
             assert response.status_code == status.HTTP_200_OK
+            assert "ok" in response.text  # mock's body is returned unmodified
             mock_get_polls.assert_called_once()
 
     def test_discord_bot_integration(self, web_client, sample_discord_user, mock_bot):
