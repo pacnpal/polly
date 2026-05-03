@@ -15,9 +15,10 @@ import os
 import json
 import logging
 import shutil
+import pytz
 from datetime import datetime
 from decouple import config
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -524,7 +525,7 @@ def initialize_database_if_missing(db_path: str = DEFAULT_DB_PATH) -> bool:
     """
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
-        migrator: Any = SQLAlchemyMigrator(database_url)
+        migrator: Union[DatabaseMigrator, SQLAlchemyMigrator] = SQLAlchemyMigrator(database_url)
     else:
         migrator = DatabaseMigrator(db_path)
 
@@ -686,7 +687,7 @@ class SQLAlchemyMigrator:
                 "INSERT INTO schema_migrations (version, name, applied_at) "
                 "VALUES (:v, :n, :t)"
             ),
-            {"v": version, "n": name, "t": datetime.utcnow()},
+            {"v": version, "n": name, "t": datetime.now(pytz.UTC)},
         )
         conn.commit()
 
@@ -872,7 +873,7 @@ if __name__ == "__main__":
 
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
-        active_migrator: Any = SQLAlchemyMigrator(database_url)
+        active_migrator: Union[DatabaseMigrator, SQLAlchemyMigrator] = SQLAlchemyMigrator(database_url)
     else:
         active_migrator = DatabaseMigrator(db_path)
 
