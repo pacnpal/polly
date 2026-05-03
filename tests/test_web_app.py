@@ -320,106 +320,76 @@ class TestHTMXRoutes:
     to patch ``require_auth``.
     """
 
-    def test_htmx_polls_route(self, sample_discord_user):
-        """Test HTMX polls route."""
+    @staticmethod
+    def _htmx_request(handler: str, method: str, url: str, user, **kw):
+        """Patch *handler* in ``polly.htmx_endpoints`` before creating the app,
+        then make an HTTP *method* request to *url* with a real JWT.
+
+        Returns ``(response, mock_fn)`` so callers can assert on both the
+        HTTP response and the mock's call history.
+        """
         from fastapi.responses import HTMLResponse
         from fastapi.testclient import TestClient
         from polly.auth import create_access_token
         from polly.web_app import create_app
 
-        mock_response = HTMLResponse("<div>polls</div>")
+        mock_response = HTMLResponse("<div>ok</div>")
         with patch(
-            "polly.htmx_endpoints.get_polls_htmx",
+            f"polly.htmx_endpoints.{handler}",
             AsyncMock(return_value=mock_response),
         ) as mock_fn:
             app = create_app()
-            token = create_access_token(sample_discord_user)
+            token = create_access_token(user)
             client = TestClient(app)
-            response = client.get("/htmx/polls", cookies={"access_token": token})
+            response = getattr(client, method)(
+                url, cookies={"access_token": token}, **kw
+            )
+        return response, mock_fn
+
+    def test_htmx_polls_route(self, sample_discord_user):
+        """Test HTMX polls route."""
+        response, mock_fn = self._htmx_request(
+            "get_polls_htmx", "get", "/htmx/polls", sample_discord_user
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_polls_route_with_filter(self, sample_discord_user):
         """Test HTMX polls route with filter."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>polls</div>")
-        with patch(
-            "polly.htmx_endpoints.get_polls_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/polls?filter=active", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "get_polls_htmx",
+            "get",
+            "/htmx/polls?filter=active",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         # Verify filter parameter is passed (second positional arg)
         assert mock_fn.call_args[0][1] == "active"
 
     def test_htmx_stats_route(self, sample_discord_user):
         """Test HTMX stats route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>stats</div>")
-        with patch(
-            "polly.htmx_endpoints.get_stats_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get("/htmx/stats", cookies={"access_token": token})
+        response, mock_fn = self._htmx_request(
+            "get_stats_htmx", "get", "/htmx/stats", sample_discord_user
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_create_form_route(self, sample_discord_user):
         """Test HTMX create form route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>form</div>")
-        with patch(
-            "polly.htmx_endpoints.get_create_form_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/create-form", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "get_create_form_htmx", "get", "/htmx/create-form", sample_discord_user
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_create_form_template_route(self, sample_discord_user):
         """Test HTMX create form template route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>template</div>")
-        with patch(
-            "polly.htmx_endpoints.get_create_form_template_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/create-form-template/123",
-                cookies={"access_token": token},
-            )
+        response, mock_fn = self._htmx_request(
+            "get_create_form_template_htmx",
+            "get",
+            "/htmx/create-form-template/123",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
         # Verify poll_id parameter (first positional arg)
@@ -427,23 +397,12 @@ class TestHTMXRoutes:
 
     def test_htmx_channels_route(self, sample_discord_user):
         """Test HTMX channels route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>channels</div>")
-        with patch(
-            "polly.htmx_endpoints.get_channels_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/channels?server_id=123456789",
-                cookies={"access_token": token},
-            )
+        response, mock_fn = self._htmx_request(
+            "get_channels_htmx",
+            "get",
+            "/htmx/channels?server_id=123456789",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
         # Verify server_id parameter (first positional arg)
@@ -451,67 +410,35 @@ class TestHTMXRoutes:
 
     def test_htmx_roles_route(self, sample_discord_user):
         """Test HTMX roles route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>roles</div>")
-        with patch(
-            "polly.htmx_endpoints.get_roles_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/roles?server_id=123456789",
-                cookies={"access_token": token},
-            )
+        response, mock_fn = self._htmx_request(
+            "get_roles_htmx",
+            "get",
+            "/htmx/roles?server_id=123456789",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_create_poll_route(self, sample_discord_user):
         """Test HTMX create poll route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>created</div>")
-        with patch(
-            "polly.htmx_endpoints.create_poll_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.post(
-                "/htmx/create-poll",
-                data={"name": "Test Poll"},
-                cookies={"access_token": token},
-            )
+        response, mock_fn = self._htmx_request(
+            "create_poll_htmx",
+            "post",
+            "/htmx/create-poll",
+            sample_discord_user,
+            data={"name": "Test Poll"},
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_poll_details_route(self, sample_discord_user):
         """Test HTMX poll details route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>details</div>")
-        with patch(
-            "polly.htmx_endpoints.get_poll_details_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/poll/123/details", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "get_poll_details_htmx",
+            "get",
+            "/htmx/poll/123/details",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
         # Verify poll_id parameter (first positional arg)
@@ -519,85 +446,45 @@ class TestHTMXRoutes:
 
     def test_htmx_poll_dashboard_route(self, sample_discord_user):
         """Test HTMX poll dashboard route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>dashboard</div>")
-        with patch(
-            "polly.htmx_endpoints.get_poll_dashboard_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/poll/123/dashboard", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "get_poll_dashboard_htmx",
+            "get",
+            "/htmx/poll/123/dashboard",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_export_csv_route(self, sample_discord_user):
         """Test HTMX export CSV route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>csv</div>")
-        with patch(
-            "polly.htmx_endpoints.export_poll_csv",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.get(
-                "/htmx/poll/123/export-csv", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "export_poll_csv",
+            "get",
+            "/htmx/poll/123/export-csv",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_close_poll_route(self, sample_discord_user):
         """Test HTMX close poll route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>closed</div>")
-        with patch(
-            "polly.htmx_endpoints.close_poll_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.post(
-                "/htmx/poll/123/close", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "close_poll_htmx",
+            "post",
+            "/htmx/poll/123/close",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
     def test_htmx_delete_poll_route(self, sample_discord_user):
         """Test HTMX delete poll route."""
-        from fastapi.responses import HTMLResponse
-        from fastapi.testclient import TestClient
-        from polly.auth import create_access_token
-        from polly.web_app import create_app
-
-        mock_response = HTMLResponse("<div>deleted</div>")
-        with patch(
-            "polly.htmx_endpoints.delete_poll_htmx",
-            AsyncMock(return_value=mock_response),
-        ) as mock_fn:
-            app = create_app()
-            token = create_access_token(sample_discord_user)
-            client = TestClient(app)
-            response = client.delete(
-                "/htmx/poll/123", cookies={"access_token": token}
-            )
+        response, mock_fn = self._htmx_request(
+            "delete_poll_htmx",
+            "delete",
+            "/htmx/poll/123",
+            sample_discord_user,
+        )
         assert response.status_code == status.HTTP_200_OK
         mock_fn.assert_called_once()
 
