@@ -3834,6 +3834,9 @@ async def get_poll_details_htmx(
     """Get poll details view as HTML for HTMX - serves pre-generated static files for closed polls"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
     try:
+        # Load the poll inside a short-lived DB session; all file I/O happens
+        # outside so we don't hold a DB connection during static-file checks or
+        # regeneration (which opens its own session).
         async with get_async_db_session() as db:
             poll = (
                 await db.execute(
@@ -3842,89 +3845,92 @@ async def get_poll_details_htmx(
                     .options(selectinload(Poll.votes))
                 )
             ).scalar_one_or_none()
-            if not poll:
-                logger.warning(
-                    f"Poll {poll_id} not found or not owned by user {current_user.id}"
-                )
-                return templates.TemplateResponse(
-                    "htmx/components/inline_error.html",
-                    {"request": request, "message": "Poll not found or access denied"},
-                )
 
-            # Check if poll is closed and serve pre-generated static content
-            poll_status = TypeSafeColumn.get_string(poll, "status")
-            if poll_status == "closed":
-                logger.info(f"📄 STATIC SERVE - Checking for pre-generated static content for closed poll {poll_id}")
-            
-                # Import the static page generator to check for existing files
-                from .static_page_generator import get_static_page_generator
-            
-                # Get the static page generator instance
-                static_generator = get_static_page_generator()
-            
-                # Check if static file exists
-                static_path = static_generator._get_static_page_path(poll_id, "details")
-            
-                if static_path.exists():
-                    logger.info(f"✅ STATIC SERVE - Found pre-generated static file for poll {poll_id}: {static_path}")
-                
-                    # Read and serve the pre-generated static content
-                    try:
-                        with open(static_path, 'r', encoding='utf-8') as f:
-                            static_content = f.read()
-                    
-                        logger.info(f"📄 STATIC SERVE - Successfully served pre-generated static content for poll {poll_id}")
-                    
-                        # Return the static content directly as HTML response
-                        from fastapi.responses import HTMLResponse
-                        return HTMLResponse(content=static_content)
-                    
-                    except Exception as read_error:
-                        logger.error(f"❌ STATIC SERVE - Error reading static file for poll {poll_id}: {read_error}")
-                        # Fall through to dynamic content as fallback
-                else:
-                    logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
-                    logger.warning("⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
-                
-                    # Try to regenerate the static file once if it's missing
-                    logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")
-                    try:
-                        regeneration_success = await static_generator.generate_static_poll_details(poll_id, bot)
-                        if regeneration_success and static_path.exists():
-                            logger.info(f"✅ STATIC SERVE - Successfully regenerated static content for poll {poll_id}")
-                        
-                            # Try to serve the newly generated content
-                            try:
-                                with open(static_path, 'r', encoding='utf-8') as f:
-                                    static_content = f.read()
-                            
-                                logger.info(f"📄 STATIC SERVE - Successfully served regenerated static content for poll {poll_id}")
-                            
-                                # Return the static content directly as HTML response
-                                from fastapi.responses import HTMLResponse
-                                return HTMLResponse(content=static_content)
-                            
-                            except Exception as read_error:
-                                logger.error(f"❌ STATIC SERVE - Error reading regenerated static file for poll {poll_id}: {read_error}")
-                        else:
-                            logger.error(f"❌ STATIC SERVE - Failed to regenerate static content for poll {poll_id}")
-                        
-                    except Exception as regen_error:
-                        logger.error(f"❌ STATIC SERVE - Error during static content regeneration for poll {poll_id}: {regen_error}")
-            
-                # For closed polls, we should NOT regenerate on-demand repeatedly - that defeats the purpose
-                # Instead, fall back to dynamic content and log this as an issue
-                logger.warning(f"⚠️ STATIC SERVE - Falling back to dynamic content for closed poll {poll_id} - static file missing or unreadable")
-
-            # Serve dynamic content for active/scheduled polls or as fallback for closed polls
-            return templates.TemplateResponse(
-                "htmx/poll_details.html",
-                {
-                    "request": request,
-                    "poll": poll,
-                    "format_datetime_for_user": format_datetime_for_user,
-                },
+        if not poll:
+            logger.warning(
+                f"Poll {poll_id} not found or not owned by user {current_user.id}"
             )
+            return templates.TemplateResponse(
+                "htmx/components/inline_error.html",
+                {"request": request, "message": "Poll not found or access denied"},
+            )
+
+        # Check if poll is closed and serve pre-generated static content
+        poll_status = TypeSafeColumn.get_string(poll, "status")
+        if poll_status == "closed":
+            logger.info(f"📄 STATIC SERVE - Checking for pre-generated static content for closed poll {poll_id}")
+
+            # Import the static page generator to check for existing files
+            from .static_page_generator import get_static_page_generator
+
+            # Get the static page generator instance
+            static_generator = get_static_page_generator()
+
+            # Check if static file exists
+            static_path = static_generator._get_static_page_path(poll_id, "details")
+
+            if static_path.exists():
+                logger.info(f"✅ STATIC SERVE - Found pre-generated static file for poll {poll_id}: {static_path}")
+
+                # Read and serve the pre-generated static content
+                try:
+                    with open(static_path, "r", encoding="utf-8") as f:
+                        static_content = f.read()
+
+                    logger.info(f"📄 STATIC SERVE - Successfully served pre-generated static content for poll {poll_id}")
+
+                    # Return the static content directly as HTML response
+                    from fastapi.responses import HTMLResponse
+
+                    return HTMLResponse(content=static_content)
+
+                except Exception as read_error:
+                    logger.error(f"❌ STATIC SERVE - Error reading static file for poll {poll_id}: {read_error}")
+                    # Fall through to dynamic content as fallback
+            else:
+                logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
+                logger.warning("⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
+
+                # Try to regenerate the static file once if it's missing
+                logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")
+                try:
+                    regeneration_success = await static_generator.generate_static_poll_details(poll_id, bot)
+                    if regeneration_success and static_path.exists():
+                        logger.info(f"✅ STATIC SERVE - Successfully regenerated static content for poll {poll_id}")
+
+                        # Try to serve the newly generated content
+                        try:
+                            with open(static_path, "r", encoding="utf-8") as f:
+                                static_content = f.read()
+
+                            logger.info(f"📄 STATIC SERVE - Successfully served regenerated static content for poll {poll_id}")
+
+                            # Return the static content directly as HTML response
+                            from fastapi.responses import HTMLResponse
+
+                            return HTMLResponse(content=static_content)
+
+                        except Exception as read_error:
+                            logger.error(f"❌ STATIC SERVE - Error reading regenerated static file for poll {poll_id}: {read_error}")
+                    else:
+                        logger.error(f"❌ STATIC SERVE - Failed to regenerate static content for poll {poll_id}")
+
+                except Exception as regen_error:
+                    logger.error(f"❌ STATIC SERVE - Error during static content regeneration for poll {poll_id}: {regen_error}")
+
+            # For closed polls, we should NOT regenerate on-demand repeatedly - that defeats the purpose
+            # Instead, fall back to dynamic content and log this as an issue
+            logger.warning(f"⚠️ STATIC SERVE - Falling back to dynamic content for closed poll {poll_id} - static file missing or unreadable")
+
+        # Serve dynamic content for active/scheduled polls or as fallback for closed polls
+        return templates.TemplateResponse(
+            "htmx/poll_details.html",
+            {
+                "request": request,
+                "poll": poll,
+                "format_datetime_for_user": format_datetime_for_user,
+            },
+        )
     except Exception as e:
         logger.error(f"Error getting poll details for poll {poll_id}: {e}")
         return templates.TemplateResponse(
