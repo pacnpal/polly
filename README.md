@@ -314,7 +314,7 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
          - ./db:/app/db
          - ./data:/app/data
          - ./logs:/app/logs
-         - ./static:/app/static
+         - ./static/uploads:/app/static/uploads   # only persist user-uploaded poll images
        restart: unless-stopped
        depends_on:
          redis:
