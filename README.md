@@ -279,14 +279,12 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
      redis:
        image: redis:7-alpine
        container_name: polly-redis
-       ports:
-         - "6340:6379"
-       command: redis-server --requirepass ${REDIS_PASSWORD:-polly_redis_pass}
+       command: redis-server --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
        volumes:
          - redis_data:/data
        restart: unless-stopped
        healthcheck:
-         test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-polly_redis_pass}", "ping"]
+         test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
          interval: 30s
          timeout: 10s
          retries: 3
@@ -306,10 +304,10 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
          - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
          - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
          - SECRET_KEY=${SECRET_KEY}
-         - REDIS_URL=redis://:${REDIS_PASSWORD:-polly_redis_pass}@redis:6379
+         - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
          - REDIS_HOST=redis
          - REDIS_PORT=6379
-         - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
+         - REDIS_PASSWORD=${REDIS_PASSWORD}
        volumes:
          - ./db:/app/db
          - ./data:/app/data
@@ -337,7 +335,13 @@ Each push to `main` automatically publishes a fresh image to the GitHub Containe
        driver: bridge
    ```
 
-3. **Pull and start**
+3. **Prepare host directories** (required when using `user: "1000:1000"`):
+   ```bash
+   mkdir -p db data logs static/uploads
+   sudo chown -R 1000:1000 db data logs static
+   ```
+
+4. **Pull and start**
    ```bash
    docker compose pull
    docker compose up -d
