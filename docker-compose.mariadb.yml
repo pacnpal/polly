@@ -3,8 +3,9 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.mariadb.yml up -d
 #
-# Add the following to your .env file (or set the variables in your shell):
-#   DATABASE_URL=mysql+pymysql://polly:${MARIADB_PASSWORD:-polly_db_pass}@mariadb:3306/polly
+# Set MARIADB_PASSWORD in your .env file or shell environment, then Compose
+# will expand it in the DATABASE_URL below.  Example .env entries:
+#   MARIADB_PASSWORD=your_secure_password
 #
 # The PyMySQL driver must be available in the image.  Install it with:
 #   pip install polly[mariadb]

@@ -3,8 +3,9 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 #
-# Add the following to your .env file (or set the variables in your shell):
-#   DATABASE_URL=postgresql://polly:${POSTGRES_PASSWORD:-polly_pg_pass}@postgres:5432/polly
+# Set POSTGRES_PASSWORD in your .env file or shell environment, then Compose
+# will expand it in the DATABASE_URL below.  Example .env entries:
+#   POSTGRES_PASSWORD=your_secure_password
 #
 # The psycopg2 driver must be available in the image.  Install it with:
 #   pip install polly[postgres]

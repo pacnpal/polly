@@ -578,7 +578,7 @@ _SQLALCHEMY_MIGRATIONS: List[Dict[str, Any]] = [
         "name": "add_timezone_anonymous",
         "sql": [
             "ALTER TABLE polls ADD COLUMN timezone VARCHAR(50) DEFAULT 'UTC'",
-            "ALTER TABLE polls ADD COLUMN anonymous BOOLEAN DEFAULT 0",
+            "ALTER TABLE polls ADD COLUMN anonymous BOOLEAN DEFAULT FALSE",
         ],
     },
     {
@@ -589,7 +589,7 @@ _SQLALCHEMY_MIGRATIONS: List[Dict[str, Any]] = [
     {
         "version": 6,
         "name": "add_multiple_choice",
-        "sql": ["ALTER TABLE polls ADD COLUMN multiple_choice BOOLEAN DEFAULT 0"],
+        "sql": ["ALTER TABLE polls ADD COLUMN multiple_choice BOOLEAN DEFAULT FALSE"],
     },
     {
         "version": 7,
@@ -597,7 +597,7 @@ _SQLALCHEMY_MIGRATIONS: List[Dict[str, Any]] = [
         "sql": [
             "ALTER TABLE polls ADD COLUMN ping_role_id VARCHAR(50)",
             "ALTER TABLE polls ADD COLUMN ping_role_name VARCHAR(255)",
-            "ALTER TABLE polls ADD COLUMN ping_role_enabled BOOLEAN DEFAULT 0",
+            "ALTER TABLE polls ADD COLUMN ping_role_enabled BOOLEAN DEFAULT FALSE",
             "ALTER TABLE user_preferences ADD COLUMN last_role_id VARCHAR(50)",
         ],
     },
@@ -605,20 +605,20 @@ _SQLALCHEMY_MIGRATIONS: List[Dict[str, Any]] = [
         "version": 8,
         "name": "add_timezone_explicitly_set",
         "sql": [
-            "ALTER TABLE user_preferences ADD COLUMN timezone_explicitly_set BOOLEAN DEFAULT 0"
+            "ALTER TABLE user_preferences ADD COLUMN timezone_explicitly_set BOOLEAN DEFAULT FALSE"
         ],
     },
     {
         "version": 9,
         "name": "add_open_immediately",
-        "sql": ["ALTER TABLE polls ADD COLUMN open_immediately BOOLEAN DEFAULT 0"],
+        "sql": ["ALTER TABLE polls ADD COLUMN open_immediately BOOLEAN DEFAULT FALSE"],
     },
     {
         "version": 10,
         "name": "add_role_ping_notification_options",
         "sql": [
-            "ALTER TABLE polls ADD COLUMN ping_role_on_close BOOLEAN DEFAULT 0",
-            "ALTER TABLE polls ADD COLUMN ping_role_on_update BOOLEAN DEFAULT 0",
+            "ALTER TABLE polls ADD COLUMN ping_role_on_close BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE polls ADD COLUMN ping_role_on_update BOOLEAN DEFAULT FALSE",
         ],
     },
     {
@@ -660,7 +660,7 @@ class SQLAlchemyMigrator:
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version INTEGER NOT NULL,
                 name VARCHAR(255) NOT NULL,
-                applied_at DATETIME NOT NULL,
+                applied_at TIMESTAMP NOT NULL,
                 PRIMARY KEY (version)
             )
         """))
@@ -727,8 +727,10 @@ class SQLAlchemyMigrator:
         try:
             engine = self._make_engine()
             with engine.connect() as conn:
-                result = self._table_exists(conn, "polls") and self._table_exists(
-                    conn, "votes"
+                result = (
+                    self._table_exists(conn, "polls")
+                    and self._table_exists(conn, "votes")
+                    and self._table_exists(conn, "users")
                 )
             engine.dispose()
             return result
@@ -825,11 +827,13 @@ class SQLAlchemyMigrator:
                             column_name = parts[1].split()[0].strip()
 
                             if not self._table_exists(conn, table_name):
-                                logger.warning(
-                                    f"Table {table_name} does not exist, "
-                                    f"skipping column {column_name}"
+                                logger.error(
+                                    f"Table {table_name} does not exist; "
+                                    f"cannot apply migration {migration['version']} "
+                                    f"(column {column_name})"
                                 )
-                                continue
+                                engine.dispose()
+                                return False
 
                             existing = self._get_existing_columns(conn, table_name)
                             if column_name in existing:
