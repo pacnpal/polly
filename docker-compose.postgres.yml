@@ -1,0 +1,41 @@
+# Docker Compose override — PostgreSQL backend
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# Add the following to your .env file (or set the variables in your shell):
+#   DATABASE_URL=postgresql://polly:${POSTGRES_PASSWORD:-polly_pg_pass}@postgres:5432/polly
+#
+# The psycopg2 driver must be available in the image.  Install it with:
+#   pip install polly[postgres]
+# or add psycopg2-binary to the Dockerfile before running uv sync.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: polly-postgres
+    environment:
+      POSTGRES_DB: polly
+      POSTGRES_USER: polly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-polly_pg_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polly -d polly"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - polly-network
+
+  polly:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://polly:${POSTGRES_PASSWORD:-polly_pg_pass}@postgres:5432/polly
+
+volumes:
+  postgres_data:
+    driver: local

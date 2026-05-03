@@ -2,6 +2,12 @@
 """
 Comprehensive Database Migration System for Polly
 Handles full database initialization and incremental migrations.
+
+Supports SQLite (default), PostgreSQL, and MariaDB/MySQL.
+The backend is selected by the DATABASE_URL environment variable:
+  sqlite:///./db/polly.db          (default)
+  postgresql://user:pass@host/db
+  mysql+pymysql://user:pass@host/db
 """
 
 import sqlite3
@@ -494,7 +500,11 @@ def migrate_database_if_needed(db_path: str = DEFAULT_DB_PATH) -> bool:
     Migrate database only if needed.
     Returns True if database is ready, False if migration failed.
     """
-    migrator = DatabaseMigrator(db_path)
+    database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
+    if not database_url.startswith("sqlite"):
+        migrator = SQLAlchemyMigrator(database_url)
+    else:
+        migrator = DatabaseMigrator(db_path)
 
     if not migrator.needs_migration():
         logger.info("Database is up to date, no migration needed")
@@ -508,8 +518,15 @@ def initialize_database_if_missing(db_path: str = DEFAULT_DB_PATH) -> bool:
     """
     Initialize database only if it doesn't exist or is not properly initialized.
     Returns True if database is ready, False if initialization failed.
+
+    For PostgreSQL and MariaDB the DATABASE_URL environment variable is used;
+    db_path is only relevant for the default SQLite backend.
     """
-    migrator = DatabaseMigrator(db_path)
+    database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
+    if not database_url.startswith("sqlite"):
+        migrator: Any = SQLAlchemyMigrator(database_url)
+    else:
+        migrator = DatabaseMigrator(db_path)
 
     if migrator.is_database_initialized() and not migrator.needs_migration():
         logger.info("Database is already initialized and up to date")
@@ -532,6 +549,314 @@ def init_database(db_path: str = DEFAULT_DB_PATH) -> bool:
     return initialize_database_if_missing(db_path)
 
 
+# ---------------------------------------------------------------------------
+# SQLAlchemy-based migrator for PostgreSQL and MariaDB/MySQL
+# ---------------------------------------------------------------------------
+
+# Migrations expressed as (version, name, [sql, ...]) tuples.
+# The SQL is standard enough to work on both PostgreSQL and MySQL/MariaDB.
+# Version 1 is intentionally absent: the initial schema is created via
+# SQLAlchemy metadata (Base.metadata.create_all) so that column types are
+# generated correctly for the target database.
+_SQLALCHEMY_MIGRATIONS: List[Dict[str, Any]] = [
+    {
+        "version": 2,
+        "name": "add_emojis_column",
+        "sql": ["ALTER TABLE polls ADD COLUMN emojis_json TEXT"],
+    },
+    {
+        "version": 3,
+        "name": "add_server_channel_names",
+        "sql": [
+            "ALTER TABLE polls ADD COLUMN server_name VARCHAR(255)",
+            "ALTER TABLE polls ADD COLUMN channel_name VARCHAR(255)",
+        ],
+    },
+    {
+        "version": 4,
+        "name": "add_timezone_anonymous",
+        "sql": [
+            "ALTER TABLE polls ADD COLUMN timezone VARCHAR(50) DEFAULT 'UTC'",
+            "ALTER TABLE polls ADD COLUMN anonymous BOOLEAN DEFAULT 0",
+        ],
+    },
+    {
+        "version": 5,
+        "name": "add_image_message_text",
+        "sql": ["ALTER TABLE polls ADD COLUMN image_message_text TEXT"],
+    },
+    {
+        "version": 6,
+        "name": "add_multiple_choice",
+        "sql": ["ALTER TABLE polls ADD COLUMN multiple_choice BOOLEAN DEFAULT 0"],
+    },
+    {
+        "version": 7,
+        "name": "add_role_ping_columns",
+        "sql": [
+            "ALTER TABLE polls ADD COLUMN ping_role_id VARCHAR(50)",
+            "ALTER TABLE polls ADD COLUMN ping_role_name VARCHAR(255)",
+            "ALTER TABLE polls ADD COLUMN ping_role_enabled BOOLEAN DEFAULT 0",
+            "ALTER TABLE user_preferences ADD COLUMN last_role_id VARCHAR(50)",
+        ],
+    },
+    {
+        "version": 8,
+        "name": "add_timezone_explicitly_set",
+        "sql": [
+            "ALTER TABLE user_preferences ADD COLUMN timezone_explicitly_set BOOLEAN DEFAULT 0"
+        ],
+    },
+    {
+        "version": 9,
+        "name": "add_open_immediately",
+        "sql": ["ALTER TABLE polls ADD COLUMN open_immediately BOOLEAN DEFAULT 0"],
+    },
+    {
+        "version": 10,
+        "name": "add_role_ping_notification_options",
+        "sql": [
+            "ALTER TABLE polls ADD COLUMN ping_role_on_close BOOLEAN DEFAULT 0",
+            "ALTER TABLE polls ADD COLUMN ping_role_on_update BOOLEAN DEFAULT 0",
+        ],
+    },
+    {
+        "version": 11,
+        "name": "add_max_choices",
+        "sql": ["ALTER TABLE polls ADD COLUMN max_choices INTEGER"],
+    },
+]
+
+_LATEST_VERSION = max(m["version"] for m in _SQLALCHEMY_MIGRATIONS)
+
+
+class SQLAlchemyMigrator:
+    """
+    Database migrator for PostgreSQL and MariaDB/MySQL.
+
+    Uses SQLAlchemy's ORM metadata for the initial schema creation (so column
+    types are dialect-correct) and raw ``text()`` statements for subsequent
+    ALTER TABLE migrations.
+    """
+
+    def __init__(self, database_url: str):
+        self.database_url = database_url
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _make_engine(self):
+        from sqlalchemy import create_engine
+
+        return create_engine(self.database_url, pool_pre_ping=True)
+
+    def _ensure_migrations_table(self, conn) -> None:
+        """Create schema_migrations table if it does not yet exist."""
+        from sqlalchemy import text
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                applied_at DATETIME NOT NULL,
+                PRIMARY KEY (version)
+            )
+        """))
+        conn.commit()
+
+    def _get_applied_version(self, conn) -> int:
+        """Return the highest migration version that has been applied."""
+        from sqlalchemy import text
+
+        try:
+            result = conn.execute(
+                text("SELECT MAX(version) FROM schema_migrations")
+            )
+            row = result.fetchone()
+            return row[0] if row and row[0] is not None else 0
+        except Exception:
+            return 0
+
+    def _record_migration(self, conn, version: int, name: str) -> None:
+        from sqlalchemy import text
+
+        conn.execute(
+            text(
+                "INSERT INTO schema_migrations (version, name, applied_at) "
+                "VALUES (:v, :n, :t)"
+            ),
+            {"v": version, "n": name, "t": datetime.utcnow()},
+        )
+        conn.commit()
+
+    def _get_existing_columns(self, conn, table_name: str) -> List[str]:
+        from sqlalchemy import inspect
+
+        insp = inspect(conn)
+        try:
+            return [c["name"] for c in insp.get_columns(table_name)]
+        except Exception:
+            return []
+
+    def _table_exists(self, conn, table_name: str) -> bool:
+        from sqlalchemy import inspect
+
+        insp = inspect(conn)
+        return table_name in insp.get_table_names()
+
+    # ------------------------------------------------------------------
+    # Public interface (mirrors DatabaseMigrator)
+    # ------------------------------------------------------------------
+
+    def database_exists(self) -> bool:
+        """For server-based databases the server is assumed to be reachable."""
+        try:
+            engine = self._make_engine()
+            with engine.connect():
+                pass
+            engine.dispose()
+            return True
+        except Exception as exc:
+            logger.warning(f"Cannot reach database server: {exc}")
+            return False
+
+    def is_database_initialized(self) -> bool:
+        """Return True if the core tables (polls, votes, users) exist."""
+        try:
+            engine = self._make_engine()
+            with engine.connect() as conn:
+                result = self._table_exists(conn, "polls") and self._table_exists(
+                    conn, "votes"
+                )
+            engine.dispose()
+            return result
+        except Exception:
+            return False
+
+    def get_current_schema_version(self) -> int:
+        try:
+            engine = self._make_engine()
+            with engine.connect() as conn:
+                if not self._table_exists(conn, "schema_migrations"):
+                    # Tables may exist from a manual setup — treat as version 1
+                    if self._table_exists(conn, "polls"):
+                        engine.dispose()
+                        return 1
+                    engine.dispose()
+                    return 0
+                version = self._get_applied_version(conn)
+            engine.dispose()
+            return version
+        except Exception as exc:
+            logger.error(f"Error getting schema version: {exc}")
+            return 0
+
+    def needs_migration(self) -> bool:
+        if not self.database_exists():
+            return True
+        return self.get_current_schema_version() < _LATEST_VERSION
+
+    def initialize_database(self) -> bool:
+        """Create the full schema using SQLAlchemy metadata, then stamp latest."""
+        try:
+            # Lazy import to avoid circular imports
+            from polly.database import Base
+
+            engine = self._make_engine()
+            Base.metadata.create_all(engine)
+            logger.info("Created all tables via SQLAlchemy metadata")
+
+            with engine.connect() as conn:
+                self._ensure_migrations_table(conn)
+                # Stamp all migrations as applied on a fresh database
+                for migration in _SQLALCHEMY_MIGRATIONS:
+                    self._record_migration(conn, migration["version"], migration["name"])
+                # Also record version 1 (initial schema created by create_all)
+                self._record_migration(conn, 1, "initial_schema")
+
+            engine.dispose()
+            logger.info("Database initialized successfully (PostgreSQL/MariaDB)")
+            return True
+        except Exception as exc:
+            logger.error(f"Database initialization failed: {exc}")
+            return False
+
+    def run_migrations(self) -> bool:
+        """Apply any pending migrations in order."""
+        try:
+            engine = self._make_engine()
+
+            # If the database is completely empty, use create_all instead
+            with engine.connect() as conn:
+                if not self._table_exists(conn, "polls"):
+                    engine.dispose()
+                    return self.initialize_database()
+
+                self._ensure_migrations_table(conn)
+                current_version = self._get_applied_version(conn)
+
+                if current_version >= _LATEST_VERSION:
+                    logger.info("Database is up to date")
+                    engine.dispose()
+                    return True
+
+                logger.info(
+                    f"Migrating database from version {current_version} "
+                    f"to {_LATEST_VERSION}"
+                )
+
+                from sqlalchemy import text
+
+                for migration in _SQLALCHEMY_MIGRATIONS:
+                    if migration["version"] <= current_version:
+                        continue
+
+                    logger.info(
+                        f"Applying migration {migration['version']}: {migration['name']}"
+                    )
+
+                    sql_statements = migration["sql"]
+                    for sql in sql_statements:
+                        if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
+                            parts = sql.split("ADD COLUMN", 1)
+                            table_name = parts[0].replace("ALTER TABLE", "").strip()
+                            column_name = parts[1].split()[0].strip()
+
+                            if not self._table_exists(conn, table_name):
+                                logger.warning(
+                                    f"Table {table_name} does not exist, "
+                                    f"skipping column {column_name}"
+                                )
+                                continue
+
+                            existing = self._get_existing_columns(conn, table_name)
+                            if column_name in existing:
+                                logger.info(
+                                    f"Column {column_name} already exists in "
+                                    f"{table_name}, skipping"
+                                )
+                                continue
+
+                        conn.execute(text(sql))
+
+                    conn.commit()
+                    self._record_migration(
+                        conn, migration["version"], migration["name"]
+                    )
+                    logger.info(
+                        f"Successfully applied migration {migration['version']}"
+                    )
+
+            engine.dispose()
+            logger.info("All migrations completed successfully")
+            return True
+
+        except Exception as exc:
+            logger.error(f"Migration failed: {exc}")
+            return False
+
+
 if __name__ == "__main__":
     # Command line usage
     import sys
@@ -545,11 +870,15 @@ if __name__ == "__main__":
     print(f"Database: {db_path}")
     print("-" * 50)
 
-    migrator = DatabaseMigrator(db_path)
+    database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
+    if not database_url.startswith("sqlite"):
+        active_migrator: Any = SQLAlchemyMigrator(database_url)
+    else:
+        active_migrator = DatabaseMigrator(db_path)
 
-    if migrator.needs_migration():
+    if active_migrator.needs_migration():
         print("Migration needed")
-        success = migrator.run_migrations()
+        success = active_migrator.run_migrations()
         if success:
             print("✅ Migration completed successfully!")
             sys.exit(0)

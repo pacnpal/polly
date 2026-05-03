@@ -1,0 +1,42 @@
+# Docker Compose override — MariaDB backend
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.mariadb.yml up -d
+#
+# Add the following to your .env file (or set the variables in your shell):
+#   DATABASE_URL=mysql+pymysql://polly:${MARIADB_PASSWORD:-polly_db_pass}@mariadb:3306/polly
+#
+# The PyMySQL driver must be available in the image.  Install it with:
+#   pip install polly[mariadb]
+# or add PyMySQL to the Dockerfile before running uv sync.
+
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: polly-mariadb
+    environment:
+      MARIADB_DATABASE: polly
+      MARIADB_USER: polly
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-polly_db_pass}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-polly_root_pass}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - polly-network
+
+  polly:
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=mysql+pymysql://polly:${MARIADB_PASSWORD:-polly_db_pass}@mariadb:3306/polly
+
+volumes:
+  mariadb_data:
+    driver: local
