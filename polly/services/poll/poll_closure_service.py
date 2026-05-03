@@ -161,7 +161,7 @@ class PollClosureService:
                     ping_role_id = TypeSafeColumn.get_string(fresh_poll, "ping_role_id")
                     ping_role_on_close = TypeSafeColumn.get_bool(fresh_poll, "ping_role_on_close", False)
                     ping_role_name = TypeSafeColumn.get_string(fresh_poll, "ping_role_name", "Unknown Role")
-                    
+
                     if ping_role_enabled and ping_role_id and ping_role_on_close:
                         try:
                             poll_channel_id = TypeSafeColumn.get_string(fresh_poll, "channel_id")
@@ -169,43 +169,158 @@ class PollClosureService:
                                 channel = bot_instance.get_channel(int(poll_channel_id))
                                 if channel and isinstance(channel, discord.TextChannel):
                                     poll_name = TypeSafeColumn.get_string(fresh_poll, "name", "Unknown Poll")
-                                    
-                                    # Prepare role ping message with comprehensive error handling
-                                    message_content = f"📊 **Poll '{poll_name}' has ended!**"
-                                    role_ping_attempted = False
-                                    
                                     role_id = str(ping_role_id)
-                                    message_content = f"<@&{role_id}> {message_content}"
-                                    role_ping_attempted = True
-                                    logger.info(
-                                        f"🔔 UNIFIED CLOSE {poll_id} - Will ping role {ping_role_name} ({role_id}) for poll closure"
-                                    )
-                                    
-                                    # Send role ping message with graceful error handling
+
+                                    # Build the closing notification: role mention + final
+                                    # results embed in a single message, matching the
+                                    # open path's atomic role-ping-with-content style.
+                                    fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
+
+                                    # Explicitly allow the configured role mention so the
+                                    # ping isn't suppressed by the client/bot default
+                                    # AllowedMentions policy. Pre-resolve the role on the
+                                    # guild and only attempt the mention if the role still
+                                    # exists and Discord would actually deliver the ping
+                                    # (role mentionable, or bot has Mention Everyone).
+                                    # That way the "Will ping role …" log reflects reality
+                                    # rather than always firing for a parseable id.
+                                    no_mentions = discord.AllowedMentions.none()
+                                    role_mention_attempted = False
+                                    allowed_mentions = no_mentions
+                                    message_content = fallback_content
                                     try:
-                                        await channel.send(content=message_content)
-                                        logger.info(f"✅ UNIFIED CLOSE {poll_id} - Sent role ping notification")
-                                    except discord.Forbidden as role_error:
-                                        if role_ping_attempted:
-                                            # Role ping failed due to permissions, try without role ping
-                                            logger.warning(
-                                                f"⚠️ UNIFIED CLOSE {poll_id} - Role ping failed due to permissions, posting without role ping: {role_error}"
+                                        role_id_int = int(role_id)
+                                        guild = getattr(channel, "guild", None)
+                                        role_obj = guild.get_role(role_id_int) if guild else None
+
+                                        # Resolve the bot's guild Member to check
+                                        # mention_everyone. `guild.me` is normally
+                                        # populated regardless of the members intent,
+                                        # but fall back to `get_member(bot.user.id)`
+                                        # for setups where it isn't cached.
+                                        bot_member = None
+                                        if guild:
+                                            bot_member = guild.me
+                                            if bot_member is None and bot_instance.user is not None:
+                                                bot_member = guild.get_member(bot_instance.user.id)
+
+                                        if bot_member is not None:
+                                            can_mention_everyone = bool(
+                                                channel.permissions_for(bot_member).mention_everyone
                                             )
+                                        else:
+                                            # Permissions are unknown — be optimistic
+                                            # and let the discord.Forbidden fallback
+                                            # handle the case where the bot really
+                                            # can't ping the role.
+                                            can_mention_everyone = True
+
+                                        if role_obj is None:
+                                            logger.warning(
+                                                f"⚠️ UNIFIED CLOSE {poll_id} - Configured role {role_id} not found in guild; posting without role ping"
+                                            )
+                                        elif not role_obj.mentionable and not can_mention_everyone:
+                                            logger.warning(
+                                                f"⚠️ UNIFIED CLOSE {poll_id} - Role {ping_role_name} ({role_id}) is not mentionable and bot lacks Mention Everyone; posting without role ping"
+                                            )
+                                        else:
+                                            allowed_mentions = discord.AllowedMentions(
+                                                everyone=False,
+                                                users=False,
+                                                roles=[role_obj],
+                                            )
+                                            message_content = f"<@&{role_id}> {fallback_content}"
+                                            role_mention_attempted = True
+                                    except (ValueError, TypeError):
+                                        logger.warning(
+                                            f"⚠️ UNIFIED CLOSE {poll_id} - Invalid role ID format: {role_id!r}; posting without role ping"
+                                        )
+
+                                    try:
+                                        from polly.discord_utils import create_poll_results_embed
+                                        results_embed = await create_poll_results_embed(fresh_poll)
+                                    except Exception as embed_error:
+                                        logger.error(
+                                            f"❌ UNIFIED CLOSE {poll_id} - Failed to build results embed for closure notification: {embed_error}"
+                                        )
+                                        results_embed = None
+
+                                    if role_mention_attempted:
+                                        logger.info(
+                                            f"🔔 UNIFIED CLOSE {poll_id} - Will ping role {ping_role_name} ({role_id}) for poll closure"
+                                        )
+
+                                    # `fallback_content` interpolates the user-controlled
+                                    # poll name, so every fallback send reuses the
+                                    # `no_mentions` policy declared above to prevent an
+                                    # "@everyone" or arbitrary role/user mention smuggled
+                                    # into the poll name from being pinged.
+
+                                    # Send the closure notification with graceful
+                                    # error handling. discord.Forbidden can mean the
+                                    # bot can't send at all, can't ping the role, or
+                                    # lacks Embed Links — try progressively cheaper
+                                    # variants until one works.
+                                    try:
+                                        await channel.send(
+                                            content=message_content,
+                                            embed=results_embed,
+                                            allowed_mentions=allowed_mentions,
+                                        )
+                                        logger.info(f"✅ UNIFIED CLOSE {poll_id} - Sent closure notification")
+                                    except discord.Forbidden as send_forbidden:
+                                        logger.warning(
+                                            f"⚠️ UNIFIED CLOSE {poll_id} - Closure send forbidden, attempting fallbacks: {send_forbidden}"
+                                        )
+
+                                        embed_fallback_handled = False
+                                        # Only retry without the role mention if we
+                                        # actually attempted one — otherwise the
+                                        # primary send is already the no-mention
+                                        # variant and a retry would be identical.
+                                        if role_mention_attempted:
                                             try:
-                                                fallback_content = f"📊 **Poll '{poll_name}' has ended!**"
-                                                await channel.send(content=fallback_content)
+                                                await channel.send(
+                                                    content=fallback_content,
+                                                    embed=results_embed,
+                                                    allowed_mentions=no_mentions,
+                                                )
                                                 logger.info(
                                                     f"✅ UNIFIED CLOSE {poll_id} - Sent fallback notification without role ping"
                                                 )
-                                            except Exception as fallback_error:
-                                                logger.error(
-                                                    f"❌ UNIFIED CLOSE {poll_id} - Fallback notification also failed: {fallback_error}"
+                                                embed_fallback_handled = True
+                                            except discord.Forbidden as embed_forbidden:
+                                                logger.warning(
+                                                    f"⚠️ UNIFIED CLOSE {poll_id} - Embed fallback forbidden, retrying as plain text: {embed_forbidden}"
                                                 )
-                                        else:
-                                            # Not a role ping issue, re-raise the error
-                                            raise role_error
+                                            except Exception as fallback_error:
+                                                # Log the failure but still drop through
+                                                # to the plain-text fallback so a transient
+                                                # HTTP/embed glitch doesn't leave users
+                                                # with no closure notification.
+                                                logger.error(
+                                                    f"❌ UNIFIED CLOSE {poll_id} - Embed fallback notification failed, retrying as plain text: {fallback_error}"
+                                                )
+
+                                        if not embed_fallback_handled:
+                                            # Plain-text fallback: bot likely lacks
+                                            # Embed Links (or never had a mention to
+                                            # drop). Send without an embed so users
+                                            # still see that the poll closed.
+                                            try:
+                                                await channel.send(
+                                                    content=fallback_content,
+                                                    allowed_mentions=no_mentions,
+                                                )
+                                                logger.info(
+                                                    f"✅ UNIFIED CLOSE {poll_id} - Sent plain-text fallback notification"
+                                                )
+                                            except Exception as plain_error:
+                                                logger.error(
+                                                    f"❌ UNIFIED CLOSE {poll_id} - Plain-text fallback also failed: {plain_error}"
+                                                )
                                     except Exception as send_error:
-                                        logger.error(f"❌ UNIFIED CLOSE {poll_id} - Error sending role ping notification: {send_error}")
+                                        logger.error(f"❌ UNIFIED CLOSE {poll_id} - Error sending closure notification: {send_error}")
                                 else:
                                     logger.warning(f"⚠️ UNIFIED CLOSE {poll_id} - Could not find or access channel {poll_channel_id}")
                             else:
