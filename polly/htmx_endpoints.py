@@ -680,19 +680,13 @@ async def open_poll_now_htmx(
                     },
                 )
 
-            # Capture previous open_time so we can restore it if the open fails.
-            # (Poll has no updated_at column, so we don't track that here.)
-            prev_open_time = TypeSafeColumn.get_datetime(poll, "open_time")
-
-            # Update poll status to active and set open time to now
-            poll.status = "active"
-            poll.open_time = datetime.now(pytz.UTC)
-            await db.commit()
-
-        # Post the poll to Discord immediately using unified opening service.
-        # We deliberately leave the APScheduler job in place until the unified
-        # open succeeds, so that a failure path can fall back to the scheduled
-        # opening rather than leaving the poll permanently un-openable.
+        # Do NOT pre-commit status="active" before calling the unified service.
+        # If we commit "active" while the APScheduler job is still registered,
+        # the scheduler can fire, see the poll already "active", short-circuit
+        # (for reason="scheduled"), and consume the job.  If the manual open
+        # then fails we'd revert to "scheduled" but the job is gone, leaving
+        # the poll permanently un-openable.  The service sets status="active"
+        # atomically in its own DB step after the Discord post succeeds.
         try:
             from .services.poll.poll_open_service import poll_opening_service
 
@@ -705,9 +699,6 @@ async def open_poll_now_htmx(
 
             if not result["success"]:
                 logger.error(f"Unified poll opening failed for poll {poll_id}: {result.get('error')}")
-                await _revert_poll_status_to_scheduled(
-                    poll_id, open_time=prev_open_time
-                )
                 return templates.TemplateResponse(
                     "htmx/components/inline_error.html",
                     {"request": request, "message": result.get("error", "Error opening poll")},
@@ -715,7 +706,7 @@ async def open_poll_now_htmx(
 
             logger.info(f"Poll {poll_id} opened immediately by user {current_user.id} via unified service")
 
-            # Now that the open succeeded, remove the scheduled opening job.
+            # Remove the scheduled opening job now that the manual open succeeded.
             try:
                 scheduler.remove_job(f"open_poll_{poll_id}")
                 logger.info(f"Removed scheduled opening job for poll {poll_id}")
@@ -723,9 +714,6 @@ async def open_poll_now_htmx(
                 logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
-            await _revert_poll_status_to_scheduled(
-                poll_id, open_time=prev_open_time
-            )
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
                 {"request": request, "message": "Error posting poll to Discord"},

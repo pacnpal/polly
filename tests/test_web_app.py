@@ -684,18 +684,31 @@ class TestWebAppSecurity:
 class TestWebAppIntegration:
     """Test web application integration with other components."""
 
-    def test_database_integration(self, web_client, sample_discord_user, db_session):
-        """Test web app integration with database."""
-        with (
-            patch("polly.web_app.require_auth", return_value=sample_discord_user),
-            patch("polly.web_app.get_db_session", return_value=db_session),
-            patch("polly.web_app.get_polls_htmx") as mock_get_polls,
-        ):
-            mock_get_polls.return_value = Mock()
+    def test_database_integration(self, sample_discord_user):
+        """Test web app route is accessible with valid auth token.
 
-            response = web_client.get("/htmx/polls")
+        ``get_db_session`` is no longer imported in ``web_app.py`` (async DB
+        is used instead), so the old mock is removed.  A real JWT is created so
+        both the auth middleware and the ``require_auth`` dependency resolve
+        without mocking.  Because the route closure captures ``get_polls_htmx``
+        at ``create_app()`` time, we patch ``polly.htmx_endpoints.get_polls_htmx``
+        *before* creating the app so the closure picks up the mock.
+        """
+        from fastapi.responses import HTMLResponse
+        from fastapi.testclient import TestClient
+        from polly.auth import create_access_token
+        from polly.web_app import create_app
+
+        mock_response = HTMLResponse("<html><body>ok</body></html>")
+        with patch(
+            "polly.htmx_endpoints.get_polls_htmx",
+            AsyncMock(return_value=mock_response),
+        ) as mock_get_polls:
+            app = create_app()
+            token = create_access_token(sample_discord_user)
+            client = TestClient(app)
+            response = client.get("/htmx/polls", cookies={"access_token": token})
             assert response.status_code == status.HTTP_200_OK
-
             mock_get_polls.assert_called_once()
 
     def test_discord_bot_integration(self, web_client, sample_discord_user, mock_bot):
