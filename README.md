@@ -262,6 +262,96 @@ uv run mypy polly/
 
 ### Docker Deployment (Recommended)
 
+#### Option A — Prebuilt image from GitHub Container Registry (fastest)
+
+Each push to `main` automatically publishes a fresh image to the GitHub Container Registry. You can run Polly without cloning the source or building anything locally.
+
+1. **Create your working directory and configure environment**
+   ```bash
+   mkdir polly && cd polly
+   curl -o .env https://raw.githubusercontent.com/pacnpal/polly/main/.env.example
+   # Edit .env with your Discord bot credentials
+   ```
+
+2. **Create a `docker-compose.yml`** that references the prebuilt image:
+   ```yaml
+   services:
+     redis:
+       image: redis:7-alpine
+       container_name: polly-redis
+       ports:
+         - "6340:6379"
+       command: redis-server --requirepass ${REDIS_PASSWORD:-polly_redis_pass}
+       volumes:
+         - redis_data:/data
+       restart: unless-stopped
+       healthcheck:
+         test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-polly_redis_pass}", "ping"]
+         interval: 30s
+         timeout: 10s
+         retries: 3
+       networks:
+         - polly-network
+
+     polly:
+       image: ghcr.io/pacnpal/polly:main   # prebuilt image — no build step needed
+       container_name: polly-app
+       ports:
+         - "127.0.0.1:8000:8000"
+       env_file:
+         - .env
+       environment:
+         - DISCORD_TOKEN=${DISCORD_TOKEN}
+         - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+         - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+         - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
+         - SECRET_KEY=${SECRET_KEY}
+         - REDIS_URL=redis://:${REDIS_PASSWORD:-polly_redis_pass}@redis:6379
+         - REDIS_HOST=redis
+         - REDIS_PORT=6379
+         - REDIS_PASSWORD=${REDIS_PASSWORD:-polly_redis_pass}
+       volumes:
+         - ./db:/app/db
+         - ./data:/app/data
+         - ./logs:/app/logs
+         - ./static:/app/static
+       restart: unless-stopped
+       depends_on:
+         redis:
+           condition: service_healthy
+       healthcheck:
+         test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+         interval: 30s
+         timeout: 10s
+         retries: 3
+         start_period: 30s
+       networks:
+         - polly-network
+       user: "1000:1000"
+
+   volumes:
+     redis_data:
+
+   networks:
+     polly-network:
+       driver: bridge
+   ```
+
+3. **Pull and start**
+   ```bash
+   docker compose pull
+   docker compose up -d
+   ```
+
+To pin to a specific release instead of always following `main`, replace the tag:
+```yaml
+image: ghcr.io/pacnpal/polly:v1.2.3   # replace with a real semver tag
+```
+
+---
+
+#### Option B — Build from source
+
 1. **Clone and Configure**
    ```bash
    git clone <repository-url>
