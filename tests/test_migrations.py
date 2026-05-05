@@ -4,7 +4,7 @@ Covers the _sqlite_path_from_url utility and the SQLAlchemyMigrator
 that powers the PostgreSQL / MariaDB migration path.
 """
 
-import pytest
+import pytest  # noqa: F401 — kept for the pytest marker on slow/integration tests
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
@@ -44,14 +44,14 @@ class TestSqlitePathFromUrl:
 class TestSQLAlchemyMigratorUnit:
     """Fast unit tests that mock the SQLAlchemy engine."""
 
-    def _migrator(self):
+    def _make_test_migrator(self):
         return SQLAlchemyMigrator("postgresql://polly:pass@localhost/polly")
 
     # _record_migration stores naive UTC -----------------------------------
 
     def test_record_migration_stores_naive_utc(self):
         """_record_migration must not pass a tz-aware datetime to the DB."""
-        migrator = self._migrator()
+        migrator = self._make_test_migrator()
         mock_conn = MagicMock()
         migrator._record_migration(mock_conn, 1, "initial_schema")
 
@@ -66,7 +66,7 @@ class TestSQLAlchemyMigratorUnit:
     # is_database_initialized checks polls, votes, and users ----------------
 
     def test_is_database_initialized_all_three_tables(self):
-        migrator = self._migrator()
+        migrator = self._make_test_migrator()
         mock_conn = MagicMock()
         # All three tables present → initialized
         migrator._table_exists = MagicMock(return_value=True)
@@ -78,7 +78,7 @@ class TestSQLAlchemyMigratorUnit:
         assert result is True
 
     def test_is_database_initialized_missing_users(self):
-        migrator = self._migrator()
+        migrator = self._make_test_migrator()
         # polls and votes present, users absent
         def table_exists_side_effect(conn, table_name):
             return table_name != "users"
@@ -91,3 +91,27 @@ class TestSQLAlchemyMigratorUnit:
         with patch.object(migrator, "_make_engine", return_value=mock_engine):
             result = migrator.is_database_initialized()
         assert result is False
+
+    # run_migrations() redirects to initialize_database on partial schema ---
+
+    def test_run_migrations_partial_schema_calls_initialize(self):
+        """If any core table is missing, run_migrations() must delegate to
+        initialize_database() rather than attempting incremental ALTER TABLE."""
+        migrator = self._make_test_migrator()
+
+        # polls exists but users is missing → partial schema
+        def table_exists_side_effect(conn, table_name):
+            return table_name == "polls"
+
+        mock_conn = MagicMock()
+        migrator._table_exists = MagicMock(side_effect=table_exists_side_effect)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(migrator, "_make_engine", return_value=mock_engine):
+            with patch.object(migrator, "initialize_database", return_value=True) as mock_init:
+                result = migrator.run_migrations()
+
+        mock_init.assert_called_once()
+        assert result is True

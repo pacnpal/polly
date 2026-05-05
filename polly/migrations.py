@@ -814,13 +814,22 @@ class SQLAlchemyMigrator:
         try:
             engine = self._make_engine()
 
-            # Check for an empty database in a short-lived connection so the
-            # connection is fully released before we hand control to
-            # initialize_database() (which creates its own engine + connections).
+            # Check whether the core schema is fully present in a short-lived
+            # connection so the connection is fully released before we hand
+            # control to initialize_database() (which creates its own engine +
+            # connections).  We check all three required tables — not just
+            # 'polls' — so that a partially-initialised database (e.g. polls
+            # exists but votes/users are missing) is also redirected to
+            # initialize_database(), which uses create_all() and is safe to
+            # call on an incomplete schema.
             with engine.connect() as conn:
-                polls_exists = self._table_exists(conn, "polls")
+                schema_complete = (
+                    self._table_exists(conn, "polls")
+                    and self._table_exists(conn, "votes")
+                    and self._table_exists(conn, "users")
+                )
 
-            if not polls_exists:
+            if not schema_complete:
                 engine.dispose()
                 return self.initialize_database()
 
