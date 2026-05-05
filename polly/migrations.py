@@ -502,9 +502,9 @@ def _sqlite_path_from_url(database_url: str) -> str:
     SQLAlchemy SQLite URLs use three slashes for relative paths and four for
     absolute paths::
 
-        sqlite:///relative.db   →  relative.db
-        sqlite:////absolute.db  →  /absolute.db
-        sqlite:///:memory:      →  :memory:
+        sqlite:///relative.db           →  relative.db
+        sqlite:////absolute/path.db     →  /absolute/path.db
+        sqlite:///:memory:              →  :memory:
 
     ``urllib.parse.urlparse`` strips one of those leading slashes into the
     ``path`` component, so we just do a simple prefix strip.

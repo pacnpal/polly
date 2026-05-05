@@ -4,7 +4,6 @@ Covers the _sqlite_path_from_url utility and the SQLAlchemyMigrator
 that powers the PostgreSQL / MariaDB migration path.
 """
 
-import pytest  # noqa: F401 — kept for the pytest marker on slow/integration tests
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
