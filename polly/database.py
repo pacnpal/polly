@@ -122,6 +122,26 @@ def _is_async_driver_url(url: str) -> bool:
     )
 
 
+class AsyncDatabaseNotConfiguredError(RuntimeError):
+    """Raised when async DB access is requested but ASYNC_DATABASE_URL is not
+    set to an async-driver URL (e.g. plain ``postgresql://...`` instead of
+    ``postgresql+asyncpg://...``).
+
+    Catching this specific exception type (rather than the base RuntimeError)
+    allows callers to implement targeted fallback behaviour.
+    """
+
+
+def _safe_url(url: str) -> str:
+    """Return a password-redacted representation of a database URL."""
+    try:
+        from sqlalchemy.engine import make_url
+
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "<unparseable URL>"
+
+
 # Lazy-init: ``create_async_engine`` raises InvalidRequestError if given a sync
 # driver URL (e.g. plain ``postgresql://...``), so we defer construction until
 # first use AND only build the engine when the URL is async-capable. Existing
@@ -134,11 +154,12 @@ _async_engine_lock = threading.Lock()
 # ASYNC_DATABASE_URL setting on import rather than on the first request.
 if not _is_async_driver_url(ASYNC_DATABASE_URL):
     logger.warning(
-        "ASYNC_DATABASE_URL (%r) does not use an async driver. "
-        "Calls to get_async_db / get_async_db_session will raise RuntimeError "
-        "until ASYNC_DATABASE_URL is set to an async-capable URL "
+        "ASYNC_DATABASE_URL (%s) does not use an async driver. "
+        "Calls to get_async_db / get_async_db_session will raise "
+        "AsyncDatabaseNotConfiguredError until ASYNC_DATABASE_URL is set "
+        "to an async-capable URL "
         "(e.g. 'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...').",
-        ASYNC_DATABASE_URL.split("@")[-1] if "@" in ASYNC_DATABASE_URL else ASYNC_DATABASE_URL,
+        _safe_url(ASYNC_DATABASE_URL),
     )
 
 
@@ -148,8 +169,9 @@ def _build_async_engine():
     Thread-safe: uses a module-level lock so concurrent first-use calls
     create exactly one engine/sessionmaker, with no leaks.
 
-    Raises ``RuntimeError`` if ``ASYNC_DATABASE_URL`` is not an async-driver URL,
-    so callers get a clear message instead of an opaque SQLAlchemy error.
+    Raises ``AsyncDatabaseNotConfiguredError`` if ``ASYNC_DATABASE_URL`` is not
+    an async-driver URL, so callers can catch the specific exception type and
+    implement fallback behaviour.
     """
     global _async_engine, _AsyncSessionLocal
     # Fast path (no lock needed once initialised).
@@ -162,21 +184,11 @@ def _build_async_engine():
             return _async_engine, _AsyncSessionLocal
 
         if not _is_async_driver_url(ASYNC_DATABASE_URL):
-            # Don't echo the raw URL - it may include credentials. Show a
-            # password-redacted rendering for diagnostics.
-            try:
-                from sqlalchemy.engine import make_url
-
-                safe_url = make_url(ASYNC_DATABASE_URL).render_as_string(
-                    hide_password=True
-                )
-            except Exception:
-                safe_url = "<unparseable URL>"
-            raise RuntimeError(
+            raise AsyncDatabaseNotConfiguredError(
                 "Async DB access requested but ASYNC_DATABASE_URL is not an "
                 "async-driver URL. Set ASYNC_DATABASE_URL explicitly, e.g. "
                 "'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...'. "
-                f"Current value (password redacted): {safe_url}"
+                f"Current value (password redacted): {_safe_url(ASYNC_DATABASE_URL)}"
             )
 
         connect_args = (

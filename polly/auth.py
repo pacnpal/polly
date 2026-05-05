@@ -16,9 +16,9 @@ import pytz
 from sqlalchemy import select
 
 try:
-    from .database import get_async_db_session, get_db_session, User
+    from .database import get_async_db_session, get_db_session, User, AsyncDatabaseNotConfiguredError
 except ImportError:
-    from database import get_async_db_session, get_db_session, User  # type: ignore
+    from database import get_async_db_session, get_db_session, User, AsyncDatabaseNotConfiguredError  # type: ignore
 
 # Discord OAuth settings
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
@@ -207,16 +207,13 @@ async def save_user_to_db(user: DiscordUser) -> None:
                 db.add(db_user)
 
             await db.commit()
-    except RuntimeError as exc:
-        if "ASYNC_DATABASE_URL" in str(exc):
-            logger.warning(
-                "Async DB unavailable for save_user_to_db (%s); "
-                "falling back to sync path.",
-                exc,
-            )
-            save_user_to_db_sync(user)
-        else:
-            raise
+    except AsyncDatabaseNotConfiguredError as exc:
+        logger.warning(
+            "Async DB unavailable for save_user_to_db (%s); "
+            "falling back to sync path.",
+            exc,
+        )
+        save_user_to_db_sync(user)
 
 
 def save_user_to_db_sync(user: DiscordUser) -> None:
