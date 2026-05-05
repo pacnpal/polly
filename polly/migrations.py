@@ -496,6 +496,22 @@ class DatabaseMigrator:
             return False
 
 
+def _sqlite_path_from_url(database_url: str) -> str:
+    """Extract the filesystem path from a ``sqlite://`` URL.
+
+    SQLAlchemy SQLite URLs use three slashes for relative paths and four for
+    absolute paths::
+
+        sqlite:///relative.db   →  relative.db
+        sqlite:////absolute.db  →  /absolute.db
+        sqlite:///:memory:      →  :memory:
+
+    ``urllib.parse.urlparse`` strips one of those leading slashes into the
+    ``path`` component, so we just do a simple prefix strip.
+    """
+    return database_url[len("sqlite:///"):]
+
+
 def migrate_database_if_needed(db_path: str = DEFAULT_DB_PATH) -> bool:
     """
     Migrate database only if needed.
@@ -505,7 +521,9 @@ def migrate_database_if_needed(db_path: str = DEFAULT_DB_PATH) -> bool:
     if not database_url.startswith("sqlite"):
         migrator = SQLAlchemyMigrator(database_url)
     else:
-        migrator = DatabaseMigrator(db_path)
+        # Parse the actual path from DATABASE_URL so the migrator and the
+        # SQLAlchemy engine always target the same file.
+        migrator = DatabaseMigrator(_sqlite_path_from_url(database_url))
 
     if not migrator.needs_migration():
         logger.info("Database is up to date, no migration needed")
@@ -521,13 +539,16 @@ def initialize_database_if_missing(db_path: str = DEFAULT_DB_PATH) -> bool:
     Returns True if database is ready, False if initialization failed.
 
     For PostgreSQL and MariaDB the DATABASE_URL environment variable is used;
-    db_path is only relevant for the default SQLite backend.
+    db_path is only relevant when DATABASE_URL is absent and the default SQLite
+    path is used.
     """
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
         migrator: Union[DatabaseMigrator, SQLAlchemyMigrator] = SQLAlchemyMigrator(database_url)
     else:
-        migrator = DatabaseMigrator(db_path)
+        # Parse the actual path from DATABASE_URL so the migrator and the
+        # SQLAlchemy engine always target the same file.
+        migrator = DatabaseMigrator(_sqlite_path_from_url(database_url))
 
     if migrator.is_database_initialized() and not migrator.needs_migration():
         logger.info("Database is already initialized and up to date")
@@ -687,7 +708,10 @@ class SQLAlchemyMigrator:
                 "INSERT INTO schema_migrations (version, name, applied_at) "
                 "VALUES (:v, :n, :t)"
             ),
-            {"v": version, "n": name, "t": datetime.now(pytz.UTC)},
+            # Store naive UTC so it is compatible with TIMESTAMP (without time
+            # zone) on PostgreSQL and with the rest of the DateTime columns in
+            # the schema.
+            {"v": version, "n": name, "t": datetime.now(pytz.UTC).replace(tzinfo=None)},
         )
         conn.commit()
 
@@ -790,12 +814,17 @@ class SQLAlchemyMigrator:
         try:
             engine = self._make_engine()
 
-            # If the database is completely empty, use create_all instead
+            # Check for an empty database in a short-lived connection so the
+            # connection is fully released before we hand control to
+            # initialize_database() (which creates its own engine + connections).
             with engine.connect() as conn:
-                if not self._table_exists(conn, "polls"):
-                    engine.dispose()
-                    return self.initialize_database()
+                polls_exists = self._table_exists(conn, "polls")
 
+            if not polls_exists:
+                engine.dispose()
+                return self.initialize_database()
+
+            with engine.connect() as conn:
                 self._ensure_migrations_table(conn)
                 current_version = self._get_applied_version(conn)
 

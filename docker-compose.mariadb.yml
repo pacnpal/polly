@@ -7,9 +7,10 @@
 # will expand it in the DATABASE_URL below.  Example .env entries:
 #   MARIADB_PASSWORD=your_secure_password
 #
-# The PyMySQL driver must be available in the image.  Install it with:
-#   pip install polly[mariadb]
-# or add PyMySQL to the Dockerfile before running uv sync.
+# The PyMySQL driver must be present in the image.  Before building, add the
+# mariadb extra to the project and regenerate the lockfile:
+#   uv sync --extra mariadb
+#   docker compose build polly
 
 services:
   mariadb:

@@ -7,9 +7,10 @@
 # will expand it in the DATABASE_URL below.  Example .env entries:
 #   POSTGRES_PASSWORD=your_secure_password
 #
-# The psycopg2 driver must be available in the image.  Install it with:
-#   pip install polly[postgres]
-# or add psycopg2-binary to the Dockerfile before running uv sync.
+# The psycopg2 driver must be present in the image.  Before building, add the
+# postgres extra to the project and regenerate the lockfile:
+#   uv sync --extra postgres
+#   docker compose build polly
 
 services:
   postgres:
