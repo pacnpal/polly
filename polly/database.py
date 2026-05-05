@@ -25,8 +25,12 @@ from typing import AsyncIterator, List, Optional
 from contextlib import asynccontextmanager
 from decouple import config
 import json
+import logging
 import pytz
+import threading
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 class TypeSafeColumn:
@@ -124,45 +128,66 @@ def _is_async_driver_url(url: str) -> bool:
 # sync deployments that haven't set ASYNC_DATABASE_URL keep working.
 _async_engine: "AsyncEngine | None" = None
 _AsyncSessionLocal: "async_sessionmaker[AsyncSession] | None" = None
+_async_engine_lock = threading.Lock()
+
+# Emit a startup-time warning so Postgres deployments discover the missing
+# ASYNC_DATABASE_URL setting on import rather than on the first request.
+if not _is_async_driver_url(ASYNC_DATABASE_URL):
+    logger.warning(
+        "ASYNC_DATABASE_URL (%r) does not use an async driver. "
+        "Calls to get_async_db / get_async_db_session will raise RuntimeError "
+        "until ASYNC_DATABASE_URL is set to an async-capable URL "
+        "(e.g. 'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...').",
+        ASYNC_DATABASE_URL.split("@")[-1] if "@" in ASYNC_DATABASE_URL else ASYNC_DATABASE_URL,
+    )
 
 
 def _build_async_engine():
     """Construct (or return cached) async engine + sessionmaker.
 
+    Thread-safe: uses a module-level lock so concurrent first-use calls
+    create exactly one engine/sessionmaker, with no leaks.
+
     Raises ``RuntimeError`` if ``ASYNC_DATABASE_URL`` is not an async-driver URL,
     so callers get a clear message instead of an opaque SQLAlchemy error.
     """
     global _async_engine, _AsyncSessionLocal
+    # Fast path (no lock needed once initialised).
     if _async_engine is not None:
         return _async_engine, _AsyncSessionLocal
 
-    if not _is_async_driver_url(ASYNC_DATABASE_URL):
-        # Don't echo the raw URL - it may include credentials. Show a
-        # password-redacted rendering for diagnostics.
-        try:
-            from sqlalchemy.engine import make_url
+    with _async_engine_lock:
+        # Double-checked: another thread may have initialised while we waited.
+        if _async_engine is not None:
+            return _async_engine, _AsyncSessionLocal
 
-            safe_url = make_url(ASYNC_DATABASE_URL).render_as_string(
-                hide_password=True
+        if not _is_async_driver_url(ASYNC_DATABASE_URL):
+            # Don't echo the raw URL - it may include credentials. Show a
+            # password-redacted rendering for diagnostics.
+            try:
+                from sqlalchemy.engine import make_url
+
+                safe_url = make_url(ASYNC_DATABASE_URL).render_as_string(
+                    hide_password=True
+                )
+            except Exception:
+                safe_url = "<unparseable URL>"
+            raise RuntimeError(
+                "Async DB access requested but ASYNC_DATABASE_URL is not an "
+                "async-driver URL. Set ASYNC_DATABASE_URL explicitly, e.g. "
+                "'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...'. "
+                f"Current value (password redacted): {safe_url}"
             )
-        except Exception:
-            safe_url = "<unparseable URL>"
-        raise RuntimeError(
-            "Async DB access requested but ASYNC_DATABASE_URL is not an "
-            "async-driver URL. Set ASYNC_DATABASE_URL explicitly, e.g. "
-            "'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...'. "
-            f"Current value (password redacted): {safe_url}"
-        )
 
-    connect_args = (
-        {"check_same_thread": False}
-        if ASYNC_DATABASE_URL.startswith("sqlite")
-        else {}
-    )
-    _async_engine = create_async_engine(ASYNC_DATABASE_URL, connect_args=connect_args)
-    _AsyncSessionLocal = async_sessionmaker(
-        _async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
-    )
+        connect_args = (
+            {"check_same_thread": False}
+            if ASYNC_DATABASE_URL.startswith("sqlite")
+            else {}
+        )
+        _async_engine = create_async_engine(ASYNC_DATABASE_URL, connect_args=connect_args)
+        _AsyncSessionLocal = async_sessionmaker(
+            _async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+        )
     return _async_engine, _AsyncSessionLocal
 
 
