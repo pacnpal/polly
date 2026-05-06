@@ -507,9 +507,11 @@ def _sqlite_path_from_url(database_url: str) -> str:
         sqlite:///:memory:              →  :memory:
         sqlite+pysqlite:///relative.db  →  relative.db
 
-    Uses ``sqlalchemy.engine.make_url`` so that dialect+driver variants such
-    as ``sqlite+pysqlite://`` are parsed correctly.
+    Uses SQLAlchemy's ``make_url`` so that dialect+driver variants such as
+    ``sqlite+pysqlite://`` are parsed correctly.
     """
+    # Lazy import: SQLAlchemy may not be installed in all environments and
+    # this module is imported at startup before the dependency check runs.
     from sqlalchemy.engine import make_url
 
     return make_url(database_url).database or ""

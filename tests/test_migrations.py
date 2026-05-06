@@ -45,6 +45,7 @@ class TestSqlitePathFromUrl:
         assert _sqlite_path_from_url("sqlite+pysqlite:///relative.db") == "relative.db"
 
     def test_pysqlite_absolute_path(self):
+        """sqlite+pysqlite:// dialect+driver form parses absolute paths correctly."""
         assert _sqlite_path_from_url("sqlite+pysqlite:////absolute/path.db") == "/absolute/path.db"
 
 
