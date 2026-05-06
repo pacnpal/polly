@@ -49,19 +49,19 @@ class TestMemoryDatabaseRejection:
     """sqlite:///:memory: must be rejected before touching DatabaseMigrator."""
 
     @staticmethod
-    def _config_returning_memory(key, default=""):
+    def _mock_config_with_memory_db(key, default=""):
         """Side-effect for patching decouple.config to return :memory: for DATABASE_URL."""
         if key == "DATABASE_URL":
             return "sqlite:///:memory:"
         return default
 
     def test_migrate_database_if_needed_rejects_memory(self):
-        with patch("polly.migrations.config", side_effect=self._config_returning_memory):
+        with patch("polly.migrations.config", side_effect=self._mock_config_with_memory_db):
             result = migrate_database_if_needed()
         assert result is False
 
     def test_initialize_database_if_missing_rejects_memory(self):
-        with patch("polly.migrations.config", side_effect=self._config_returning_memory):
+        with patch("polly.migrations.config", side_effect=self._mock_config_with_memory_db):
             result = initialize_database_if_missing()
         assert result is False
 

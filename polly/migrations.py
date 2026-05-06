@@ -518,8 +518,8 @@ def _is_memory_db(sqlite_path: str) -> bool:
     ``:memory:`` databases do not persist between connections, so the
     ``DatabaseMigrator`` (which opens its own sqlite3 connection) would
     operate on a completely separate, transient in-memory store that the
-    SQLAlchemy engine used by the app never sees.  Callers should return
-    ``False`` / exit immediately when this function returns ``True``.
+    SQLAlchemy engine used by the app never sees.  When this function returns
+    ``True``, callers should return ``False`` or exit immediately.
     """
     if sqlite_path == ":memory:":
         logger.error(
