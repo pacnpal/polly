@@ -15,6 +15,7 @@ RUN uv sync --frozen
 # Copy application code
 COPY polly/ ./polly/
 COPY templates/ ./templates/
+COPY static/ ./static/
 COPY *.py ./
 
 # Create non-root user
