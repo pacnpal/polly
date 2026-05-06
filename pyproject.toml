@@ -50,7 +50,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
-# pip install polly[postgres]  — PostgreSQL support
+# uv sync --extra postgres  — PostgreSQL support
 postgres = ["psycopg2-binary>=2.9.0"]
-# pip install polly[mariadb]   — MariaDB / MySQL support
+# uv sync --extra mariadb   — MariaDB / MySQL support
 mariadb = ["PyMySQL>=1.1.0"]

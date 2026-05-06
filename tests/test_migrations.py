@@ -40,6 +40,13 @@ class TestSqlitePathFromUrl:
         result = _sqlite_path_from_url("sqlite:///./db/polly.db")
         assert result == "./db/polly.db"
 
+    def test_pysqlite_driver_variant(self):
+        """sqlite+pysqlite:// dialect+driver form is parsed correctly."""
+        assert _sqlite_path_from_url("sqlite+pysqlite:///relative.db") == "relative.db"
+
+    def test_pysqlite_absolute_path(self):
+        assert _sqlite_path_from_url("sqlite+pysqlite:////absolute/path.db") == "/absolute/path.db"
+
 
 # ---------------------------------------------------------------------------
 # :memory: fast-fail tests

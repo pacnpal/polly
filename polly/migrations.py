@@ -505,11 +505,14 @@ def _sqlite_path_from_url(database_url: str) -> str:
         sqlite:///relative.db           →  relative.db
         sqlite:////absolute/path.db     →  /absolute/path.db
         sqlite:///:memory:              →  :memory:
+        sqlite+pysqlite:///relative.db  →  relative.db
 
-    ``urllib.parse.urlparse`` strips one of those leading slashes into the
-    ``path`` component, so we just do a simple prefix strip.
+    Uses ``sqlalchemy.engine.make_url`` so that dialect+driver variants such
+    as ``sqlite+pysqlite://`` are parsed correctly.
     """
-    return database_url[len("sqlite:///"):]
+    from sqlalchemy.engine import make_url
+
+    return make_url(database_url).database or ""
 
 
 def _is_memory_db(sqlite_path: str) -> bool:
@@ -761,48 +764,47 @@ class SQLAlchemyMigrator:
 
     def database_exists(self) -> bool:
         """For server-based databases the server is assumed to be reachable."""
+        engine = self._make_engine()
         try:
-            engine = self._make_engine()
             with engine.connect():
                 pass
-            engine.dispose()
             return True
         except Exception as exc:
             logger.warning(f"Cannot reach database server: {exc}")
             return False
+        finally:
+            engine.dispose()
 
     def is_database_initialized(self) -> bool:
         """Return True if the core tables (polls, votes, users) exist."""
+        engine = self._make_engine()
         try:
-            engine = self._make_engine()
             with engine.connect() as conn:
-                result = (
+                return (
                     self._table_exists(conn, "polls")
                     and self._table_exists(conn, "votes")
                     and self._table_exists(conn, "users")
                 )
-            engine.dispose()
-            return result
         except Exception:
             return False
+        finally:
+            engine.dispose()
 
     def get_current_schema_version(self) -> int:
+        engine = self._make_engine()
         try:
-            engine = self._make_engine()
             with engine.connect() as conn:
                 if not self._table_exists(conn, "schema_migrations"):
                     # Tables may exist from a manual setup — treat as version 1
                     if self._table_exists(conn, "polls"):
-                        engine.dispose()
                         return 1
-                    engine.dispose()
                     return 0
-                version = self._get_applied_version(conn)
-            engine.dispose()
-            return version
+                return self._get_applied_version(conn)
         except Exception as exc:
             logger.error(f"Error getting schema version: {exc}")
             return 0
+        finally:
+            engine.dispose()
 
     def needs_migration(self) -> bool:
         if not self.database_exists():
@@ -814,20 +816,36 @@ class SQLAlchemyMigrator:
         try:
             # Lazy import to avoid circular imports
             from polly.database import Base
+            from sqlalchemy import text
 
             engine = self._make_engine()
-            Base.metadata.create_all(engine)
-            logger.info("Created all tables via SQLAlchemy metadata")
+            try:
+                Base.metadata.create_all(engine)
+                logger.info("Created all tables via SQLAlchemy metadata")
 
-            with engine.connect() as conn:
-                self._ensure_migrations_table(conn)
-                # Stamp all migrations as applied on a fresh database
-                for migration in _SQLALCHEMY_MIGRATIONS:
-                    self._record_migration(conn, migration["version"], migration["name"])
-                # Also record version 1 (initial schema created by create_all)
-                self._record_migration(conn, 1, "initial_schema")
+                with engine.connect() as conn:
+                    self._ensure_migrations_table(conn)
+                    # Fetch already-applied versions to avoid PRIMARY KEY
+                    # conflicts when initialize_database() is called on a
+                    # partially-initialized database that already has some
+                    # schema_migrations rows.
+                    result = conn.execute(
+                        text("SELECT version FROM schema_migrations")
+                    )
+                    applied = {row[0] for row in result}
 
-            engine.dispose()
+                    # Stamp version 1 (initial schema created by create_all)
+                    if 1 not in applied:
+                        self._record_migration(conn, 1, "initial_schema")
+                    # Stamp all subsequent migrations as applied
+                    for migration in _SQLALCHEMY_MIGRATIONS:
+                        if migration["version"] not in applied:
+                            self._record_migration(
+                                conn, migration["version"], migration["name"]
+                            )
+            finally:
+                engine.dispose()
+
             logger.info("Database initialized successfully (PostgreSQL/MariaDB)")
             return True
         except Exception as exc:
@@ -847,76 +865,79 @@ class SQLAlchemyMigrator:
             # exists but votes/users are missing) is also redirected to
             # initialize_database(), which uses create_all() and is safe to
             # call on an incomplete schema.
-            with engine.connect() as conn:
-                schema_complete = (
-                    self._table_exists(conn, "polls")
-                    and self._table_exists(conn, "votes")
-                    and self._table_exists(conn, "users")
-                )
+            try:
+                with engine.connect() as conn:
+                    schema_complete = (
+                        self._table_exists(conn, "polls")
+                        and self._table_exists(conn, "votes")
+                        and self._table_exists(conn, "users")
+                    )
+            finally:
+                engine.dispose()
 
             if not schema_complete:
-                engine.dispose()
                 return self.initialize_database()
 
-            with engine.connect() as conn:
-                self._ensure_migrations_table(conn)
-                current_version = self._get_applied_version(conn)
+            engine = self._make_engine()
+            try:
+                with engine.connect() as conn:
+                    self._ensure_migrations_table(conn)
+                    current_version = self._get_applied_version(conn)
 
-                if current_version >= _LATEST_VERSION:
-                    logger.info("Database is up to date")
-                    engine.dispose()
-                    return True
-
-                logger.info(
-                    f"Migrating database from version {current_version} "
-                    f"to {_LATEST_VERSION}"
-                )
-
-                from sqlalchemy import text
-
-                for migration in _SQLALCHEMY_MIGRATIONS:
-                    if migration["version"] <= current_version:
-                        continue
+                    if current_version >= _LATEST_VERSION:
+                        logger.info("Database is up to date")
+                        return True
 
                     logger.info(
-                        f"Applying migration {migration['version']}: {migration['name']}"
+                        f"Migrating database from version {current_version} "
+                        f"to {_LATEST_VERSION}"
                     )
 
-                    sql_statements = migration["sql"]
-                    for sql in sql_statements:
-                        if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
-                            parts = sql.split("ADD COLUMN", 1)
-                            table_name = parts[0].replace("ALTER TABLE", "").strip()
-                            column_name = parts[1].split()[0].strip()
+                    from sqlalchemy import text
 
-                            if not self._table_exists(conn, table_name):
-                                logger.error(
-                                    f"Table {table_name} does not exist; "
-                                    f"cannot apply migration {migration['version']} "
-                                    f"(column {column_name})"
-                                )
-                                engine.dispose()
-                                return False
+                    for migration in _SQLALCHEMY_MIGRATIONS:
+                        if migration["version"] <= current_version:
+                            continue
 
-                            existing = self._get_existing_columns(conn, table_name)
-                            if column_name in existing:
-                                logger.info(
-                                    f"Column {column_name} already exists in "
-                                    f"{table_name}, skipping"
-                                )
-                                continue
+                        logger.info(
+                            f"Applying migration {migration['version']}: {migration['name']}"
+                        )
 
-                        conn.execute(text(sql))
+                        sql_statements = migration["sql"]
+                        for sql in sql_statements:
+                            if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
+                                parts = sql.split("ADD COLUMN", 1)
+                                table_name = parts[0].replace("ALTER TABLE", "").strip()
+                                column_name = parts[1].split()[0].strip()
 
-                    conn.commit()
-                    self._record_migration(
-                        conn, migration["version"], migration["name"]
-                    )
-                    logger.info(
-                        f"Successfully applied migration {migration['version']}"
-                    )
+                                if not self._table_exists(conn, table_name):
+                                    logger.error(
+                                        f"Table {table_name} does not exist; "
+                                        f"cannot apply migration {migration['version']} "
+                                        f"(column {column_name})"
+                                    )
+                                    return False
 
-            engine.dispose()
+                                existing = self._get_existing_columns(conn, table_name)
+                                if column_name in existing:
+                                    logger.info(
+                                        f"Column {column_name} already exists in "
+                                        f"{table_name}, skipping"
+                                    )
+                                    continue
+
+                            conn.execute(text(sql))
+
+                        conn.commit()
+                        self._record_migration(
+                            conn, migration["version"], migration["name"]
+                        )
+                        logger.info(
+                            f"Successfully applied migration {migration['version']}"
+                        )
+            finally:
+                engine.dispose()
+
             logger.info("All migrations completed successfully")
             return True
 
