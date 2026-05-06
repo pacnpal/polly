@@ -7,7 +7,12 @@ that powers the PostgreSQL / MariaDB migration path.
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
-from polly.migrations import _sqlite_path_from_url, SQLAlchemyMigrator
+from polly.migrations import (
+    _sqlite_path_from_url,
+    SQLAlchemyMigrator,
+    migrate_database_if_needed,
+    initialize_database_if_missing,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +39,24 @@ class TestSqlitePathFromUrl:
         """The default DATABASE_URL matches the expected default db_path."""
         result = _sqlite_path_from_url("sqlite:///./db/polly.db")
         assert result == "./db/polly.db"
+
+
+# ---------------------------------------------------------------------------
+# :memory: fast-fail tests
+# ---------------------------------------------------------------------------
+
+class TestMemoryDatabaseRejection:
+    """sqlite:///:memory: must be rejected before touching DatabaseMigrator."""
+
+    def test_migrate_database_if_needed_rejects_memory(self):
+        with patch("polly.migrations.config", return_value="sqlite:///:memory:"):
+            result = migrate_database_if_needed()
+        assert result is False
+
+    def test_initialize_database_if_missing_rejects_memory(self):
+        with patch("polly.migrations.config", return_value="sqlite:///:memory:"):
+            result = initialize_database_if_missing()
+        assert result is False
 
 
 # ---------------------------------------------------------------------------
