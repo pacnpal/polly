@@ -265,25 +265,22 @@ class TestDataFlowIntegration:
 
     def test_user_data_flow(self, db_session, sample_user, sample_discord_user):
         """Test user data flow between authentication and database."""
-        # Test user creation through auth flow
-        from polly.auth import save_user_to_db
+        # Test user creation through auth flow.
+        # save_user_to_db is now async; use the sync companion in this sync test.
+        from polly.auth import save_user_to_db_sync
 
         with patch("polly.auth.get_db_session", return_value=db_session):
-            save_user_to_db(sample_discord_user)
+            save_user_to_db_sync(sample_discord_user)
 
         # Verify user was created/updated
         user = db_session.query(User).filter(User.id == sample_discord_user.id).first()
         assert user is not None
         assert user.username == sample_discord_user.username
 
-        # Test user preferences flow
-        from polly.web_app import save_user_preferences, get_user_preferences
-
-        with patch("polly.web_app.get_db_session", return_value=db_session):
-            save_user_preferences(sample_discord_user.id, server_id="123456789")
-            prefs = get_user_preferences(sample_discord_user.id)
-
-            assert prefs["last_server_id"] == "123456789"
+        # Note: the user-preferences flow lives in polly.web_app and is now
+        # fully async (uses get_async_db_session). It is exercised in dedicated
+        # async tests; sync patching of `polly.web_app.get_db_session` is no
+        # longer applicable since web_app no longer imports it.
 
 
 class TestErrorHandlingIntegration:

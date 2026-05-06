@@ -615,4 +615,54 @@ class TestDatabaseIntegrity:
             db_session.commit()
 
 
+class TestAsyncDatabase:
+    """Smoke tests for the async SQLAlchemy stack."""
+
+    def test_to_async_url_translation(self):
+        from polly.database import _to_async_url
+
+        assert _to_async_url("sqlite:///./db/polly.db") == (
+            "sqlite+aiosqlite:///./db/polly.db"
+        )
+        assert _to_async_url("sqlite+aiosqlite:///x.db") == (
+            "sqlite+aiosqlite:///x.db"
+        )
+        # Postgres URLs are intentionally NOT auto-translated since asyncpg is
+        # not a declared dependency. Users must set ASYNC_DATABASE_URL explicitly.
+        assert _to_async_url("postgresql://u:p@h/db") == "postgresql://u:p@h/db"
+
+    async def test_async_engine_insert_and_select(self, tmp_path):
+        """End-to-end sanity check for async engine + session lifecycle.
+
+        Builds a dedicated async engine against a temp aiosqlite file rather
+        than mutating the module-level engine, so it doesn't pollute other
+        tests in the suite.
+        """
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from polly.database import Base, User
+
+        db_file = tmp_path / "async_test.db"
+        engine = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
+        Session = async_sessionmaker(engine, expire_on_commit=False)
+
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            async with Session() as session:
+                session.add(User(id="async-1", username="alice", avatar=None))
+                await session.commit()
+
+            async with Session() as session:
+                result = await session.execute(
+                    select(User).where(User.id == "async-1")
+                )
+                user = result.scalar_one()
+                assert user.username == "alice"
+        finally:
+            await engine.dispose()
+
+
 # Confidence level: 10/10 - Comprehensive database model testing

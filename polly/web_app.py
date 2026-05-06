@@ -34,8 +34,11 @@ from .auth import (
 from .security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from .turnstile_middleware import TurnstileSecurityMiddleware
 from .auth_middleware import AuthenticationMiddleware
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from .htmx_utils import is_htmx, is_browser_navigation as _is_browser_navigation
-from .database import get_db_session, UserPreference
+from .database import get_async_db_session, UserPreference
 from .discord_utils import get_user_guilds_with_channels
 from .admin_endpoints import add_admin_routes
 from .super_admin_endpoints import add_super_admin_routes
@@ -335,25 +338,28 @@ async def get_user_preferences(user_id: str) -> dict:
         return cached_prefs
 
     # If not in cache, get from database
-    db = get_db_session()
     try:
-        prefs = (
-            db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
-        )
-        if prefs:
-            user_prefs = {
-                "last_server_id": prefs.last_server_id,
-                "last_channel_id": prefs.last_channel_id,
-                "default_timezone": prefs.default_timezone or "US/Eastern",
-                "timezone_explicitly_set": bool(prefs.timezone_explicitly_set),
-            }
-        else:
-            user_prefs = {
-                "last_server_id": None,
-                "last_channel_id": None,
-                "default_timezone": "US/Eastern",
-                "timezone_explicitly_set": False,
-            }
+        async with get_async_db_session() as db:
+            result = await db.execute(
+                select(UserPreference).where(UserPreference.user_id == user_id)
+            )
+            # user_id has no unique constraint; .first() preserves the lenient
+            # behavior of the original sync code (which used .first()).
+            prefs = result.scalars().first()
+            if prefs:
+                user_prefs = {
+                    "last_server_id": prefs.last_server_id,
+                    "last_channel_id": prefs.last_channel_id,
+                    "default_timezone": prefs.default_timezone or "US/Eastern",
+                    "timezone_explicitly_set": bool(prefs.timezone_explicitly_set),
+                }
+            else:
+                user_prefs = {
+                    "last_server_id": None,
+                    "last_channel_id": None,
+                    "default_timezone": "US/Eastern",
+                    "timezone_explicitly_set": False,
+                }
 
         # Cache the result
         await cache_service.cache_user_preferences(user_id, user_prefs)
@@ -369,8 +375,6 @@ async def get_user_preferences(user_id: str) -> dict:
             "default_timezone": "US/Eastern",
             "timezone_explicitly_set": False,
         }
-    finally:
-        db.close()
 
 
 async def save_user_preferences(
@@ -381,34 +385,35 @@ async def save_user_preferences(
 
     cache_service = get_cache_service()
 
-    db = get_db_session()
     try:
-        prefs = (
-            db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
-        )
-
-        if prefs:
-            # Update existing preferences
-            if server_id:
-                setattr(prefs, "last_server_id", server_id)
-            if channel_id:
-                setattr(prefs, "last_channel_id", channel_id)
-            if timezone:
-                setattr(prefs, "default_timezone", timezone)
-                setattr(prefs, "timezone_explicitly_set", True)
-            setattr(prefs, "updated_at", datetime.now(pytz.UTC))
-        else:
-            # Create new preferences
-            prefs = UserPreference(
-                user_id=user_id,
-                last_server_id=server_id,
-                last_channel_id=channel_id,
-                default_timezone=timezone or "US/Eastern",
-                timezone_explicitly_set=bool(timezone),
+        async with get_async_db_session() as db:
+            result = await db.execute(
+                select(UserPreference).where(UserPreference.user_id == user_id)
             )
-            db.add(prefs)
+            # user_id has no unique constraint; .first() preserves the lenient
+            # behavior of the original sync code (which used .first()).
+            prefs = result.scalars().first()
 
-        db.commit()
+            if prefs:
+                if server_id:
+                    prefs.last_server_id = server_id
+                if channel_id:
+                    prefs.last_channel_id = channel_id
+                if timezone:
+                    prefs.default_timezone = timezone
+                    prefs.timezone_explicitly_set = True
+                prefs.updated_at = datetime.now(pytz.UTC)
+            else:
+                prefs = UserPreference(
+                    user_id=user_id,
+                    last_server_id=server_id,
+                    last_channel_id=channel_id,
+                    default_timezone=timezone or "US/Eastern",
+                    timezone_explicitly_set=bool(timezone),
+                )
+                db.add(prefs)
+
+            await db.commit()
 
         # Invalidate cache after successful database update
         await cache_service.invalidate_user_preferences(user_id)
@@ -418,9 +423,6 @@ async def save_user_preferences(
         )
     except Exception as e:
         logger.error(f"Error saving user preferences for {user_id}: {e}")
-        db.rollback()
-    finally:
-        db.close()
 
 
 async def start_background_tasks():
@@ -714,7 +716,7 @@ def add_core_routes(app: FastAPI):
             discord_user = await get_discord_user(access_token)
 
             # Save user to database
-            save_user_to_db(discord_user)
+            await save_user_to_db(discord_user)
 
             # Create JWT token
             jwt_token = create_access_token(discord_user)
@@ -815,18 +817,24 @@ def add_screenshot_routes(app: FastAPI):
             logger.info(f"🔐 SCREENSHOT ACCESS - Token validated, serving dashboard for poll {poll_id}")
             
             # Get poll data from database
-            from .database import Poll, Vote, TypeSafeColumn
-            
-            db = get_db_session()
-            try:
-                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+            from .database import Poll, TypeSafeColumn
+
+            async with get_async_db_session() as db:
+                poll = (
+                    await db.execute(
+                        select(Poll)
+                        .where(Poll.id == poll_id)
+                        .options(selectinload(Poll.votes))
+                    )
+                ).scalar_one_or_none()
                 if not poll:
                     from fastapi import HTTPException
                     raise HTTPException(status_code=404, detail="Poll not found")
-                
-                # Get all votes for this poll
-                votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
-                
+
+                # Votes are eagerly loaded and already ordered voted_at DESC
+                # via the Poll.votes relationship; no Python sort needed.
+                votes = poll.votes
+
                 # Get poll data
                 options = poll.options
                 emojis = poll.emojis
@@ -884,11 +892,13 @@ def add_screenshot_routes(app: FastAPI):
                 # Get summary statistics
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
+                # poll.votes was eager-loaded above, so the model helper
+                # doesn't trigger async lazy-loading.
                 results = poll.get_results()
-                
+
                 # Format datetime function for template
                 from .htmx_endpoints import format_datetime_for_user
-                
+
                 # Render the dashboard template for screenshot
                 response = templates.TemplateResponse(
                     "htmx/components/poll_dashboard.html",
@@ -907,19 +917,16 @@ def add_screenshot_routes(app: FastAPI):
                         "is_screenshot": True  # Flag to indicate this is for screenshot
                     }
                 )
-                
+
                 # Add headers to prevent caching and indicate this is a screenshot endpoint
                 response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
                 response.headers["Pragma"] = "no-cache"
                 response.headers["Expires"] = "0"
                 response.headers["X-Screenshot-Endpoint"] = "true"
-                
+
                 logger.info(f"🔐 SCREENSHOT ACCESS - Successfully served dashboard for poll {poll_id}")
                 return response
-                
-            finally:
-                db.close()
-                
+
         except Exception as e:
             logger.error(f"🔐 SCREENSHOT ACCESS - Error serving secure dashboard for poll {poll_id}: {e}")
             from fastapi import HTTPException
@@ -936,7 +943,7 @@ def add_static_poll_routes(app: FastAPI):
     async def serve_static_poll_details(poll_id: int, request: Request):
         """Serve static poll details page - checks for pre-generated static file first, falls back to dynamic generation"""
         try:
-            from .database import Poll, Vote, TypeSafeColumn
+            from .database import Poll, TypeSafeColumn
             from datetime import datetime
             
             # First, check if a pre-generated static file exists
@@ -965,21 +972,27 @@ def add_static_poll_routes(app: FastAPI):
             
             # Fallback to dynamic generation (original code)
             # Get poll data directly from database since we need the full poll object
-            db = get_db_session()
-            try:
-                poll = db.query(Poll).filter(Poll.id == poll_id).first()
+            async with get_async_db_session() as db:
+                poll = (
+                    await db.execute(
+                        select(Poll)
+                        .where(Poll.id == poll_id)
+                        .options(selectinload(Poll.votes))
+                    )
+                ).scalar_one_or_none()
                 if not poll:
                     from fastapi import HTTPException
                     raise HTTPException(status_code=404, detail="Poll not found")
-                
+
                 # Check if poll is closed
                 poll_status = TypeSafeColumn.get_string(poll, "status")
                 if poll_status != "closed":
                     from fastapi import HTTPException
                     raise HTTPException(status_code=404, detail="Static page only available for closed polls")
-                
-                # Get votes for the poll
-                votes = db.query(Vote).filter(Vote.poll_id == poll_id).order_by(Vote.voted_at.desc()).all()
+
+                # Votes are eagerly loaded and already ordered voted_at DESC
+                # via the Poll.votes relationship; no Python sort needed.
+                votes = poll.votes
                 
                 # Prepare vote data with real Discord usernames (never anonymize for static pages)
                 vote_data = []
@@ -1035,8 +1048,10 @@ def add_static_poll_routes(app: FastAPI):
                 is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
                 total_votes = len(votes)
                 unique_voters = len(unique_users)
+                # poll.votes was eager-loaded above, so the model helper
+                # doesn't trigger async lazy-loading.
                 results = poll.get_results()
-                
+
                 # Use proper template instead of embedded HTML
                 response = templates.TemplateResponse(
                     "static/poll_details_static_wrapper.html",
@@ -1050,7 +1065,7 @@ def add_static_poll_routes(app: FastAPI):
                         "options": options,
                         "emojis": emojis,
                         "is_anonymous": is_anonymous,
-                        "generated_at": datetime.now(),
+                        "generated_at": datetime.now(pytz.UTC),
                         "is_static": True
                     }
                 )
@@ -1058,10 +1073,7 @@ def add_static_poll_routes(app: FastAPI):
                 response.headers["X-Static-Content"] = "true"
                 response.headers["X-Static-Source"] = "dynamic-generation"
                 return response
-                
-            finally:
-                db.close()
-                
+
         except Exception as e:
             logger.error(f"Error serving static poll {poll_id}: {e}")
             from fastapi import HTTPException

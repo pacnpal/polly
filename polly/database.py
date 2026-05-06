@@ -13,13 +13,24 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
 )
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+    AsyncAttrs,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
+from contextlib import asynccontextmanager
 from decouple import config
 import json
+import logging
 import pytz
+import threading
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 class TypeSafeColumn:
@@ -76,7 +87,143 @@ class TypeSafeColumn:
 DATABASE_URL = config("DATABASE_URL", default="sqlite:///./db/polly.db")
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+
+def _to_async_url(sync_url: str) -> str:
+    """Translate a sync SQLAlchemy URL to its async-driver equivalent.
+
+    SQLite is auto-translated to aiosqlite (declared dependency). For Postgres
+    we deliberately do *not* auto-translate to asyncpg, because asyncpg is not
+    a declared dependency and silently rewriting the URL would crash a
+    Postgres deployment at import time. Postgres users should set
+    ``ASYNC_DATABASE_URL`` explicitly (e.g. ``postgresql+asyncpg://...``).
+    """
+    if sync_url.startswith("sqlite+aiosqlite://"):
+        return sync_url
+    if sync_url.startswith("sqlite:///") or sync_url.startswith("sqlite://"):
+        return sync_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return sync_url
+
+
+ASYNC_DATABASE_URL = config("ASYNC_DATABASE_URL", default=_to_async_url(DATABASE_URL))
+
+
+def _is_async_driver_url(url: str) -> bool:
+    """Whether the URL specifies a SQLAlchemy async-capable dialect."""
+    return (
+        "+aiosqlite" in url
+        or "+asyncpg" in url
+        or "+asyncmy" in url
+        or "+aiomysql" in url
+        # psycopg v3 (the unified ``psycopg`` package, not legacy ``psycopg2``)
+        # ships an async driver under the same dialect name, so a URL of
+        # ``postgresql+psycopg://...`` is async-capable.
+        or "+psycopg://" in url
+    )
+
+
+class AsyncDatabaseNotConfiguredError(RuntimeError):
+    """Raised when async DB access is requested but ASYNC_DATABASE_URL is not
+    set to an async-driver URL (e.g. plain ``postgresql://...`` instead of
+    ``postgresql+asyncpg://...``).
+
+    Catching this specific exception type (rather than the base RuntimeError)
+    allows callers to implement targeted fallback behaviour.
+    """
+
+
+def _safe_url(url: str) -> str:
+    """Return a password-redacted representation of a database URL."""
+    try:
+        from sqlalchemy.engine import make_url
+
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "<unparseable URL>"
+
+
+# Lazy-init: ``create_async_engine`` raises InvalidRequestError if given a sync
+# driver URL (e.g. plain ``postgresql://...``), so we defer construction until
+# first use AND only build the engine when the URL is async-capable. Existing
+# sync deployments that haven't set ASYNC_DATABASE_URL keep working.
+_async_engine: "AsyncEngine | None" = None
+_AsyncSessionLocal: "async_sessionmaker[AsyncSession] | None" = None
+_async_engine_lock = threading.Lock()
+
+# Emit a startup-time warning so Postgres deployments discover the missing
+# ASYNC_DATABASE_URL setting on import rather than on the first request.
+if not _is_async_driver_url(ASYNC_DATABASE_URL):
+    logger.warning(
+        "ASYNC_DATABASE_URL (%s) does not use an async driver. "
+        "Calls to get_async_db / get_async_db_session will raise "
+        "AsyncDatabaseNotConfiguredError until ASYNC_DATABASE_URL is set "
+        "to an async-capable URL "
+        "(e.g. 'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...').",
+        _safe_url(ASYNC_DATABASE_URL),
+    )
+
+
+def _build_async_engine():
+    """Construct (or return cached) async engine + sessionmaker.
+
+    Thread-safe: uses a module-level lock so concurrent first-use calls
+    create exactly one engine/sessionmaker, with no leaks.
+
+    Raises ``AsyncDatabaseNotConfiguredError`` if ``ASYNC_DATABASE_URL`` is not
+    an async-driver URL, so callers can catch the specific exception type and
+    implement fallback behaviour.
+    """
+    global _async_engine, _AsyncSessionLocal
+    # Fast path (no lock needed once initialised).
+    if _async_engine is not None:
+        return _async_engine, _AsyncSessionLocal
+
+    with _async_engine_lock:
+        # Double-checked: another thread may have initialised while we waited.
+        if _async_engine is not None:
+            return _async_engine, _AsyncSessionLocal
+
+        if not _is_async_driver_url(ASYNC_DATABASE_URL):
+            raise AsyncDatabaseNotConfiguredError(
+                "Async DB access requested but ASYNC_DATABASE_URL is not an "
+                "async-driver URL. Set ASYNC_DATABASE_URL explicitly, e.g. "
+                "'postgresql+asyncpg://...' or 'sqlite+aiosqlite:///...'. "
+                f"Current value (password redacted): {_safe_url(ASYNC_DATABASE_URL)}"
+            )
+
+        connect_args = (
+            {"check_same_thread": False}
+            if ASYNC_DATABASE_URL.startswith("sqlite")
+            else {}
+        )
+        _async_engine = create_async_engine(ASYNC_DATABASE_URL, connect_args=connect_args)
+        _AsyncSessionLocal = async_sessionmaker(
+            _async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+        )
+    return _async_engine, _AsyncSessionLocal
+
+
+def __getattr__(name: str):
+    """Module-level lazy access to async_engine / AsyncSessionLocal (PEP 562).
+
+    Note: PEP 562 only fires for *external* attribute access on the module
+    (``polly.database.AsyncSessionLocal`` / ``from polly.database import
+    AsyncSessionLocal``). Bare-name references *inside* this module use the
+    module globals directly, so the helpers below call ``_build_async_engine()``
+    explicitly rather than relying on this hook.
+    """
+    if name == "async_engine":
+        return _build_async_engine()[0]
+    if name == "AsyncSessionLocal":
+        return _build_async_engine()[1]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+class _Base(AsyncAttrs):
+    """Mixin that makes ORM attributes awaitable for async lazy loads."""
+
+
+Base = declarative_base(cls=_Base)
 
 
 class Poll(Base):
@@ -123,7 +270,15 @@ class Poll(Base):
     status = Column(String(20), default="scheduled")  # scheduled/active/closed
 
     # Relationship to votes
-    votes = relationship("Vote", back_populates="poll", cascade="all, delete-orphan")
+    # ``order_by`` pushes the descending-by-time ordering into SQL when the
+    # collection is loaded (e.g. via ``selectinload(Poll.votes)``), so callers
+    # don't have to sort the materialized list in Python.
+    votes = relationship(
+        "Vote",
+        back_populates="poll",
+        cascade="all, delete-orphan",
+        order_by="Vote.voted_at.desc()",
+    )
 
     @property
     def options(self) -> List[str]:
@@ -294,6 +449,41 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+async def get_async_db() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency that yields an AsyncSession.
+
+    Usage:
+        @app.get(...)
+        async def handler(db: AsyncSession = Depends(get_async_db)):
+            result = await db.execute(select(Poll).where(Poll.id == poll_id))
+            poll = result.scalar_one_or_none()
+    """
+    _, Session = _build_async_engine()
+    async with Session() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_async_db_session() -> AsyncIterator[AsyncSession]:
+    """Async context manager for code that isn't a FastAPI dependency.
+
+    Usage:
+        async with get_async_db_session() as db:
+            ...
+    """
+    _, Session = _build_async_engine()
+    async with Session() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def init_database():

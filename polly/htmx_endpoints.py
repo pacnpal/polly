@@ -21,9 +21,13 @@ UPLOADS_DIR = os.path.abspath(os.path.normpath("static/uploads"))
 from fastapi.templating import Jinja2Templates
 from apscheduler.triggers.date import DateTrigger
 
+from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
+
 try:
     from .auth import require_auth, DiscordUser
     from .database import (
+        get_async_db_session,
         get_db_session,
         Poll,
         Vote,
@@ -51,6 +55,7 @@ try:
 except ImportError:
     from auth import require_auth, DiscordUser  # type: ignore
     from database import (  # type: ignore
+        get_async_db_session,
         get_db_session,
         Poll,
         Vote,
@@ -629,68 +634,66 @@ async def open_poll_now_htmx(
 ):
     """Open a scheduled poll immediately via HTMX"""
     logger.info(f"User {current_user.id} requesting to open poll {poll_id} immediately")
-    db = get_db_session()
     try:
-        poll = (
-            db.query(Poll)
-            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
-            .first()
-        )
-        if not poll:
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {"request": request, "message": "Poll not found or access denied"},
-            )
+        async with get_async_db_session() as db:
+            poll = (
+                await db.execute(
+                    select(Poll).where(
+                        Poll.id == poll_id, Poll.creator_id == current_user.id
+                    )
+                )
+            ).scalar_one_or_none()
+            if not poll:
+                return templates.TemplateResponse(
+                    "htmx/components/inline_error.html",
+                    {"request": request, "message": "Poll not found or access denied"},
+                )
 
-        if TypeSafeColumn.get_string(poll, "status") != "scheduled":
-            return templates.TemplateResponse(
-                "htmx/components/inline_error.html",
-                {
-                    "request": request,
-                    "message": "Only scheduled polls can be opened immediately",
-                },
-            )
+            if TypeSafeColumn.get_string(poll, "status") != "scheduled":
+                return templates.TemplateResponse(
+                    "htmx/components/inline_error.html",
+                    {
+                        "request": request,
+                        "message": "Only scheduled polls can be opened immediately",
+                    },
+                )
 
-        # Update poll status to active and set open time to now
-        setattr(poll, "status", "active")
-        setattr(poll, "open_time", datetime.now(pytz.UTC))
-        setattr(poll, "updated_at", datetime.now(pytz.UTC))
-        db.commit()
-
-        # Remove the scheduled opening job
-        try:
-            scheduler.remove_job(f"open_poll_{poll_id}")
-            logger.info(f"Removed scheduled opening job for poll {poll_id}")
-        except Exception as e:
-            logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
-
-        # Post the poll to Discord immediately using unified opening service
+        # Do NOT pre-commit status="active" before calling the unified service.
+        # If we commit "active" while the APScheduler job is still registered,
+        # the scheduler can fire, see the poll already "active", short-circuit
+        # (for reason="scheduled"), and consume the job.  If the manual open
+        # then fails we'd revert to "scheduled" but the job is gone, leaving
+        # the poll permanently un-openable.  The service sets status="active"
+        # atomically in its own DB step after the Discord post succeeds; on any
+        # failure path the service returns {"success": False} without committing,
+        # so the poll remains in "scheduled" and the APScheduler job is intact.
         try:
             from .services.poll.poll_open_service import poll_opening_service
-            
+
             result = await poll_opening_service.open_poll_unified(
                 poll_id=poll_id,
                 reason="immediate",
                 admin_user_id=current_user.id,
                 bot_instance=bot
             )
-            
+
             if not result["success"]:
                 logger.error(f"Unified poll opening failed for poll {poll_id}: {result.get('error')}")
-                # Revert status change if opening failed
-                setattr(poll, "status", "scheduled")
-                db.commit()
                 return templates.TemplateResponse(
                     "htmx/components/inline_error.html",
                     {"request": request, "message": result.get("error", "Error opening poll")},
                 )
-            
+
             logger.info(f"Poll {poll_id} opened immediately by user {current_user.id} via unified service")
+
+            # Remove the scheduled opening job now that the manual open succeeded.
+            try:
+                scheduler.remove_job(f"open_poll_{poll_id}")
+                logger.info(f"Removed scheduled opening job for poll {poll_id}")
+            except Exception as e:
+                logger.debug(f"Job open_poll_{poll_id} not found or already removed: {e}")
         except Exception as e:
             logger.error(f"Error posting poll {poll_id} to Discord: {e}")
-            # Revert status change if posting failed
-            setattr(poll, "status", "scheduled")
-            db.commit()
             return templates.TemplateResponse(
                 "htmx/components/inline_error.html",
                 {"request": request, "message": "Error posting poll to Discord"},
@@ -707,13 +710,10 @@ async def open_poll_now_htmx(
 
     except Exception as e:
         logger.error(f"Error opening poll {poll_id} immediately: {e}")
-        db.rollback()
         return templates.TemplateResponse(
             "htmx/components/inline_error.html",
             {"request": request, "message": f"Error opening poll: {str(e)}"},
         )
-    finally:
-        db.close()
 
 
 def get_priority_timezone_for_user(user_id: str) -> str:
@@ -2194,34 +2194,39 @@ async def get_polls_htmx(
     # Cache miss or reconstruction failed - generate from database
     logger.debug(f"🔍 POLLS CACHE MISS - Generating polls for user {current_user.id} (filter: {filter})")
 
-    db = get_db_session()
     try:
-        # Query polls with error handling
-        try:
-            query = db.query(Poll).filter(Poll.creator_id == current_user.id)
+        async with get_async_db_session() as db:
+            # Query polls with error handling
+            try:
+                stmt = (
+                    select(Poll)
+                    .where(Poll.creator_id == current_user.id)
+                    .options(selectinload(Poll.votes))
+                )
 
-            # Apply filter if specified with validation
-            if filter and filter in ["active", "scheduled", "closed"]:
-                query = query.filter(Poll.status == filter)
-                logger.debug(f"Applied filter: {filter}")
+                # Apply filter if specified with validation
+                if filter and filter in ["active", "scheduled", "closed"]:
+                    stmt = stmt.where(Poll.status == filter)
+                    logger.debug(f"Applied filter: {filter}")
 
-            polls = query.order_by(Poll.created_at.desc()).all()
-            logger.debug(f"Found {len(polls)} polls for user {current_user.id}")
+                stmt = stmt.order_by(Poll.created_at.desc())
+                polls = (await db.execute(stmt)).scalars().all()
+                logger.debug(f"Found {len(polls)} polls for user {current_user.id}")
 
-        except Exception as e:
-            logger.error(
-                f"Database error querying polls for user {current_user.id}: {e}"
-            )
-            logger.exception("Full traceback for polls query error:")
+            except Exception as e:
+                logger.error(
+                    f"Database error querying polls for user {current_user.id}: {e}"
+                )
+                logger.exception("Full traceback for polls query error:")
 
-            # Return error template with empty polls list
-            error_data = {
-                "polls": [],
-                "current_filter": filter,
-                "user_timezone": "US/Eastern",
-                "error": "Database error loading polls",
-            }
-            return templates.TemplateResponse("htmx/polls.html", {"request": request, "format_datetime_for_user": format_datetime_for_user, **error_data})
+                # Return error template with empty polls list
+                error_data = {
+                    "polls": [],
+                    "current_filter": filter,
+                    "user_timezone": "US/Eastern",
+                    "error": "Database error loading polls",
+                }
+                return templates.TemplateResponse("htmx/polls.html", {"request": request, "format_datetime_for_user": format_datetime_for_user, **error_data})
 
         # Process polls with individual error handling and defensive programming
         processed_polls = []
@@ -2281,7 +2286,7 @@ async def get_polls_htmx(
                 "serialized_polls": serialized_polls,
                 "current_filter": filter,
                 "user_timezone": user_timezone,
-                "cached_at": datetime.now().isoformat(),
+                "cached_at": datetime.now(pytz.UTC).isoformat(),
             }
             
             # Cache with 30-second TTL
@@ -2323,11 +2328,6 @@ async def get_polls_htmx(
             "error": f"Error loading polls: {str(e)}",
         }
         return templates.TemplateResponse("htmx/polls.html", {"request": request, "format_datetime_for_user": format_datetime_for_user, **error_data})
-    finally:
-        try:
-            db.close()
-        except Exception as e:
-            logger.error(f"Error closing database connection: {e}")
 
 
 async def get_stats_htmx(
@@ -2362,73 +2362,76 @@ async def get_stats_htmx(
     # Cache miss - generate stats
     logger.debug(f"🔍 STATS CACHE MISS - Generating stats for user {current_user.id}")
 
-    db = get_db_session()
     try:
-        # Query polls with error handling
-        try:
-            polls = db.query(Poll).filter(Poll.creator_id == current_user.id).all()
-            logger.debug(f"Found {len(polls)} polls for user {current_user.id}")
-        except Exception as e:
-            logger.error(
-                f"Database error querying polls for user {current_user.id}: {e}"
-            )
-            error_stats = {
-                "total_polls": 0,
-                "active_polls": 0,
-                "total_votes": 0,
-                "error": "Database error loading polls",
-            }
-            return templates.TemplateResponse("htmx/stats.html", {"request": request, **error_stats})
-
-        # Calculate stats with individual error handling
-        total_polls = len(polls)
-
-        # Count active polls safely
-        try:
-            active_polls = len(
-                [p for p in polls if TypeSafeColumn.get_string(p, "status") == "active"]
-            )
-            logger.debug(f"Found {active_polls} active polls")
-        except Exception as e:
-            logger.error(f"Error counting active polls: {e}")
-            active_polls = 0
-
-        # Calculate total votes with bulletproof handling
-        total_votes = 0
-        for poll in polls:
+        async with get_async_db_session() as db:
+            # Query polls without eager-loading votes — we'll aggregate them below
             try:
-                # Use the Poll model's get_total_votes method
-                poll_votes = poll.get_total_votes()
-                if isinstance(poll_votes, int):
-                    total_votes += poll_votes
-                    logger.debug(
-                        f"Poll {TypeSafeColumn.get_int(poll, 'id')} has {poll_votes} votes"
+                polls = (
+                    (
+                        await db.execute(
+                            select(Poll)
+                            .where(Poll.creator_id == current_user.id)
+                        )
                     )
-                else:
-                    logger.warning(
-                        f"Poll {TypeSafeColumn.get_int(poll, 'id')} get_total_votes returned non-int: {type(poll_votes)}"
-                    )
+                    .scalars()
+                    .all()
+                )
+                logger.debug(f"Found {len(polls)} polls for user {current_user.id}")
             except Exception as e:
                 logger.error(
-                    f"Error getting votes for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {e}"
+                    f"Database error querying polls for user {current_user.id}: {e}"
                 )
-                # Try alternative method - direct vote count
+                error_stats = {
+                    "total_polls": 0,
+                    "active_polls": 0,
+                    "total_votes": 0,
+                    "error": "Database error loading polls",
+                }
+                return templates.TemplateResponse("htmx/stats.html", {"request": request, **error_stats})
+
+            # Calculate stats with individual error handling
+            total_polls = len(polls)
+
+            # Count active polls safely
+            try:
+                active_polls = sum(
+                    1 for p in polls
+                    if TypeSafeColumn.get_string(p, "status") == "active"
+                )
+                logger.debug(f"Found {active_polls} active polls")
+            except Exception as e:
+                logger.error(f"Error counting active polls: {e}")
+                active_polls = 0
+
+            # Count total votes via SQL aggregates — avoids materialising all
+            # vote rows in Python. Respects get_total_votes() semantics:
+            #   multi-select → count distinct voters
+            #   single-select → count rows
+            total_votes = 0
+            poll_ids = [TypeSafeColumn.get_int(p, "id") for p in polls]
+            if poll_ids:
                 try:
-                    vote_count = (
-                        db.query(Vote)
-                        .filter(Vote.poll_id == TypeSafeColumn.get_int(poll, "id"))
-                        .count()
-                    )
-                    if isinstance(vote_count, int):
-                        total_votes += vote_count
-                        logger.debug(
-                            f"Poll {TypeSafeColumn.get_int(poll, 'id')} fallback vote count: {vote_count}"
+                    vote_rows = (
+                        await db.execute(
+                            select(
+                                Vote.poll_id,
+                                func.count().label("total"),
+                                func.count(func.distinct(Vote.user_id)).label("unique"),
+                            )
+                            .where(Vote.poll_id.in_(poll_ids))
+                            .group_by(Vote.poll_id)
                         )
-                except Exception as fallback_e:
-                    logger.error(
-                        f"Fallback vote count failed for poll {TypeSafeColumn.get_int(poll, 'id', 0)}: {fallback_e}"
-                    )
-                    # Continue without adding votes for this poll
+                    ).all()
+                    vote_map = {row.poll_id: row for row in vote_rows}
+                    for p in polls:
+                        pid = TypeSafeColumn.get_int(p, "id")
+                        is_multi = TypeSafeColumn.get_bool(p, "multiple_choice", False)
+                        row = vote_map.get(pid)
+                        if row:
+                            total_votes += row.unique if is_multi else row.total
+                    logger.debug(f"Total votes across all polls: {total_votes}")
+                except Exception as e:
+                    logger.error(f"Error computing vote aggregates: {e}")
 
         logger.debug(
             f"Stats calculated: polls={total_polls}, active={active_polls}, votes={total_votes}"
@@ -2471,11 +2474,6 @@ async def get_stats_htmx(
             "error": f"Error loading stats: {str(e)}",
         }
         return templates.TemplateResponse("htmx/stats.html", {"request": request, **error_stats})
-    finally:
-        try:
-            db.close()
-        except Exception as e:
-            logger.error(f"Error closing database connection: {e}")
 
 
 async def get_create_form_htmx(
@@ -2842,7 +2840,7 @@ async def get_channels_htmx(
                 cacheable_data = {
                     "channels": guild["channels"],
                     "guild_name": guild["name"],
-                    "cached_at": datetime.now().isoformat(),
+                    "cached_at": datetime.now(pytz.UTC).isoformat(),
                 }
                 await redis_client.cache_set(cache_key, cacheable_data, 300)  # 5 minutes
                 logger.debug(f"💾 CHANNELS CACHED - Stored channels for server {server_id} with 5min TTL")
@@ -2987,7 +2985,7 @@ async def get_roles_htmx(
             if redis_client:
                 cacheable_data = {
                     "roles": roles,
-                    "cached_at": datetime.now().isoformat(),
+                    "cached_at": datetime.now(pytz.UTC).isoformat(),
                 }
                 await redis_client.cache_set(cache_key, cacheable_data, 300)  # 5 minutes
                 logger.debug(f"💾 ROLES CACHED - Stored roles for server {server_id} with 5min TTL")
@@ -3249,42 +3247,38 @@ async def get_polls_realtime_htmx(
     current_user: DiscordUser = Depends(require_auth),
 ):
     """Get real-time poll data for HTMX polling updates - returns only poll cards content"""
-    db = get_db_session()
     try:
-        # Query polls with error handling
-        try:
-            query = db.query(Poll).filter(Poll.creator_id == current_user.id)
-
-            # Apply filter if specified with validation
-            if filter and filter in ["active", "scheduled", "closed"]:
-                query = query.filter(Poll.status == filter)
-
-            polls = query.order_by(Poll.created_at.desc()).all()
-
-        except Exception as e:
-            logger.error(
-                f"Database error in realtime polls for user {current_user.id}: {e}"
-            )
-            return ""  # Return empty for real-time updates on error
+        async with get_async_db_session() as db:
+            try:
+                stmt = (
+                    select(Poll)
+                    .where(Poll.creator_id == current_user.id)
+                    .options(selectinload(Poll.votes))
+                )
+                if filter and filter in ["active", "scheduled", "closed"]:
+                    stmt = stmt.where(Poll.status == filter)
+                stmt = stmt.order_by(Poll.created_at.desc())
+                polls = (await db.execute(stmt)).scalars().all()
+            except Exception as e:
+                logger.error(
+                    f"Database error in realtime polls for user {current_user.id}: {e}"
+                )
+                return ""  # Return empty for real-time updates on error
 
         # Process polls with individual error handling (same as get_polls_htmx)
         processed_polls = []
         for poll in polls:
             try:
-                # Add status_class to each poll for template
                 poll.status_class = {
                     "active": "bg-success",
                     "scheduled": "bg-warning",
                     "closed": "bg-danger",
                 }.get(TypeSafeColumn.get_string(poll, "status"), "bg-secondary")
-
                 processed_polls.append(poll)
-
             except Exception as e:
                 logger.error(
                     f"Error processing poll {TypeSafeColumn.get_int(poll, 'id', 0)} for realtime: {e}"
                 )
-                # Continue with other polls, skip this one
 
         # Get user's timezone preference with error handling
         try:
@@ -3294,7 +3288,6 @@ async def get_polls_realtime_htmx(
             logger.error(f"Error getting user preferences for {current_user.id}: {e}")
             user_timezone = "US/Eastern"
 
-        # Use the dedicated poll cards content component for real-time updates
         return templates.TemplateResponse(
             "htmx/components/poll_cards_content.html",
             {
@@ -3311,11 +3304,6 @@ async def get_polls_realtime_htmx(
             f"Critical error in realtime polls for user {current_user.id}: {e}"
         )
         return ""  # Return empty on error for real-time updates
-    finally:
-        try:
-            db.close()
-        except Exception as e:
-            logger.error(f"Error closing database connection in realtime: {e}")
 
 
 async def get_guild_emojis_htmx(
@@ -3845,13 +3833,19 @@ async def get_poll_details_htmx(
 ):
     """Get poll details view as HTML for HTMX - serves pre-generated static files for closed polls"""
     logger.info(f"User {current_user.id} requesting details for poll {poll_id}")
-    db = get_db_session()
     try:
-        poll = (
-            db.query(Poll)
-            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
-            .first()
-        )
+        # Load the poll inside a short-lived DB session; all file I/O happens
+        # outside so we don't hold a DB connection during static-file checks or
+        # regeneration (which opens its own session).
+        async with get_async_db_session() as db:
+            poll = (
+                await db.execute(
+                    select(Poll)
+                    .where(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                    .options(selectinload(Poll.votes))
+                )
+            ).scalar_one_or_none()
+
         if not poll:
             logger.warning(
                 f"Poll {poll_id} not found or not owned by user {current_user.id}"
@@ -3865,63 +3859,65 @@ async def get_poll_details_htmx(
         poll_status = TypeSafeColumn.get_string(poll, "status")
         if poll_status == "closed":
             logger.info(f"📄 STATIC SERVE - Checking for pre-generated static content for closed poll {poll_id}")
-            
+
             # Import the static page generator to check for existing files
             from .static_page_generator import get_static_page_generator
-            
+
             # Get the static page generator instance
             static_generator = get_static_page_generator()
-            
+
             # Check if static file exists
             static_path = static_generator._get_static_page_path(poll_id, "details")
-            
+
             if static_path.exists():
                 logger.info(f"✅ STATIC SERVE - Found pre-generated static file for poll {poll_id}: {static_path}")
-                
+
                 # Read and serve the pre-generated static content
                 try:
-                    with open(static_path, 'r', encoding='utf-8') as f:
+                    with open(static_path, "r", encoding="utf-8") as f:
                         static_content = f.read()
-                    
+
                     logger.info(f"📄 STATIC SERVE - Successfully served pre-generated static content for poll {poll_id}")
-                    
+
                     # Return the static content directly as HTML response
                     from fastapi.responses import HTMLResponse
+
                     return HTMLResponse(content=static_content)
-                    
+
                 except Exception as read_error:
                     logger.error(f"❌ STATIC SERVE - Error reading static file for poll {poll_id}: {read_error}")
                     # Fall through to dynamic content as fallback
             else:
                 logger.warning(f"⚠️ STATIC SERVE - No pre-generated static file found for poll {poll_id}: {static_path}")
                 logger.warning("⚠️ STATIC SERVE - Expected file should exist for closed polls - this indicates a problem with static generation")
-                
+
                 # Try to regenerate the static file once if it's missing
                 logger.info(f"🔄 STATIC SERVE - Attempting to regenerate missing static content for closed poll {poll_id}")
                 try:
                     regeneration_success = await static_generator.generate_static_poll_details(poll_id, bot)
                     if regeneration_success and static_path.exists():
                         logger.info(f"✅ STATIC SERVE - Successfully regenerated static content for poll {poll_id}")
-                        
+
                         # Try to serve the newly generated content
                         try:
-                            with open(static_path, 'r', encoding='utf-8') as f:
+                            with open(static_path, "r", encoding="utf-8") as f:
                                 static_content = f.read()
-                            
+
                             logger.info(f"📄 STATIC SERVE - Successfully served regenerated static content for poll {poll_id}")
-                            
+
                             # Return the static content directly as HTML response
                             from fastapi.responses import HTMLResponse
+
                             return HTMLResponse(content=static_content)
-                            
+
                         except Exception as read_error:
                             logger.error(f"❌ STATIC SERVE - Error reading regenerated static file for poll {poll_id}: {read_error}")
                     else:
                         logger.error(f"❌ STATIC SERVE - Failed to regenerate static content for poll {poll_id}")
-                        
+
                 except Exception as regen_error:
                     logger.error(f"❌ STATIC SERVE - Error during static content regeneration for poll {poll_id}: {regen_error}")
-            
+
             # For closed polls, we should NOT regenerate on-demand repeatedly - that defeats the purpose
             # Instead, fall back to dynamic content and log this as an issue
             logger.warning(f"⚠️ STATIC SERVE - Falling back to dynamic content for closed poll {poll_id} - static file missing or unreadable")
@@ -3941,8 +3937,6 @@ async def get_poll_details_htmx(
             "htmx/components/inline_error.html",
             {"request": request, "message": f"Error loading template: {str(e)}"},
         )
-    finally:
-        db.close()
 
 
 async def get_poll_results_realtime_htmx(
@@ -3984,104 +3978,104 @@ async def get_poll_results_realtime_htmx(
     # Cache miss - generate results data
     logger.debug(f"🔍 RESULTS CACHE MISS - Generating results for poll {poll_id}")
 
-    db = get_db_session()
     try:
-        poll = (
-            db.query(Poll)
-            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
-            .first()
-        )
-        if not poll:
-            return (
-                '<div class="alert alert-danger">Poll not found or access denied</div>'
+        async with get_async_db_session() as db:
+            poll = (
+                await db.execute(
+                    select(Poll)
+                    .where(Poll.id == poll_id, Poll.creator_id == current_user.id)
+                    .options(selectinload(Poll.votes))
+                )
+            ).scalar_one_or_none()
+            if not poll:
+                return (
+                    '<div class="alert alert-danger">Poll not found or access denied</div>'
+                )
+
+            # Get poll status - CRITICAL: Check if poll is closed to disable streaming
+            poll_status = TypeSafeColumn.get_string(poll, "status", "active")
+            logger.debug(f"📊 POLL STATUS - Poll {poll_id} status is '{poll_status}'")
+
+            # Get poll results
+            total_votes = poll.get_total_votes()
+            results = poll.get_results()
+
+            # Get poll data safely
+            options = poll.options  # Use the property method from Poll model
+            emojis = poll.emojis  # Use the property method from Poll model
+            is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
+
+            # Generate HTML for results
+            html_parts = []
+
+            for i in range(len(options)):
+                option_votes = results.get(i, 0)
+                percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0
+                emoji = (
+                    emojis[i]
+                    if i < len(emojis)
+                    else POLL_EMOJIS[min(i, len(POLL_EMOJIS) - 1)]
+                )
+                option_text = options[i]
+
+                html_parts.append(
+                    f"""
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span>{emoji} {escape(option_text)}</span>
+                        <span class="text-muted">{option_votes} votes ({percentage:.1f}%)</span>
+                    </div>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar" role="progressbar" style="width: {percentage}%;"
+                             aria-valuenow="{percentage}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                </div>
+                """
+                )
+
+            # Add total votes and anonymous badge
+            anonymous_badge = (
+                '<span class="badge bg-info ms-2">Anonymous</span>' if is_anonymous else ""
             )
 
-        # Get poll status - CRITICAL: Check if poll is closed to disable streaming
-        poll_status = TypeSafeColumn.get_string(poll, "status", "active")
-        logger.debug(f"📊 POLL STATUS - Poll {poll_id} status is '{poll_status}'")
-
-        # Get poll results
-        total_votes = poll.get_total_votes()
-        results = poll.get_results()
-
-        # Get poll data safely
-        options = poll.options  # Use the property method from Poll model
-        emojis = poll.emojis  # Use the property method from Poll model
-        is_anonymous = TypeSafeColumn.get_bool(poll, "anonymous", False)
-
-        # Generate HTML for results
-        html_parts = []
-
-        for i in range(len(options)):
-            option_votes = results.get(i, 0)
-            percentage = (option_votes / total_votes * 100) if total_votes > 0 else 0
-            emoji = (
-                emojis[i]
-                if i < len(emojis)
-                else POLL_EMOJIS[min(i, len(POLL_EMOJIS) - 1)]
-            )
-            option_text = options[i]
+            # Add status indicator for closed polls
+            status_indicator = ""
+            if poll_status == "closed":
+                status_indicator = '<div class="alert alert-info mt-2"><i class="fas fa-info-circle me-1"></i>This poll is closed. Results are final.</div>'
 
             html_parts.append(
                 f"""
-            <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span>{emoji} {escape(option_text)}</span>
-                    <span class="text-muted">{option_votes} votes ({percentage:.1f}%)</span>
-                </div>
-                <div class="progress" style="height: 20px;">
-                    <div class="progress-bar" role="progressbar" style="width: {percentage}%;"
-                         aria-valuenow="{percentage}" aria-valuemin="0" aria-valuemax="100">
-                    </div>
-                </div>
+            <div class="mt-3">
+                <strong>Total Votes: {total_votes}</strong>
+                {anonymous_badge}
             </div>
+            {status_indicator}
             """
             )
 
-        # Add total votes and anonymous badge
-        anonymous_badge = (
-            '<span class="badge bg-info ms-2">Anonymous</span>' if is_anonymous else ""
-        )
+            html_content = "".join(html_parts)
 
-        # Add status indicator for closed polls
-        status_indicator = ""
-        if poll_status == "closed":
-            status_indicator = '<div class="alert alert-info mt-2"><i class="fas fa-info-circle me-1"></i>This poll is closed. Results are final.</div>'
+            # Cache the results with status-aware TTL (10s for active, 7 days for closed)
+            cacheable_data = {
+                "html_content": html_content,
+                "poll_status": poll_status,
+                "total_votes": total_votes,
+                "results": results,
+                "cached_at": datetime.now(pytz.UTC).isoformat(),
+            }
 
-        html_parts.append(
-            f"""
-        <div class="mt-3">
-            <strong>Total Votes: {total_votes}</strong>
-            {anonymous_badge}
-        </div>
-        {status_indicator}
-        """
-        )
+            await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data, poll_status)
+            ttl_description = "7 days" if poll_status == "closed" else "10s"
+            logger.debug(
+                f"💾 RESULTS CACHED - Stored results for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"
+            )
 
-        html_content = "".join(html_parts)
-
-        # Cache the results with status-aware TTL (10s for active, 7 days for closed)
-        cacheable_data = {
-            "html_content": html_content,
-            "poll_status": poll_status,
-            "total_votes": total_votes,
-            "results": results,
-            "cached_at": datetime.now().isoformat(),
-        }
-
-        await enhanced_cache.cache_live_poll_results(poll_id, cacheable_data, poll_status)
-        ttl_description = "7 days" if poll_status == "closed" else "10s"
-        logger.debug(
-            f"💾 RESULTS CACHED - Stored results for poll {poll_id} (status: {poll_status}) with {ttl_description} TTL"
-        )
-
-        return html_content
+            return html_content
 
     except Exception as e:
         logger.error(f"Error getting real-time results for poll {poll_id}: {e}")
         return '<div class="alert alert-danger">Error loading poll results</div>'
-    finally:
-        db.close()
 
 
 async def get_poll_dashboard_htmx(
@@ -4310,7 +4304,7 @@ async def get_poll_dashboard_htmx(
                                 user_data = {
                                     "username": username,
                                     "avatar_url": avatar_url,
-                                    "cached_at": datetime.now().isoformat(),
+                                    "cached_at": datetime.now(pytz.UTC).isoformat(),
                                 }
                                 await enhanced_cache.cache_discord_user(
                                     user_id, user_data
@@ -4791,37 +4785,40 @@ async def delete_poll_htmx(
     """Delete a scheduled or closed poll via HTMX"""
     logger.info(f"User {current_user.id} requesting to delete poll {poll_id}")
     is_card = htmx_target(request).startswith("poll-card-")
-    db = get_db_session()
     try:
-        poll = (
-            db.query(Poll)
-            .filter(Poll.id == poll_id, Poll.creator_id == current_user.id)
-            .first()
-        )
-        if not poll:
-            return _card_error_response(
-                request, "Poll not found or access denied", is_card=is_card
-            )
+        async with get_async_db_session() as db:
+            poll = (
+                await db.execute(
+                    select(Poll).where(
+                        Poll.id == poll_id, Poll.creator_id == current_user.id
+                    )
+                )
+            ).scalar_one_or_none()
+            if not poll:
+                return _card_error_response(
+                    request, "Poll not found or access denied", is_card=is_card
+                )
 
-        poll_status = TypeSafeColumn.get_string(poll, "status")
-        if poll_status not in ["scheduled", "closed"]:
-            return _card_error_response(
-                request,
-                "Only scheduled or closed polls can be deleted",
-                is_card=is_card,
-            )
+            poll_status = TypeSafeColumn.get_string(poll, "status")
+            if poll_status not in ["scheduled", "closed"]:
+                return _card_error_response(
+                    request,
+                    "Only scheduled or closed polls can be deleted",
+                    is_card=is_card,
+                )
 
-        # Clean up image file if exists
-        image_path = TypeSafeColumn.get_string(poll, "image_path")
-        if image_path:
-            await cleanup_image(str(image_path))
+            # Clean up image file if exists
+            image_path = TypeSafeColumn.get_string(poll, "image_path")
+            if image_path:
+                await cleanup_image(str(image_path))
 
-        # Delete associated votes first
-        db.query(Vote).filter(Vote.poll_id == poll_id).delete()
+            # Delete associated votes first
+            from sqlalchemy import delete as sa_delete
+            await db.execute(sa_delete(Vote).where(Vote.poll_id == poll_id))
 
-        # Delete the poll
-        db.delete(poll)
-        db.commit()
+            # Delete the poll
+            await db.delete(poll)
+            await db.commit()
 
         logger.info(f"Poll {poll_id} deleted by user {current_user.id}")
 
@@ -4849,15 +4846,13 @@ async def delete_poll_htmx(
         )
 
     except Exception as e:
+        # async session auto-rollbacks on context exit; just log + render error
         logger.exception(f"Error deleting poll {poll_id}: {e}")
-        db.rollback()
         return _card_error_response(
             request,
             "Error deleting poll. Please try again.",
             is_card=is_card,
         )
-    finally:
-        db.close()
 
 
 async def get_poll_edit_form(

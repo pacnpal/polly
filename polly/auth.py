@@ -6,16 +6,19 @@ Discord OAuth for web interface and bot permission checking.
 import os
 import httpx
 import discord
+import logging
 from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import pytz
+from sqlalchemy import select
+
 try:
-    from .database import get_db_session, User
+    from .database import get_async_db_session, get_db_session, User, AsyncDatabaseNotConfiguredError
 except ImportError:
-    from database import get_db_session, User  # type: ignore
+    from database import get_async_db_session, get_db_session, User, AsyncDatabaseNotConfiguredError  # type: ignore
 
 # Discord OAuth settings
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
@@ -31,6 +34,8 @@ DISCORD_OAUTH_URL = f"{DISCORD_API_BASE}/oauth2/authorize"
 DISCORD_TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
 DISCORD_USER_URL = f"{DISCORD_API_BASE}/users/@me"
 DISCORD_GUILDS_URL = f"{DISCORD_API_BASE}/users/@me/guilds"
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
 
@@ -181,22 +186,48 @@ async def require_auth(
     return current_user
 
 
-def save_user_to_db(user: DiscordUser):
-    """Save or update user in database"""
+async def save_user_to_db(user: DiscordUser) -> None:
+    """Save or update user in database (async, with sync fallback).
+
+    Falls back to ``save_user_to_db_sync`` if the async DB is not configured
+    (e.g. ASYNC_DATABASE_URL is not set to an async-driver URL on a Postgres
+    deployment), so OAuth callbacks keep working during an incremental migration.
+    """
+    try:
+        async with get_async_db_session() as db:
+            result = await db.execute(select(User).where(User.id == user.id))
+            db_user = result.scalar_one_or_none()
+
+            if db_user:
+                db_user.username = user.username
+                db_user.avatar = user.avatar
+                db_user.updated_at = datetime.now(pytz.UTC)
+            else:
+                db_user = User(id=user.id, username=user.username, avatar=user.avatar)
+                db.add(db_user)
+
+            await db.commit()
+    except AsyncDatabaseNotConfiguredError as exc:
+        logger.warning(
+            "Async DB unavailable for save_user_to_db (%s); "
+            "falling back to sync path.",
+            exc,
+        )
+        save_user_to_db_sync(user)
+
+
+def save_user_to_db_sync(user: DiscordUser) -> None:
+    """Sync fallback for callers that aren't async (legacy paths)."""
     db = get_db_session()
     try:
         db_user = db.query(User).filter(User.id == user.id).first()
-
         if db_user:
-            # Update existing user
             setattr(db_user, "username", user.username)
             setattr(db_user, "avatar", user.avatar)
             setattr(db_user, "updated_at", datetime.now(pytz.UTC))
         else:
-            # Create new user
             db_user = User(id=user.id, username=user.username, avatar=user.avatar)
             db.add(db_user)
-
         db.commit()
     finally:
         db.close()
