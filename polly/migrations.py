@@ -20,6 +20,7 @@ from datetime import datetime
 from decouple import config
 from typing import List, Dict, Any, Union
 from pathlib import Path
+from sqlalchemy.engine import make_url
 
 logger = logging.getLogger(__name__)
 
@@ -510,10 +511,6 @@ def _sqlite_path_from_url(database_url: str) -> str:
     Uses SQLAlchemy's ``make_url`` so that dialect+driver variants such as
     ``sqlite+pysqlite://`` are parsed correctly.
     """
-    # Lazy import: SQLAlchemy may not be installed in all environments and
-    # this module is imported at startup before the dependency check runs.
-    from sqlalchemy.engine import make_url
-
     return make_url(database_url).database or ""
 
 
@@ -962,11 +959,8 @@ if __name__ == "__main__":
 
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
-        # Lazy import: only needed for the display path on non-SQLite backends.
-        from sqlalchemy.engine import make_url as _make_url
-
         active_migrator: Union[DatabaseMigrator, SQLAlchemyMigrator] = SQLAlchemyMigrator(database_url)
-        resolved_target = _make_url(database_url).render_as_string(hide_password=True)
+        resolved_target = make_url(database_url).render_as_string(hide_password=True)
     else:
         # Parse the actual path from DATABASE_URL (not the CLI arg) so the
         # migrator and the SQLAlchemy engine always target the same file.
