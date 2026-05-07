@@ -958,12 +958,15 @@ if __name__ == "__main__":
         db_path = DEFAULT_DB_PATH
 
     print("Polly Database Migration Tool")
-    print(f"Database: {db_path}")
     print("-" * 50)
 
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
+        # Lazy import: only needed for the display path on non-SQLite backends.
+        from sqlalchemy.engine import make_url as _make_url
+
         active_migrator: Union[DatabaseMigrator, SQLAlchemyMigrator] = SQLAlchemyMigrator(database_url)
+        resolved_target = _make_url(database_url).render_as_string(hide_password=True)
     else:
         # Parse the actual path from DATABASE_URL (not the CLI arg) so the
         # migrator and the SQLAlchemy engine always target the same file.
@@ -972,6 +975,9 @@ if __name__ == "__main__":
             print("❌ DATABASE_URL is sqlite:///:memory: — cannot run migrations on an in-memory database.")
             sys.exit(1)
         active_migrator = DatabaseMigrator(sqlite_path)
+        resolved_target = sqlite_path
+
+    print(f"Database: {resolved_target}")
 
     if active_migrator.needs_migration():
         print("Migration needed")
