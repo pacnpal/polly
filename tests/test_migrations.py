@@ -84,7 +84,7 @@ class TestSQLAlchemyMigratorUnit:
     def _make_test_migrator(self):
         return SQLAlchemyMigrator("postgresql://polly:pass@localhost/polly")
 
-    # _record_migration stores naive UTC -----------------------------------
+    # _record_migration stores naive UTC and does not commit ----------------
 
     def test_record_migration_stores_naive_utc(self):
         """_record_migration must not pass a tz-aware datetime to the DB."""
@@ -99,6 +99,13 @@ class TestSQLAlchemyMigratorUnit:
 
         assert isinstance(ts, datetime)
         assert ts.tzinfo is None, "timestamp must be naive (no tzinfo) to match TIMESTAMP column"
+
+    def test_record_migration_does_not_commit(self):
+        """_record_migration must not call conn.commit(); the caller owns the transaction."""
+        migrator = self._make_test_migrator()
+        mock_conn = MagicMock()
+        migrator._record_migration(mock_conn, 2, "some_migration")
+        mock_conn.commit.assert_not_called()
 
     # is_database_initialized checks polls, votes, users, and user_preferences
 
@@ -189,3 +196,46 @@ class TestSQLAlchemyMigratorUnit:
 
         mock_init.assert_called_once()
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Exception-logging helpers
+# ---------------------------------------------------------------------------
+
+class TestSQLAlchemyMigratorExceptionLogging:
+    """Verify that _get_applied_version and _get_existing_columns log
+    exceptions rather than silently swallowing them."""
+
+    def _make_test_migrator(self):
+        return SQLAlchemyMigrator("postgresql://polly:pass@localhost/polly")
+
+    def test_get_applied_version_logs_on_exception(self):
+        """_get_applied_version must log a warning when the query fails."""
+        migrator = self._make_test_migrator()
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("table does not exist")
+
+        with patch("polly.migrations.logger") as mock_logger:
+            result = migrator._get_applied_version(mock_conn)
+
+        assert result == 0
+        mock_logger.warning.assert_called_once()
+        warning_msg = mock_logger.warning.call_args[0][0]
+        assert "schema_migrations" in warning_msg
+
+    def test_get_existing_columns_logs_on_exception(self):
+        """_get_existing_columns must log a warning when introspection fails."""
+        migrator = self._make_test_migrator()
+        mock_conn = MagicMock()
+
+        mock_inspector = MagicMock()
+        mock_inspector.get_columns.side_effect = Exception("permission denied")
+
+        with patch("polly.migrations.logger") as mock_logger:
+            with patch("sqlalchemy.inspect", return_value=mock_inspector):
+                result = migrator._get_existing_columns(mock_conn, "polls")
+
+        assert result == []
+        mock_logger.warning.assert_called_once()
+        warning_msg = mock_logger.warning.call_args[0][0]
+        assert "polls" in warning_msg

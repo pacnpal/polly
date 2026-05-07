@@ -730,7 +730,11 @@ class SQLAlchemyMigrator:
             )
             row = result.fetchone()
             return row[0] if row and row[0] is not None else 0
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                f"Could not query schema_migrations "
+                f"(table may not exist yet): {exc}"
+            )
             return 0
 
     def _record_migration(self, conn, version: int, name: str) -> None:
@@ -746,7 +750,9 @@ class SQLAlchemyMigrator:
             # the schema.
             {"v": version, "n": name, "t": datetime.now(pytz.UTC).replace(tzinfo=None)},
         )
-        conn.commit()
+        # NOTE: No commit here — the caller must commit so that the DDL
+        # statements and this migration record are committed in the same
+        # transaction, keeping schema changes and their audit trail atomic.
 
     def _get_existing_columns(self, conn, table_name: str) -> List[str]:
         from sqlalchemy import inspect
@@ -754,7 +760,10 @@ class SQLAlchemyMigrator:
         insp = inspect(conn)
         try:
             return [c["name"] for c in insp.get_columns(table_name)]
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                f"Could not introspect columns for table {table_name!r}: {exc}"
+            )
             return []
 
     def _table_exists(self, conn, table_name: str) -> bool:
@@ -851,6 +860,7 @@ class SQLAlchemyMigrator:
                     # Stamp version 1 (initial schema created by create_all)
                     if 1 not in applied:
                         self._record_migration(conn, 1, "initial_schema")
+                        conn.commit()
 
                     # Apply ALTER TABLE migrations idempotently.
                     # create_all() creates missing tables with the full current
@@ -898,10 +908,10 @@ class SQLAlchemyMigrator:
 
                             conn.execute(text(sql))
 
-                        conn.commit()
                         self._record_migration(
                             conn, migration["version"], migration["name"]
                         )
+                        conn.commit()
                         logger.info(
                             f"Successfully applied migration "
                             f"{migration['version']}"
@@ -992,10 +1002,10 @@ class SQLAlchemyMigrator:
 
                             conn.execute(text(sql))
 
-                        conn.commit()
                         self._record_migration(
                             conn, migration["version"], migration["name"]
                         )
+                        conn.commit()
                         logger.info(
                             f"Successfully applied migration {migration['version']}"
                         )
