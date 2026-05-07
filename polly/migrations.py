@@ -960,7 +960,7 @@ if __name__ == "__main__":
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
         active_migrator: Union[DatabaseMigrator, SQLAlchemyMigrator] = SQLAlchemyMigrator(database_url)
-        resolved_target = make_url(database_url).render_as_string(hide_password=True)
+        display_target = make_url(database_url).render_as_string(hide_password=True)
     else:
         # Parse the actual path from DATABASE_URL (not the CLI arg) so the
         # migrator and the SQLAlchemy engine always target the same file.
@@ -969,9 +969,9 @@ if __name__ == "__main__":
             print("❌ DATABASE_URL is sqlite:///:memory: — cannot run migrations on an in-memory database.")
             sys.exit(1)
         active_migrator = DatabaseMigrator(sqlite_path)
-        resolved_target = sqlite_path
+        display_target = sqlite_path
 
-    print(f"Database: {resolved_target}")
+    print(f"Database: {display_target}")
 
     if active_migrator.needs_migration():
         print("Migration needed")
