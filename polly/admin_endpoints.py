@@ -10,36 +10,10 @@ from fastapi.templating import Jinja2Templates
 
 from .auth import require_auth, DiscordUser
 from .ip_blocker import get_ip_blocker
+from .admin_response_utils import sanitize_result_for_client
 
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="templates")
-
-
-def sanitize_result_for_client(result: dict) -> dict:
-    """Sanitize service result dict to prevent leaking sensitive error details to clients."""
-    # Always work on a copy so we don't accidentally mutate shared state
-    sanitized = result.copy() if isinstance(result, dict) else {"raw_result": str(result)}
-
-    error_value = sanitized.get("error")
-    success_flag = sanitized.get("success")
-
-    # Log the original error on the server only, for debugging
-    if error_value is not None:
-        logger.debug(f"Sanitizing error for client response: {error_value}")
-
-    # Primary rule: if the operation was not successful and an error is present,
-    # never pass the raw error message back to the client.
-    if success_flag is False and error_value is not None:
-        sanitized["error"] = "Operation failed. Please try again or contact support."
-        return sanitized
-
-    # Additional safeguard: if the error string looks like it may contain
-    # stack-trace or multi-line internal details, replace it as well.
-    if isinstance(error_value, str) and ("\n" in error_value or "Traceback" in error_value):
-        sanitized["error"] = "Operation failed. Please try again or contact support."
-        return sanitized
-
-    return sanitized
 
 
 async def get_security_status(

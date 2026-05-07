@@ -171,17 +171,9 @@ class PollEditService:
                     logger.error(f"❌ UNIFIED EDIT {poll_id} - Scheduler update error: {scheduler_error}")
 
             # STEP 9: Cache invalidation
-            try:
-                from ..cache.enhanced_cache_service import get_enhanced_cache_service
-                
-                enhanced_cache = get_enhanced_cache_service()
-                if enhanced_cache and changes_made:
-                    invalidated = await enhanced_cache.invalidate_poll_related_cache(poll_id)
-                    logger.info(f"✅ UNIFIED EDIT {poll_id} - Invalidated {invalidated} cache entries")
-                    
-            except Exception as cache_error:
-                logger.error(f"❌ UNIFIED EDIT {poll_id} - Cache invalidation error: {cache_error}")
-                # Don't fail the edit if cache invalidation fails
+            from ..cache.cache_invalidation_utils import invalidate_poll_cache_safely
+            if changes_made:
+                await invalidate_poll_cache_safely(poll_id, "UNIFIED EDIT")
 
             # Log the edit action
             logger.info(f"📝 Poll edit: poll_id={poll_id} editor_user_id={editor_user_id} editor_type={editor_type} reason={reason}")
@@ -307,8 +299,8 @@ class PollEditService:
             logger.info(f"🔄 DISCORD UPDATE {poll_id} - Discord update needed for: {[f for f in discord_update_fields if f in edit_data]}")
 
             # Get bot instance
-            from ...discord_bot import get_bot_instance
-            bot_instance = get_bot_instance()
+            from .poll_db_utils import get_bot_instance_safe
+            bot_instance = get_bot_instance_safe()
             
             if not bot_instance:
                 logger.error(f"❌ DISCORD UPDATE {poll_id} - Bot instance not available")

@@ -43,10 +43,9 @@ class PollOpeningService:
             logger.info(f"🚀 UNIFIED OPEN {poll_id} - Starting unified poll opening (reason: {reason})")
             
             # Get bot instance if not provided
-            if not bot_instance:
-                from ...discord_bot import get_bot_instance
-                bot_instance = get_bot_instance()
-                
+            from .poll_db_utils import get_bot_instance_safe, get_poll_with_votes, extract_poll_fields
+            
+            bot_instance = get_bot_instance_safe(bot_instance)
             if not bot_instance:
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Bot instance not available")
                 return {"success": False, "error": "Bot instance not available"}
@@ -55,21 +54,19 @@ class PollOpeningService:
             db = get_db_session()
             poll = None
             try:
-                from sqlalchemy.orm import joinedload
-
-                poll = (
-                    db.query(Poll)
-                    .options(joinedload(Poll.votes))
-                    .filter(Poll.id == poll_id)
-                    .first()
-                )
+                poll, db = get_poll_with_votes(poll_id, db)
                 if not poll:
                     logger.error(f"❌ UNIFIED OPEN {poll_id} - Poll not found in database")
                     return {"success": False, "error": "Poll not found"}
 
-                # Check current status
-                current_status = TypeSafeColumn.get_string(poll, "status")
-                poll_name = TypeSafeColumn.get_string(poll, "name", "Unknown")
+                # Extract poll fields
+                poll_data = extract_poll_fields(poll)
+                current_status = poll_data["status"]
+                poll_name = poll_data["name"]
+                message_id = poll_data["message_id"]
+                channel_id = poll_data["channel_id"]
+                image_path = poll_data["image_path"]
+                image_message_text = poll_data["image_message_text"]
                 
                 logger.info(f"📊 UNIFIED OPEN {poll_id} - Poll '{poll_name}' found, status: {current_status}")
 
@@ -81,16 +78,10 @@ class PollOpeningService:
                 elif current_status == "closed" and reason not in ["reopen", "manual"]:
                     logger.error(f"❌ UNIFIED OPEN {poll_id} - Cannot open closed poll with reason: {reason}")
                     return {"success": False, "error": f"Cannot open closed poll (reason: {reason})"}
-
-                # Extract poll data while still attached to session
-                message_id = TypeSafeColumn.get_string(poll, "message_id")
-                channel_id = TypeSafeColumn.get_string(poll, "channel_id")
-                image_path = TypeSafeColumn.get_string(poll, "image_path")
-                image_message_text = TypeSafeColumn.get_string(poll, "image_message_text")
                 
             except Exception as e:
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Error fetching poll data: {e}")
-                return {"success": False, "error": f"Database error: {str(e)}"}
+                return {"success": False, "error": "Database error while fetching poll data"}
             finally:
                 db.close()
 
@@ -228,7 +219,7 @@ class PollOpeningService:
             except Exception as e:
                 db.rollback()
                 logger.error(f"❌ UNIFIED OPEN {poll_id} - Database update failed: {e}")
-                return {"success": False, "error": f"Database update failed: {str(e)}"}
+                return {"success": False, "error": "Database update failed"}
             finally:
                 db.close()
 
@@ -275,21 +266,11 @@ class PollOpeningService:
                 # Don't fail the opening process if scheduling fails
 
             # STEP 8: Cache management - invalidate stale caches and warm new ones
-            try:
-                from ..cache.enhanced_cache_service import get_enhanced_cache_service
-                
-                enhanced_cache = get_enhanced_cache_service()
-                if enhanced_cache:
-                    # Invalidate any stale poll-related caches
-                    invalidated = await enhanced_cache.invalidate_poll_related_cache(poll_id)
-                    logger.info(f"✅ UNIFIED OPEN {poll_id} - Invalidated {invalidated} stale cache entries")
-                    
-                    # Warm caches for the newly active poll (optional - will be populated on first access)
-                    logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Caches will be warmed on first access")
-                    
-            except Exception as cache_error:
-                logger.error(f"❌ UNIFIED OPEN {poll_id} - Error managing caches: {cache_error}")
-                # Don't fail the opening process if cache management fails
+            from ..cache.cache_invalidation_utils import invalidate_poll_cache_safely
+            await invalidate_poll_cache_safely(poll_id, "UNIFIED OPEN")
+            
+            # Warm caches for the newly active poll (optional - will be populated on first access)
+            logger.info(f"ℹ️ UNIFIED OPEN {poll_id} - Caches will be warmed on first access")
 
             # STEP 9: Static content generation is handled only at poll closure
             # No static content generation needed during poll opening
