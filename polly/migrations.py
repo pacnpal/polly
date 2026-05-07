@@ -537,6 +537,12 @@ def migrate_database_if_needed(db_path: str = DEFAULT_DB_PATH) -> bool:
     """
     Migrate database only if needed.
     Returns True if database is ready, False if migration failed.
+
+    ``DATABASE_URL`` takes precedence over ``db_path``: when that environment
+    variable is set it determines the target database (SQLite file path,
+    PostgreSQL DSN, or MariaDB DSN).  ``db_path`` is only used to construct
+    the default SQLite URL ``sqlite:///<db_path>`` when ``DATABASE_URL`` is
+    absent.
     """
     database_url = config("DATABASE_URL", default=f"sqlite:///{db_path}")
     if not database_url.startswith("sqlite"):
@@ -811,7 +817,15 @@ class SQLAlchemyMigrator:
         return self.get_current_schema_version() < _LATEST_VERSION
 
     def initialize_database(self) -> bool:
-        """Create the full schema using SQLAlchemy metadata, then stamp latest."""
+        """Create the full schema using SQLAlchemy metadata, then apply all migrations.
+
+        ``Base.metadata.create_all`` creates any missing tables with the full
+        current schema.  Existing tables are not modified by ``create_all``, so
+        the same ``ALTER TABLE … ADD COLUMN`` logic used by ``run_migrations``
+        is then executed for every migration (with column-existence checks to
+        skip already-present columns).  This ensures that even if some tables
+        already existed before this call they are brought fully up-to-date.
+        """
         try:
             # Lazy import to avoid circular imports
             from polly.database import Base
@@ -836,12 +850,61 @@ class SQLAlchemyMigrator:
                     # Stamp version 1 (initial schema created by create_all)
                     if 1 not in applied:
                         self._record_migration(conn, 1, "initial_schema")
-                    # Stamp all subsequent migrations as applied
+
+                    # Apply ALTER TABLE migrations idempotently.
+                    # create_all() creates missing tables with the full current
+                    # schema, but leaves existing tables unmodified.  If any
+                    # core table already existed before this call it may be
+                    # missing columns from later migrations.  Running the same
+                    # ADD COLUMN logic as run_migrations() (with column-
+                    # existence checks) ensures every table is fully up-to-date
+                    # regardless of its prior state.
                     for migration in _SQLALCHEMY_MIGRATIONS:
-                        if migration["version"] not in applied:
-                            self._record_migration(
-                                conn, migration["version"], migration["name"]
-                            )
+                        if migration["version"] in applied:
+                            continue
+
+                        logger.info(
+                            f"Applying migration {migration['version']}: "
+                            f"{migration['name']}"
+                        )
+
+                        for sql in migration["sql"]:
+                            if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
+                                parts = sql.split("ADD COLUMN", 1)
+                                table_name = parts[0].replace(
+                                    "ALTER TABLE", ""
+                                ).strip()
+                                column_name = parts[1].split()[0].strip()
+
+                                if not self._table_exists(conn, table_name):
+                                    logger.error(
+                                        f"Table {table_name} does not exist; "
+                                        f"cannot apply migration "
+                                        f"{migration['version']} "
+                                        f"(column {column_name})"
+                                    )
+                                    return False
+
+                                existing = self._get_existing_columns(
+                                    conn, table_name
+                                )
+                                if column_name in existing:
+                                    logger.info(
+                                        f"Column {column_name} already exists "
+                                        f"in {table_name}, skipping"
+                                    )
+                                    continue
+
+                            conn.execute(text(sql))
+
+                        conn.commit()
+                        self._record_migration(
+                            conn, migration["version"], migration["name"]
+                        )
+                        logger.info(
+                            f"Successfully applied migration "
+                            f"{migration['version']}"
+                        )
             finally:
                 engine.dispose()
 
