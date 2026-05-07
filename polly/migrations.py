@@ -750,9 +750,12 @@ class SQLAlchemyMigrator:
             # the schema.
             {"v": version, "n": name, "t": datetime.now(pytz.UTC).replace(tzinfo=None)},
         )
-        # NOTE: No commit here — the caller must commit so that the DDL
-        # statements and this migration record are committed in the same
-        # transaction, keeping schema changes and their audit trail atomic.
+        # NOTE: No commit here — the caller must commit after invoking this
+        # helper.  On PostgreSQL (transactional DDL) this means the DDL and
+        # the audit record land in the same transaction.  On MySQL/MariaDB
+        # DDL statements auto-commit and cannot be rolled back, so only the
+        # INSERT into schema_migrations benefits from the caller's explicit
+        # commit.
 
     def _get_existing_columns(self, conn, table_name: str) -> List[str]:
         from sqlalchemy import inspect
@@ -771,6 +774,44 @@ class SQLAlchemyMigrator:
 
         insp = inspect(conn)
         return table_name in insp.get_table_names()
+
+    def _apply_migration_statements(self, conn, migration: dict) -> bool:
+        """Execute all SQL statements for a single migration.
+
+        For ``ALTER TABLE … ADD COLUMN`` statements the column is silently
+        skipped when it already exists, making the method idempotent.
+
+        Returns *False* if a required table is absent (indicating an
+        unexpected schema state); *True* when all statements have been
+        applied or safely skipped.
+        """
+        from sqlalchemy import text
+
+        for sql in migration["sql"]:
+            if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
+                parts = sql.split("ADD COLUMN", 1)
+                table_name = parts[0].replace("ALTER TABLE", "").strip()
+                column_name = parts[1].split()[0].strip()
+
+                if not self._table_exists(conn, table_name):
+                    logger.error(
+                        f"Table {table_name} does not exist; "
+                        f"cannot apply migration {migration['version']} "
+                        f"(column {column_name})"
+                    )
+                    return False
+
+                existing = self._get_existing_columns(conn, table_name)
+                if column_name in existing:
+                    logger.info(
+                        f"Column {column_name} already exists "
+                        f"in {table_name}, skipping"
+                    )
+                    continue
+
+            conn.execute(text(sql))
+
+        return True
 
     # ------------------------------------------------------------------
     # Public interface (mirrors DatabaseMigrator)
@@ -879,34 +920,8 @@ class SQLAlchemyMigrator:
                             f"{migration['name']}"
                         )
 
-                        for sql in migration["sql"]:
-                            if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
-                                parts = sql.split("ADD COLUMN", 1)
-                                table_name = parts[0].replace(
-                                    "ALTER TABLE", ""
-                                ).strip()
-                                column_name = parts[1].split()[0].strip()
-
-                                if not self._table_exists(conn, table_name):
-                                    logger.error(
-                                        f"Table {table_name} does not exist; "
-                                        f"cannot apply migration "
-                                        f"{migration['version']} "
-                                        f"(column {column_name})"
-                                    )
-                                    return False
-
-                                existing = self._get_existing_columns(
-                                    conn, table_name
-                                )
-                                if column_name in existing:
-                                    logger.info(
-                                        f"Column {column_name} already exists "
-                                        f"in {table_name}, skipping"
-                                    )
-                                    continue
-
-                            conn.execute(text(sql))
+                        if not self._apply_migration_statements(conn, migration):
+                            return False
 
                         self._record_migration(
                             conn, migration["version"], migration["name"]
@@ -967,8 +982,6 @@ class SQLAlchemyMigrator:
                         f"to {_LATEST_VERSION}"
                     )
 
-                    from sqlalchemy import text
-
                     for migration in _SQLALCHEMY_MIGRATIONS:
                         if migration["version"] <= current_version:
                             continue
@@ -977,30 +990,8 @@ class SQLAlchemyMigrator:
                             f"Applying migration {migration['version']}: {migration['name']}"
                         )
 
-                        sql_statements = migration["sql"]
-                        for sql in sql_statements:
-                            if "ALTER TABLE" in sql and "ADD COLUMN" in sql:
-                                parts = sql.split("ADD COLUMN", 1)
-                                table_name = parts[0].replace("ALTER TABLE", "").strip()
-                                column_name = parts[1].split()[0].strip()
-
-                                if not self._table_exists(conn, table_name):
-                                    logger.error(
-                                        f"Table {table_name} does not exist; "
-                                        f"cannot apply migration {migration['version']} "
-                                        f"(column {column_name})"
-                                    )
-                                    return False
-
-                                existing = self._get_existing_columns(conn, table_name)
-                                if column_name in existing:
-                                    logger.info(
-                                        f"Column {column_name} already exists in "
-                                        f"{table_name}, skipping"
-                                    )
-                                    continue
-
-                            conn.execute(text(sql))
+                        if not self._apply_migration_statements(conn, migration):
+                            return False
 
                         self._record_migration(
                             conn, migration["version"], migration["name"]
