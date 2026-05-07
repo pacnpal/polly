@@ -100,12 +100,12 @@ class TestSQLAlchemyMigratorUnit:
         assert isinstance(ts, datetime)
         assert ts.tzinfo is None, "timestamp must be naive (no tzinfo) to match TIMESTAMP column"
 
-    # is_database_initialized checks polls, votes, and users ----------------
+    # is_database_initialized checks polls, votes, users, and user_preferences
 
-    def test_is_database_initialized_all_three_tables(self):
+    def test_is_database_initialized_all_four_tables(self):
         migrator = self._make_test_migrator()
         mock_conn = MagicMock()
-        # All three tables present → initialized
+        # All four tables present → initialized
         migrator._table_exists = MagicMock(return_value=True)
         mock_engine = MagicMock()
         mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -129,6 +129,21 @@ class TestSQLAlchemyMigratorUnit:
             result = migrator.is_database_initialized()
         assert result is False
 
+    def test_is_database_initialized_missing_user_preferences(self):
+        migrator = self._make_test_migrator()
+        # polls/votes/users present, user_preferences absent
+        def table_exists_side_effect(conn, table_name):
+            return table_name != "user_preferences"
+
+        mock_conn = MagicMock()
+        migrator._table_exists = MagicMock(side_effect=table_exists_side_effect)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        with patch.object(migrator, "_make_engine", return_value=mock_engine):
+            result = migrator.is_database_initialized()
+        assert result is False
+
     # run_migrations() redirects to initialize_database on partial schema ---
 
     def test_run_migrations_partial_schema_calls_initialize(self):
@@ -139,6 +154,28 @@ class TestSQLAlchemyMigratorUnit:
         # polls exists but users is missing → partial schema
         def table_exists_side_effect(conn, table_name):
             return table_name == "polls"
+
+        mock_conn = MagicMock()
+        migrator._table_exists = MagicMock(side_effect=table_exists_side_effect)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(migrator, "_make_engine", return_value=mock_engine):
+            with patch.object(migrator, "initialize_database", return_value=True) as mock_init:
+                result = migrator.run_migrations()
+
+        mock_init.assert_called_once()
+        assert result is True
+
+    def test_run_migrations_missing_user_preferences_calls_initialize(self):
+        """If user_preferences is missing while polls/votes/users exist,
+        run_migrations() must delegate to initialize_database()."""
+        migrator = self._make_test_migrator()
+
+        # polls/votes/users exist but user_preferences is missing
+        def table_exists_side_effect(conn, table_name):
+            return table_name != "user_preferences"
 
         mock_conn = MagicMock()
         migrator._table_exists = MagicMock(side_effect=table_exists_side_effect)

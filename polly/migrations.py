@@ -781,7 +781,7 @@ class SQLAlchemyMigrator:
             engine.dispose()
 
     def is_database_initialized(self) -> bool:
-        """Return True if the core tables (polls, votes, users) exist."""
+        """Return True if the core tables (polls, votes, users, user_preferences) exist."""
         engine = self._make_engine()
         try:
             with engine.connect() as conn:
@@ -789,6 +789,7 @@ class SQLAlchemyMigrator:
                     self._table_exists(conn, "polls")
                     and self._table_exists(conn, "votes")
                     and self._table_exists(conn, "users")
+                    and self._table_exists(conn, "user_preferences")
                 )
         except Exception:
             return False
@@ -922,9 +923,9 @@ class SQLAlchemyMigrator:
             # Check whether the core schema is fully present in a short-lived
             # connection so the connection is fully released before we hand
             # control to initialize_database() (which creates its own engine +
-            # connections).  We check all three required tables — not just
-            # 'polls' — so that a partially-initialised database (e.g. polls
-            # exists but votes/users are missing) is also redirected to
+            # connections).  We check all required tables — not just 'polls' —
+            # so that a partially-initialised database (e.g. user_preferences
+            # missing while polls/votes/users exist) is also redirected to
             # initialize_database(), which uses create_all() and is safe to
             # call on an incomplete schema.
             try:
@@ -933,6 +934,7 @@ class SQLAlchemyMigrator:
                         self._table_exists(conn, "polls")
                         and self._table_exists(conn, "votes")
                         and self._table_exists(conn, "users")
+                        and self._table_exists(conn, "user_preferences")
                     )
             finally:
                 engine.dispose()
