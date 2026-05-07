@@ -242,18 +242,23 @@ class TestSQLAlchemyMigratorExceptionLogging:
 
 
 # ---------------------------------------------------------------------------
+# Shared helper for tests that need a non-SQLite DATABASE_URL
+# ---------------------------------------------------------------------------
+
+def _mock_config_postgres(key, default=""):
+    """Side-effect for patching decouple.config to return a PostgreSQL URL."""
+    if key == "DATABASE_URL":
+        return "postgresql://polly:pass@localhost/polly"
+    return default
+
+
+# ---------------------------------------------------------------------------
 # migrate_database_if_needed: schema-current-but-not-initialized guard
 # ---------------------------------------------------------------------------
 
 class TestMigrateDatabaseIfNeededInitCheck:
     """migrate_database_if_needed() must reinitialize when the schema version
     is current but core tables are absent."""
-
-    @staticmethod
-    def _mock_config_postgres(key, default=""):
-        if key == "DATABASE_URL":
-            return "postgresql://polly:pass@localhost/polly"
-        return default
 
     def test_reinitializes_when_schema_current_but_not_initialized(self):
         """When needs_migration() is False but is_database_initialized() is False,
@@ -263,7 +268,7 @@ class TestMigrateDatabaseIfNeededInitCheck:
         mock_migrator.is_database_initialized.return_value = False
         mock_migrator.initialize_database.return_value = True
 
-        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+        with patch("polly.migrations.config", side_effect=_mock_config_postgres):
             with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
                 result = migrate_database_if_needed()
 
@@ -277,7 +282,7 @@ class TestMigrateDatabaseIfNeededInitCheck:
         mock_migrator.needs_migration.return_value = False
         mock_migrator.is_database_initialized.return_value = True
 
-        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+        with patch("polly.migrations.config", side_effect=_mock_config_postgres):
             with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
                 result = migrate_database_if_needed()
 
@@ -293,12 +298,6 @@ class TestInitializeDatabaseIfMissingFallthrough:
     """initialize_database_if_missing() must reinitialize when the DB exists,
     no version-based migrations are pending, but core tables are absent."""
 
-    @staticmethod
-    def _mock_config_postgres(key, default=""):
-        if key == "DATABASE_URL":
-            return "postgresql://polly:pass@localhost/polly"
-        return default
-
     def test_reinitializes_when_db_exists_but_not_initialized(self):
         """When DB exists, needs_migration()=False, is_database_initialized()=False,
         initialize_database_if_missing() must call initialize_database()."""
@@ -308,7 +307,7 @@ class TestInitializeDatabaseIfMissingFallthrough:
         mock_migrator.database_exists.return_value = True
         mock_migrator.initialize_database.return_value = True
 
-        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+        with patch("polly.migrations.config", side_effect=_mock_config_postgres):
             with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
                 result = initialize_database_if_missing()
 
@@ -322,7 +321,7 @@ class TestInitializeDatabaseIfMissingFallthrough:
         mock_migrator.is_database_initialized.return_value = True
         mock_migrator.needs_migration.return_value = False
 
-        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+        with patch("polly.migrations.config", side_effect=_mock_config_postgres):
             with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
                 result = initialize_database_if_missing()
 
