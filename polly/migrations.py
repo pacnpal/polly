@@ -556,6 +556,12 @@ def migrate_database_if_needed(db_path: str = DEFAULT_DB_PATH) -> bool:
         migrator = DatabaseMigrator(sqlite_path)
 
     if not migrator.needs_migration():
+        if not migrator.is_database_initialized():
+            logger.warning(
+                "Schema version is current but core tables are missing; "
+                "reinitializing"
+            )
+            return migrator.initialize_database()
         logger.info("Database is up to date, no migration needed")
         return True
 
@@ -594,6 +600,15 @@ def initialize_database_if_missing(db_path: str = DEFAULT_DB_PATH) -> bool:
     if migrator.needs_migration():
         logger.info("Database exists but needs migration")
         return migrator.run_migrations()
+
+    # DB is reachable and the version is current, but core tables may still be
+    # absent (e.g. schema_migrations was advanced externally while tables were
+    # dropped, or the DB is otherwise partially set up).
+    if not migrator.is_database_initialized():
+        logger.warning(
+            "Database exists but is not fully initialized; reinitializing"
+        )
+        return migrator.initialize_database()
 
     return True
 

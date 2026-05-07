@@ -239,3 +239,92 @@ class TestSQLAlchemyMigratorExceptionLogging:
         mock_logger.warning.assert_called_once()
         warning_msg = mock_logger.warning.call_args[0][0]
         assert "polls" in warning_msg
+
+
+# ---------------------------------------------------------------------------
+# migrate_database_if_needed: schema-current-but-not-initialized guard
+# ---------------------------------------------------------------------------
+
+class TestMigrateDatabaseIfNeededInitCheck:
+    """migrate_database_if_needed() must reinitialize when the schema version
+    is current but core tables are absent."""
+
+    @staticmethod
+    def _mock_config_postgres(key, default=""):
+        if key == "DATABASE_URL":
+            return "postgresql://polly:pass@localhost/polly"
+        return default
+
+    def test_reinitializes_when_schema_current_but_not_initialized(self):
+        """When needs_migration() is False but is_database_initialized() is False,
+        migrate_database_if_needed() must call initialize_database()."""
+        mock_migrator = MagicMock()
+        mock_migrator.needs_migration.return_value = False
+        mock_migrator.is_database_initialized.return_value = False
+        mock_migrator.initialize_database.return_value = True
+
+        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+            with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
+                result = migrate_database_if_needed()
+
+        mock_migrator.initialize_database.assert_called_once()
+        assert result is True
+
+    def test_no_reinit_when_schema_current_and_initialized(self):
+        """When needs_migration() is False and is_database_initialized() is True,
+        migrate_database_if_needed() must return True without calling initialize_database()."""
+        mock_migrator = MagicMock()
+        mock_migrator.needs_migration.return_value = False
+        mock_migrator.is_database_initialized.return_value = True
+
+        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+            with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
+                result = migrate_database_if_needed()
+
+        mock_migrator.initialize_database.assert_not_called()
+        assert result is True
+
+
+# ---------------------------------------------------------------------------
+# initialize_database_if_missing: fallthrough guard
+# ---------------------------------------------------------------------------
+
+class TestInitializeDatabaseIfMissingFallthrough:
+    """initialize_database_if_missing() must reinitialize when the DB exists,
+    no version-based migrations are pending, but core tables are absent."""
+
+    @staticmethod
+    def _mock_config_postgres(key, default=""):
+        if key == "DATABASE_URL":
+            return "postgresql://polly:pass@localhost/polly"
+        return default
+
+    def test_reinitializes_when_db_exists_but_not_initialized(self):
+        """When DB exists, needs_migration()=False, is_database_initialized()=False,
+        initialize_database_if_missing() must call initialize_database()."""
+        mock_migrator = MagicMock()
+        mock_migrator.is_database_initialized.return_value = False
+        mock_migrator.needs_migration.return_value = False
+        mock_migrator.database_exists.return_value = True
+        mock_migrator.initialize_database.return_value = True
+
+        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+            with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
+                result = initialize_database_if_missing()
+
+        mock_migrator.initialize_database.assert_called_once()
+        assert result is True
+
+    def test_no_reinit_when_db_initialized_and_current(self):
+        """When DB is fully initialized and up-to-date, initialize_database()
+        must not be called."""
+        mock_migrator = MagicMock()
+        mock_migrator.is_database_initialized.return_value = True
+        mock_migrator.needs_migration.return_value = False
+
+        with patch("polly.migrations.config", side_effect=self._mock_config_postgres):
+            with patch("polly.migrations.SQLAlchemyMigrator", return_value=mock_migrator):
+                result = initialize_database_if_missing()
+
+        mock_migrator.initialize_database.assert_not_called()
+        assert result is True
