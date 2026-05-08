@@ -81,4 +81,3 @@ polly/static_page_generator.py
 .snapshots/
 
 # Lock files (if not using for reproducibility)
-uv.lock

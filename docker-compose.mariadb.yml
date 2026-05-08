@@ -1,0 +1,46 @@
+# Docker Compose override — MariaDB backend
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.mariadb.yml up -d
+#
+# MARIADB_PASSWORD and MARIADB_ROOT_PASSWORD must be set in your .env file
+# or shell environment.  Compose will error out if either is missing.
+# Example .env entries:
+#   MARIADB_PASSWORD=your_secure_password
+#   MARIADB_ROOT_PASSWORD=your_secure_root_password
+#
+# The PyMySQL driver must be present in the image.  Before building, add the
+# mariadb extra to the project and regenerate the lockfile:
+#   uv sync --extra mariadb
+#   docker compose build polly
+
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: polly-mariadb
+    environment:
+      MARIADB_DATABASE: polly
+      MARIADB_USER: polly
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?MARIADB_PASSWORD must be set in .env or shell}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD must be set in .env or shell}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - polly-network
+
+  polly:
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=mysql+pymysql://polly:${MARIADB_PASSWORD:?MARIADB_PASSWORD must be set in .env or shell}@mariadb:3306/polly
+
+volumes:
+  mariadb_data:
+    driver: local

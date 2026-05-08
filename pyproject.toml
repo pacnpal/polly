@@ -48,3 +48,9 @@ dev = [
     "requests>=2.32.5",
     "ruff>=0.12.11",
 ]
+
+[project.optional-dependencies]
+# uv sync --extra postgres  — PostgreSQL support
+postgres = ["psycopg2-binary>=2.9.0"]
+# uv sync --extra mariadb   — MariaDB / MySQL support
+mariadb = ["PyMySQL>=1.1.0"]
