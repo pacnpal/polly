@@ -74,9 +74,11 @@ class TypeSafeColumn:
 
 # Database setup
 DATABASE_URL = config("DATABASE_URL", default="sqlite:///./db/polly.db")
-# check_same_thread is a SQLite-only option; omit it for other databases
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=_connect_args)
+# check_same_thread is a SQLite-only option; omit connect_args entirely for other databases
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

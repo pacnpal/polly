@@ -833,7 +833,7 @@ class SQLAlchemyMigrator:
     # ------------------------------------------------------------------
 
     def database_exists(self) -> bool:
-        """For server-based databases the server is assumed to be reachable."""
+        """Return True if the database server is reachable (probes the connection), False on failure."""
         engine = self._make_engine()
         try:
             with engine.connect():

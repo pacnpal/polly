@@ -13,6 +13,7 @@ import os
 
 from polly.migrations import (
     _sqlite_path_from_url,
+    _SQLALCHEMY_MIGRATIONS,
     DatabaseMigrator,
     SQLAlchemyMigrator,
     migrate_database_if_needed,
@@ -52,6 +53,30 @@ class TestSqlitePathFromUrl:
     def test_pysqlite_absolute_path(self):
         """sqlite+pysqlite:// dialect+driver form parses absolute paths correctly."""
         assert _sqlite_path_from_url("sqlite+pysqlite:////absolute/path.db") == "/absolute/path.db"
+
+
+# ---------------------------------------------------------------------------
+# Migration list alignment
+# ---------------------------------------------------------------------------
+
+class TestMigrationListAlignment:
+    """_SQLALCHEMY_MIGRATIONS must stay in sync with DatabaseMigrator._get_migrations().
+
+    Version 1 (initial_schema) is intentionally absent from _SQLALCHEMY_MIGRATIONS
+    because the non-SQLite path creates the initial schema via Base.metadata.create_all().
+    All other versions must match in number and name.
+    """
+
+    def test_versions_and_names_match_sqlite_migrations(self):
+        sqlite_migrations = DatabaseMigrator()._get_migrations()
+        # Exclude v1 from the SQLite list — it has no equivalent in _SQLALCHEMY_MIGRATIONS
+        sqlite_v2_plus = [(m["version"], m["name"]) for m in sqlite_migrations if m["version"] > 1]
+        sqlalchemy_versions = [(m["version"], m["name"]) for m in _SQLALCHEMY_MIGRATIONS]
+        assert sqlalchemy_versions == sqlite_v2_plus, (
+            "_SQLALCHEMY_MIGRATIONS is out of sync with DatabaseMigrator._get_migrations().\n"
+            f"SQLite v2+: {sqlite_v2_plus}\n"
+            f"SQLAlchemy: {sqlalchemy_versions}"
+        )
 
 
 # ---------------------------------------------------------------------------
