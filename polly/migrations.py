@@ -256,15 +256,15 @@ class DatabaseMigrator:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            # Check if core tables exist
+            # Check if all four core tables exist
             cursor.execute("""
                 SELECT name FROM sqlite_master 
-                WHERE type='table' AND name IN ('polls', 'votes', 'users')
+                WHERE type='table' AND name IN ('polls', 'votes', 'users', 'user_preferences')
             """)
             tables = [row[0] for row in cursor.fetchall()]
 
             conn.close()
-            return len(tables) >= 3
+            return len(tables) >= 4
         except sqlite3.Error:
             return False
 

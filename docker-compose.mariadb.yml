@@ -3,9 +3,11 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.mariadb.yml up -d
 #
-# Set MARIADB_PASSWORD in your .env file or shell environment, then Compose
-# will expand it in the DATABASE_URL below.  Example .env entries:
+# MARIADB_PASSWORD and MARIADB_ROOT_PASSWORD must be set in your .env file
+# or shell environment.  Compose will error out if either is missing.
+# Example .env entries:
 #   MARIADB_PASSWORD=your_secure_password
+#   MARIADB_ROOT_PASSWORD=your_secure_root_password
 #
 # The PyMySQL driver must be present in the image.  Before building, add the
 # mariadb extra to the project and regenerate the lockfile:
@@ -19,8 +21,8 @@ services:
     environment:
       MARIADB_DATABASE: polly
       MARIADB_USER: polly
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-polly_db_pass}
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-polly_root_pass}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?MARIADB_PASSWORD must be set in .env or shell}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD must be set in .env or shell}
     volumes:
       - mariadb_data:/var/lib/mysql
     restart: unless-stopped
@@ -37,7 +39,7 @@ services:
       mariadb:
         condition: service_healthy
     environment:
-      - DATABASE_URL=mysql+pymysql://polly:${MARIADB_PASSWORD:-polly_db_pass}@mariadb:3306/polly
+      - DATABASE_URL=mysql+pymysql://polly:${MARIADB_PASSWORD:?MARIADB_PASSWORD must be set in .env or shell}@mariadb:3306/polly
 
 volumes:
   mariadb_data:

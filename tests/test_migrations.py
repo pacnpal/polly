@@ -7,8 +7,13 @@ that powers the PostgreSQL / MariaDB migration path.
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
+import sqlite3
+import tempfile
+import os
+
 from polly.migrations import (
     _sqlite_path_from_url,
+    DatabaseMigrator,
     SQLAlchemyMigrator,
     migrate_database_if_needed,
     initialize_database_if_missing,
@@ -75,8 +80,54 @@ class TestMemoryDatabaseRejection:
 
 
 # ---------------------------------------------------------------------------
-# SQLAlchemyMigrator unit tests (no real DB required)
+# DatabaseMigrator.is_database_initialized (SQLite path)
 # ---------------------------------------------------------------------------
+
+class TestDatabaseMigratorIsInitialized:
+    """DatabaseMigrator.is_database_initialized() must require all four core
+    tables including user_preferences."""
+
+    def _make_db_with_tables(self, tables):
+        """Create a temporary SQLite DB with the given tables and return its path."""
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        for table in tables:
+            conn.execute(f"CREATE TABLE IF NOT EXISTS {table} (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        return path
+
+    def test_all_four_tables_present(self):
+        path = self._make_db_with_tables(["polls", "votes", "users", "user_preferences"])
+        try:
+            assert DatabaseMigrator(path).is_database_initialized() is True
+        finally:
+            os.unlink(path)
+
+    def test_missing_user_preferences_returns_false(self):
+        path = self._make_db_with_tables(["polls", "votes", "users"])
+        try:
+            assert DatabaseMigrator(path).is_database_initialized() is False
+        finally:
+            os.unlink(path)
+
+    def test_missing_users_returns_false(self):
+        path = self._make_db_with_tables(["polls", "votes", "user_preferences"])
+        try:
+            assert DatabaseMigrator(path).is_database_initialized() is False
+        finally:
+            os.unlink(path)
+
+    def test_empty_db_returns_false(self):
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            assert DatabaseMigrator(path).is_database_initialized() is False
+        finally:
+            os.unlink(path)
+
+
 
 class TestSQLAlchemyMigratorUnit:
     """Fast unit tests that mock the SQLAlchemy engine."""

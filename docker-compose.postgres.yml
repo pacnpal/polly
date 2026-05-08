@@ -3,8 +3,8 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 #
-# Set POSTGRES_PASSWORD in your .env file or shell environment, then Compose
-# will expand it in the DATABASE_URL below.  Example .env entries:
+# POSTGRES_PASSWORD must be set in your .env file or shell environment.
+# Compose will error out if the variable is missing.  Example .env entry:
 #   POSTGRES_PASSWORD=your_secure_password
 #
 # The psycopg2 driver must be present in the image.  Before building, add the
@@ -19,7 +19,7 @@ services:
     environment:
       POSTGRES_DB: polly
       POSTGRES_USER: polly
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-polly_pg_pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env or shell}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -36,7 +36,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://polly:${POSTGRES_PASSWORD:-polly_pg_pass}@postgres:5432/polly
+      - DATABASE_URL=postgresql://polly:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env or shell}@postgres:5432/polly
 
 volumes:
   postgres_data:
