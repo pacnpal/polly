@@ -296,14 +296,14 @@
 // Use window property to avoid redeclaration errors when HTMX reloads this template
 window.filterLabels = window.filterLabels || {
     all: "",
-    published: "Published",
-    draft: "Draft",
-    archived: "Archived"
+    active: "Active",
+    scheduled: "Scheduled",
+    closed: "Closed"
 };
 // Client-side poll filtering for better performance
 function filterPolls(filterType) {
     // Defense-in-depth: restrict filterType to allowed list.
-    const allowedFilters = ['all', 'published', 'draft', 'archived'];
+    const allowedFilters = ['all', 'active', 'scheduled', 'closed'];
     if (!allowedFilters.includes(filterType)) {
         filterType = 'all';
     }
@@ -369,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('🔍 FILTER DEBUG - Initializing client-side filtering');
     
     // Set initial filter based on URL or default to 'all'
-    const allowedFilters = ['all', 'published', 'draft', 'archived'];  // Add all the valid filter options here
+    const allowedFilters = ['all', 'active', 'scheduled', 'closed'];  // Add all the valid filter options here
     const urlParams = new URLSearchParams(window.location.search);
     let initialFilter = urlParams.get('filter') || 'all';
     if (!allowedFilters.includes(initialFilter)) {
